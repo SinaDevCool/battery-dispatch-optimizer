@@ -10,6 +10,7 @@ from src.api.schemas import (
     BatterySignalResponse,
 )
 from src.backtesting.metrics import calculate_backtest_metrics
+from src.config.battery_config import DEFAULT_BATTERY_CONFIG, DEFAULT_STRATEGY_CONFIG
 from src.signals.signal_engine import generate_battery_signal
 
 
@@ -37,10 +38,20 @@ def project_status():
         "available_endpoints": [
             "/health",
             "/status",
+            "/battery/config",
             "/battery/signal",
             "/battery/backtest",
             "/reports/monthly/latest",
+            "/reports/monthly/latest/view",
         ],
+    }
+
+
+@app.get("/battery/config")
+def battery_config():
+    return {
+        "battery_config": DEFAULT_BATTERY_CONFIG,
+        "strategy_config": DEFAULT_STRATEGY_CONFIG,
     }
 
 
@@ -102,6 +113,33 @@ def battery_backtest(request: BacktestRequest):
     return {
         "summary": metrics,
         "dispatch": result["dispatch"],
+    }
+
+
+@app.get("/reports/monthly/latest")
+def latest_monthly_report():
+    report_dir = Path("data/outputs")
+
+    if not report_dir.exists():
+        return {
+            "status": "not_found",
+            "message": "Report output folder does not exist yet.",
+        }
+
+    report_files = sorted(report_dir.glob("monthly_report_*.html"))
+
+    if not report_files:
+        return {
+            "status": "not_found",
+            "message": "No monthly reports found.",
+        }
+
+    latest_report = report_files[-1]
+
+    return {
+        "status": "ok",
+        "report_file": str(latest_report),
+        "report_name": latest_report.name,
     }
 
 
