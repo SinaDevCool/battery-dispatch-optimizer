@@ -1,3 +1,4 @@
+from src.backtesting.metrics import calculate_backtest_metrics, print_backtest_metrics
 from src.config.battery_config import DEFAULT_BATTERY_CONFIG, DEFAULT_STRATEGY_CONFIG
 from src.optimizer.battery_optimizer import BatteryOptimizer
 
