@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 
 from src.api.schemas import (
     BacktestRequest,
@@ -104,28 +105,21 @@ def battery_backtest(request: BacktestRequest):
     }
 
 
-@app.get("/reports/monthly/latest")
-def latest_monthly_report():
+@app.get("/reports/monthly/latest/view", response_class=HTMLResponse)
+def view_latest_monthly_report():
     report_dir = Path("data/outputs")
 
     if not report_dir.exists():
-        return {
-            "status": "not_found",
-            "message": "Report output folder does not exist yet.",
-        }
+        return "<h1>No report folder found</h1>"
 
     report_files = sorted(report_dir.glob("monthly_report_*.html"))
 
     if not report_files:
-        return {
-            "status": "not_found",
-            "message": "No monthly reports found.",
-        }
+        return "<h1>No monthly reports found</h1>"
 
     latest_report = report_files[-1]
 
-    return {
-        "status": "ok",
-        "report_file": str(latest_report),
-        "report_name": latest_report.name,
-    }
+    with open(latest_report, "r", encoding="utf-8") as file:
+        html = file.read()
+
+    return html
