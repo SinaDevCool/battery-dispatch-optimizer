@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse
 from src.api.schemas import (
     BacktestRequest,
     BacktestResponse,
+    BatteryConfigResponse,
     BatterySignalRequest,
     BatterySignalResponse,
 )
@@ -16,7 +17,7 @@ from src.signals.signal_engine import generate_battery_signal
 
 app = FastAPI(
     title="Battery Dispatch Optimizer API",
-    description="Simple API for battery dispatch signals and backtesting.",
+    description="Simple API for battery dispatch signals, backtesting, and reports.",
     version="0.1.0",
 )
 
@@ -47,7 +48,7 @@ def project_status():
     }
 
 
-@app.get("/battery/config")
+@app.get("/battery/config", response_model=BatteryConfigResponse)
 def battery_config():
     return {
         "battery_config": DEFAULT_BATTERY_CONFIG,
@@ -74,13 +75,11 @@ def battery_signal(request: BatterySignalRequest):
     if request.strategy_config is not None:
         strategy_config = request.strategy_config.model_dump()
 
-    result = generate_battery_signal(
+    return generate_battery_signal(
         price_data=price_data,
         battery_config=battery_config,
         strategy_config=strategy_config,
     )
-
-    return result
 
 
 @app.post("/battery/backtest", response_model=BacktestResponse)
@@ -158,6 +157,4 @@ def view_latest_monthly_report():
     latest_report = report_files[-1]
 
     with open(latest_report, "r", encoding="utf-8") as file:
-        html = file.read()
-
-    return html
+        return file.read()

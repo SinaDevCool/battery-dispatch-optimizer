@@ -77,3 +77,7 @@ class BacktestSummary(BaseModel):
 class BacktestResponse(BaseModel):
     summary: BacktestSummary
     dispatch: List[DispatchRow]
+
+class BatteryConfigResponse(BaseModel):
+    battery_config: BatteryConfigRequest
+    strategy_config: StrategyConfigRequest
