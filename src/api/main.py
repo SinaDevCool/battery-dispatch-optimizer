@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 
 from src.api.schemas import (
@@ -22,6 +24,22 @@ def health_check():
     return {
         "status": "ok",
         "service": "battery-dispatch-optimizer",
+    }
+
+
+@app.get("/status")
+def project_status():
+    return {
+        "status": "ok",
+        "project": "battery-dispatch-optimizer",
+        "version": "0.1.0",
+        "available_endpoints": [
+            "/health",
+            "/status",
+            "/battery/signal",
+            "/battery/backtest",
+            "/reports/monthly/latest",
+        ],
     }
 
 
@@ -83,4 +101,31 @@ def battery_backtest(request: BacktestRequest):
     return {
         "summary": metrics,
         "dispatch": result["dispatch"],
+    }
+
+
+@app.get("/reports/monthly/latest")
+def latest_monthly_report():
+    report_dir = Path("data/outputs")
+
+    if not report_dir.exists():
+        return {
+            "status": "not_found",
+            "message": "Report output folder does not exist yet.",
+        }
+
+    report_files = sorted(report_dir.glob("monthly_report_*.html"))
+
+    if not report_files:
+        return {
+            "status": "not_found",
+            "message": "No monthly reports found.",
+        }
+
+    latest_report = report_files[-1]
+
+    return {
+        "status": "ok",
+        "report_file": str(latest_report),
+        "report_name": latest_report.name,
     }
