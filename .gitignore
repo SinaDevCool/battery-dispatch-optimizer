@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 *.zip
 .ipynb_checkpoints/
+
+data/raw/
+data/processed/
+data/outputs/
