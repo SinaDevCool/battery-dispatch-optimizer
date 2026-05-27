@@ -55,3 +55,25 @@ class BatterySignalSummary(BaseModel):
 class BatterySignalResponse(BaseModel):
     summary: BatterySignalSummary
     dispatch: List[DispatchRow]
+
+
+class BacktestRequest(BaseModel):
+    price_data: List[PricePoint]
+    battery_config: Optional[BatteryConfigRequest] = None
+    strategy_config: Optional[StrategyConfigRequest] = None
+
+
+class BacktestSummary(BaseModel):
+    total_pnl_eur: float
+    hours: int
+    charge_hours: int
+    discharge_hours: int
+    idle_hours: int
+    min_soc_mwh: Optional[float] = None
+    max_soc_mwh: Optional[float] = None
+    average_pnl_per_hour_eur: float
+
+
+class BacktestResponse(BaseModel):
+    summary: BacktestSummary
+    dispatch: List[DispatchRow]
