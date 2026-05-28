@@ -430,6 +430,45 @@ col6.metric("Discharge Hours", summary["discharge_hours"])
 col7.metric("First Charge", summary["first_charge_timestamp"] or "-")
 col8.metric("First Discharge", summary["first_discharge_timestamp"] or "-")
 
+st.header("Signal Explanation")
+
+explanation_response = get_json("/battery/signal/latest/explanation")
+
+if explanation_response is None:
+    st.warning("Could not load signal explanation.")
+
+elif explanation_response.get("status") != "ok":
+    st.warning(explanation_response.get("message", "No explanation available."))
+
+else:
+    st.info(explanation_response["explanation"])
+
+st.header("Risk Flags")
+
+risk_response = get_json("/battery/signal/latest/risks")
+
+if risk_response is None:
+    st.warning("Could not load risk flags.")
+
+elif risk_response.get("status") != "ok":
+    st.warning(risk_response.get("message", "No risk flags available."))
+
+else:
+    risks = risk_response.get("risks", [])
+
+    if not risks:
+        st.info("No risk flags returned.")
+    else:
+        for risk in risks:
+            level = risk.get("level", "info")
+            message = risk.get("message", "")
+
+            if level == "high":
+                st.error(message)
+            elif level == "medium":
+                st.warning(message)
+            else:
+                st.info(message)
 
 st.header("Dispatch Schedule")
 
