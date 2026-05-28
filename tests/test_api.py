@@ -93,3 +93,53 @@ def test_battery_backtest_endpoint():
     assert "summary" in data
     assert "dispatch" in data
     assert len(data["dispatch"]) == 3
+
+
+def test_forecast_features_endpoint():
+    response = client.get("/features/forecast")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert "status" in data
+
+
+def test_battery_constraints_endpoint():
+    response = client.get("/battery/constraints")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert "status" in data
+
+    if data["status"] == "ok":
+        assert "usable_capacity_mwh" in data
+        assert "charge_duration_hours" in data
+        assert "discharge_duration_hours" in data
+
+
+def test_system_health_endpoint():
+    response = client.get("/system/health")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert "status" in data
+    assert "checks" in data
+
+def test_run_latest_battery_signal_endpoint():
+    response = client.post("/battery/signal/run-latest")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert "status" in data
+
+    if data["status"] == "ok":
+        assert "data" in data
+        assert "summary" in data["data"]
+        assert "dispatch" in data["data"]

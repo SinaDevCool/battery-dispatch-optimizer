@@ -1,11 +1,57 @@
 from pathlib import Path
 
+from src.features.forecast_quality_features import build_forecast_quality_features
+from src.features.negative_price_features import build_negative_price_features
+
+
+def build_feature_summary_html(forecast_df=None):
+    if forecast_df is None or forecast_df.empty:
+        return """
+<h2>Forecast Feature Summary</h2>
+<p>No forecast data available for feature summary.</p>
+"""
+
+    quality_features = build_forecast_quality_features(
+        forecast_df,
+        price_column="forecast_price",
+    )
+
+    negative_features = build_negative_price_features(
+        forecast_df,
+        price_column="forecast_price",
+    )
+
+    rows = []
+
+    for key, value in quality_features.items():
+        rows.append(
+            f"<tr><td>{key}</td><td>{value}</td></tr>"
+        )
+
+    for key, value in negative_features.items():
+        rows.append(
+            f"<tr><td>{key}</td><td>{value}</td></tr>"
+        )
+
+    return f"""
+<h2>Forecast Feature Summary</h2>
+
+<table>
+    <tr>
+        <th>Feature</th>
+        <th>Value</th>
+    </tr>
+    {''.join(rows)}
+</table>
+"""
+
 
 def build_monthly_report_html(
     report_month,
     monthly_negative=None,
     battery_monthly=None,
     alert_summary=None,
+    forecast_df=None,
 ):
     negative_hours = 0
     negative_share = 0
@@ -48,6 +94,8 @@ def build_monthly_report_html(
             "count",
         ].sum()
 
+    feature_summary_html = build_feature_summary_html(forecast_df)
+
     html = f"""
 <!DOCTYPE html>
 <html>
@@ -63,6 +111,22 @@ def build_monthly_report_html(
 
         h1, h2 {{
             color: #111827;
+        }}
+
+        table {{
+            border-collapse: collapse;
+            width: 100%;
+            margin: 20px 0;
+        }}
+
+        th, td {{
+            border: 1px solid #e5e7eb;
+            padding: 8px 10px;
+            text-align: left;
+        }}
+
+        th {{
+            background: #f3f4f6;
         }}
 
         .subtitle {{
@@ -157,6 +221,8 @@ Total alerts: <b>{total_alerts:.0f}</b>.
 High alerts: <b>{high_alerts:.0f}</b>.
 Medium alerts: <b>{medium_alerts:.0f}</b>.
 </p>
+
+{feature_summary_html}
 
 <div class="note">
 This report is based on a simplified battery dispatch model.

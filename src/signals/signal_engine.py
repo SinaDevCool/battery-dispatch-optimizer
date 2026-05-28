@@ -1,8 +1,20 @@
 import pandas as pd
 
 from src.config.battery_config import DEFAULT_BATTERY_CONFIG, DEFAULT_STRATEGY_CONFIG
+from src.config.commercial_config import DEFAULT_COMMERCIAL_CONFIG
 from src.optimizer.battery_optimizer import BatteryOptimizer
 from src.optimizer.dispatch_strategy import find_daily_arbitrage_hours
+from src.features.battery_usage_features import build_battery_usage_features
+
+
+OPTIMIZER_COMMERCIAL_KEYS = [
+    "trading_fee_eur_per_mwh",
+    "market_access_fee_eur_per_mwh",
+    "grid_fee_import_eur_per_mwh",
+    "grid_fee_export_eur_per_mwh",
+    "tax_or_levy_eur_per_mwh",
+    "degradation_cost_eur_per_mwh_throughput",
+]
 
 
 def classify_opportunity(profit_per_mw_day):
@@ -19,6 +31,7 @@ def generate_battery_signal(
     price_data,
     battery_config=None,
     strategy_config=None,
+    commercial_config=None,
 ):
     if battery_config is None:
         battery_config = DEFAULT_BATTERY_CONFIG
@@ -26,7 +39,21 @@ def generate_battery_signal(
     if strategy_config is None:
         strategy_config = DEFAULT_STRATEGY_CONFIG
 
-    battery = BatteryOptimizer(**battery_config)
+    if commercial_config is None:
+        commercial_config = DEFAULT_COMMERCIAL_CONFIG
+
+    optimizer_commercial_config = {
+        key: value
+        for key, value in commercial_config.items()
+        if key in OPTIMIZER_COMMERCIAL_KEYS
+    }
+
+    optimizer_config = {
+        **battery_config,
+        **optimizer_commercial_config,
+    }
+
+    battery = BatteryOptimizer(**optimizer_config)
 
     strategy_hours = find_daily_arbitrage_hours(
         price_data=price_data,
@@ -64,6 +91,11 @@ def generate_battery_signal(
     charge_rows = [row for row in dispatch_rows if row["action"] == "charge"]
     discharge_rows = [row for row in dispatch_rows if row["action"] == "discharge"]
 
+    usage_features = build_battery_usage_features(
+    dispatch_rows=dispatch_rows,
+    capacity_mwh=battery_config["capacity_mwh"],
+    )
+
     signal = "ACTION" if total_pnl_eur > 0 else "NO_ACTION"
 
     summary = {
@@ -75,6 +107,10 @@ def generate_battery_signal(
         "discharge_hours": len(discharge_rows),
         "first_charge_timestamp": charge_rows[0]["timestamp"] if charge_rows else None,
         "first_discharge_timestamp": discharge_rows[0]["timestamp"] if discharge_rows else None,
+        "charged_mwh": usage_features["charged_mwh"],
+        "discharged_mwh": usage_features["discharged_mwh"],
+        "throughput_mwh": usage_features["throughput_mwh"],
+        "equivalent_full_cycles": usage_features["equivalent_full_cycles"],
     }
 
     return {
@@ -108,6 +144,7 @@ def generate_signal_from_dataframe(
     price_column="forecast_price",
     battery_config=None,
     strategy_config=None,
+    commercial_config=None,
 ):
     forecast_df = forecast_df.copy()
 
@@ -133,4 +170,5 @@ def generate_signal_from_dataframe(
         price_data=price_data,
         battery_config=battery_config,
         strategy_config=strategy_config,
+        commercial_config=commercial_config,
     )

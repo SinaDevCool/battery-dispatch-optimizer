@@ -52,6 +52,37 @@ if status is None:
 
 st.success("API is running")
 
+system_health = get_json("/system/health")
+
+st.header("System Health")
+
+if system_health is None:
+    st.warning("Could not load system health.")
+
+else:
+    checks = system_health.get("checks", {})
+    missing_required = system_health.get("missing_required", [])
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric("System", system_health.get("status", "-"))
+    col2.metric("Client Config", "OK" if checks.get("client_config") else "Missing")
+    col3.metric("Forecast", "OK" if checks.get("forecast_file") else "Missing")
+    col4.metric("Latest Signal", "OK" if checks.get("latest_signal") else "Missing")
+
+    col5, col6, col7 = st.columns(3)
+
+    col5.metric("Scenarios", "OK" if checks.get("scenario_results") else "Missing")
+    col6.metric("Monthly Report", "OK" if checks.get("monthly_report") else "Missing")
+    col7.metric("ENTSO-E Token", "OK" if checks.get("entsoe_token") else "Missing")
+
+    if missing_required:
+        st.warning("Missing required items: " + ", ".join(missing_required))
+    elif not checks.get("entsoe_token"):
+        st.info("System is ready in local CSV mode. Add ENTSO-E token later for live market data.")
+    else:
+        st.success("System is fully ready.")
+
 st.header("Daily Workflow")
 
 if st.button("Run Full Daily Workflow"):
@@ -101,6 +132,131 @@ if data_status and data_status.get("status") == "ok":
 
 else:
     st.warning("Could not load data status.")
+
+
+forecast_quality = get_json("/forecast/status")
+
+st.header("Forecast Quality")
+
+if forecast_quality is None:
+    st.warning("Could not load forecast quality status.")
+
+elif forecast_quality.get("status") != "ok":
+    st.warning(forecast_quality.get("message", "Forecast quality check failed."))
+
+else:
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric("Rows", forecast_quality["row_count"])
+    col2.metric("Valid Rows", forecast_quality["valid_row_count"])
+    col3.metric("Negative Prices", forecast_quality["negative_price_hours"])
+    col4.metric("Duplicate Timestamps", forecast_quality["duplicate_timestamps"])
+
+    col5, col6, col7 = st.columns(3)
+
+    col5.metric("Min Price", f"{forecast_quality['min_price']} EUR/MWh")
+    col6.metric("Max Price", f"{forecast_quality['max_price']} EUR/MWh")
+    col7.metric("Average Price", f"{forecast_quality['average_price']} EUR/MWh")
+
+    with st.expander("Forecast time range"):
+        st.write("First timestamp:", forecast_quality["first_timestamp"])
+        st.write("Last timestamp:", forecast_quality["last_timestamp"])
+        st.write("Invalid timestamps:", forecast_quality["invalid_timestamps"])
+        st.write("Missing prices:", forecast_quality["missing_prices"])
+
+
+st.header("Saved Forecast Preview")
+
+try:
+    saved_forecast_df = pd.read_csv("data/processed/next_day_price_forecast.csv")
+    saved_forecast_df["timestamp"] = pd.to_datetime(
+        saved_forecast_df["timestamp"],
+        errors="coerce",
+    )
+
+    st.dataframe(saved_forecast_df, use_container_width=True)
+
+    st.line_chart(
+        saved_forecast_df,
+        x="timestamp",
+        y="forecast_price",
+        use_container_width=True,
+    )
+
+    forecast_csv = saved_forecast_df.to_csv(index=False).encode("utf-8")
+
+    st.download_button(
+        label="Download Saved Forecast CSV",
+        data=forecast_csv,
+        file_name="next_day_price_forecast.csv",
+        mime="text/csv",
+    )
+
+    st.subheader("Edit Saved Forecast")
+
+    editable_forecast_df = st.data_editor(
+        saved_forecast_df,
+        use_container_width=True,
+        num_rows="dynamic",
+    )
+
+    if st.button("Save Edited Forecast"):
+        edited_df = editable_forecast_df.copy()
+
+        edited_df["timestamp"] = pd.to_datetime(
+            edited_df["timestamp"],
+            errors="coerce",
+        )
+
+        edited_df["forecast_price"] = pd.to_numeric(
+            edited_df["forecast_price"],
+            errors="coerce",
+        )
+
+        edited_df = edited_df.dropna(subset=["timestamp", "forecast_price"])
+        edited_df = edited_df.drop_duplicates(subset=["timestamp"])
+        edited_df = edited_df.sort_values("timestamp")
+
+        price_data = []
+
+        for _, row in edited_df.iterrows():
+            price_data.append(
+                {
+                    "timestamp": str(row["timestamp"]),
+                    "price": float(row["forecast_price"]),
+                }
+            )
+
+        response = post_json(
+            "/forecast/upload",
+            {
+                "price_data": price_data,
+            },
+        )
+
+        if response and response.get("status") == "ok":
+            st.success("Edited forecast saved and signal regenerated.")
+            st.rerun()
+        else:
+            st.warning("Could not save edited forecast.")
+
+except FileNotFoundError:
+    st.info("No saved forecast file found yet.")
+
+except Exception as error:
+    st.warning(f"Could not preview saved forecast: {error}")
+
+st.header("Demo Forecast")
+
+if st.button("Create 24-Hour Demo Forecast"):
+    response = post_json("/forecast/demo")
+
+    if response and response.get("status") == "ok":
+        st.success(f"Demo forecast created with {response.get('rows')} rows.")
+        st.info("Click Generate Daily Battery Signal to use it.")
+        st.rerun()
+    else:
+        st.warning("Could not create demo forecast.")
 
 st.header("Forecast Upload")
 
@@ -158,34 +314,35 @@ if uploaded_file is not None:
         elif row_count < 2:
             st.error("Forecast must contain at least 2 rows.")
 
-        elif row_count != 24:
-            st.warning(
-                f"Forecast has {row_count} rows. Expected 24 hourly rows for a full next-day signal."
-        )
-
-        elif st.button("Save Forecast CSV"):
-            price_data = []
-
-            for _, row in forecast_df.iterrows():
-                price_data.append(
-                    {
-                        "timestamp": str(row["timestamp"]),
-                        "price": float(row["forecast_price"]),
-                    }
+        else:
+            if row_count != 24:
+                st.warning(
+                    f"Forecast has {row_count} rows. Expected 24 hourly rows for a full next-day signal."
                 )
 
-            response = post_json(
-                "/forecast/upload",
-                {
-                    "price_data": price_data,
-                },
-            )
+            if st.button("Save Forecast CSV"):
+                price_data = []
 
-            if response and response.get("status") == "ok":
-                st.info("Battery signal was generated automatically. The dashboard will refresh.")
-                st.rerun()  
-            else:
-                st.warning("Forecast upload failed.")
+                for _, row in forecast_df.iterrows():
+                    price_data.append(
+                        {
+                            "timestamp": str(row["timestamp"]),
+                            "price": float(row["forecast_price"]),
+                        }
+                    )
+
+                response = post_json(
+                    "/forecast/upload",
+                    {
+                        "price_data": price_data,
+                    },
+                )
+
+                if response and response.get("status") == "ok":
+                    st.info("Battery signal was generated automatically. The dashboard will refresh.")
+                    st.rerun()
+                else:
+                    st.warning("Forecast upload failed.")
 
     except Exception as error:
         st.error(f"Could not read forecast CSV: {error}")
@@ -225,7 +382,6 @@ if st.button("Generate Daily Battery Signal"):
 
 
 client_config_response = get_json("/client/config")
-
 
 if client_config_response and client_config_response.get("status") == "ok":
     editable_client_config = client_config_response["config"]
@@ -321,6 +477,49 @@ if client_config_response and client_config_response.get("status") == "ok":
             value=float(strategy_cfg["timestep_hours"]),
         )
 
+        st.subheader("Commercial Costs")
+
+        trading_fee_eur_per_mwh = st.number_input(
+            "Trading fee EUR/MWh",
+            min_value=0.0,
+            value=float(commercial_cfg.get("trading_fee_eur_per_mwh", 0.20)),
+        )
+
+        market_access_fee_eur_per_mwh = st.number_input(
+            "Market access fee EUR/MWh",
+            min_value=0.0,
+            value=float(commercial_cfg.get("market_access_fee_eur_per_mwh", 0.30)),
+        )
+
+        grid_fee_import_eur_per_mwh = st.number_input(
+            "Grid import fee EUR/MWh",
+            min_value=0.0,
+            value=float(commercial_cfg.get("grid_fee_import_eur_per_mwh", 0.0)),
+        )
+
+        grid_fee_export_eur_per_mwh = st.number_input(
+            "Grid export fee EUR/MWh",
+            min_value=0.0,
+            value=float(commercial_cfg.get("grid_fee_export_eur_per_mwh", 0.0)),
+        )
+
+        tax_or_levy_eur_per_mwh = st.number_input(
+            "Tax or levy EUR/MWh",
+            min_value=0.0,
+            value=float(commercial_cfg.get("tax_or_levy_eur_per_mwh", 0.0)),
+        )
+
+        degradation_cost_eur_per_mwh_throughput = st.number_input(
+            "Degradation cost EUR/MWh throughput",
+            min_value=0.0,
+            value=float(
+                commercial_cfg.get(
+                    "degradation_cost_eur_per_mwh_throughput",
+                    3.0,
+                )
+            ),
+        )
+
         save_clicked = st.button("Save Client Config")
 
         if save_clicked:
@@ -363,7 +562,14 @@ if client_config_response and client_config_response.get("status") == "ok":
                     "high_price_threshold": high_price_threshold,
                     "timestep_hours": timestep_hours,
                 },
-                "commercial_config": commercial_cfg,
+                "commercial_config": {
+                    "trading_fee_eur_per_mwh": trading_fee_eur_per_mwh,
+                    "market_access_fee_eur_per_mwh": market_access_fee_eur_per_mwh,
+                    "grid_fee_import_eur_per_mwh": grid_fee_import_eur_per_mwh,
+                    "grid_fee_export_eur_per_mwh": grid_fee_export_eur_per_mwh,
+                    "tax_or_levy_eur_per_mwh": tax_or_levy_eur_per_mwh,
+                    "degradation_cost_eur_per_mwh_throughput": degradation_cost_eur_per_mwh_throughput,
+                },
             }
 
             response = post_json("/client/config", updated_config)
@@ -371,6 +577,11 @@ if client_config_response and client_config_response.get("status") == "ok":
             if response and response.get("status") == "ok":
                 st.success("Client config saved.")
                 st.info("Click Generate Daily Battery Signal to use the updated config.")
+            elif response and response.get("status") == "invalid":
+                for error in response.get("errors", []):
+                    st.error(error)
+            else:
+                st.error("Could not save client config.")
 
 
 st.header("Client / Site")
@@ -419,6 +630,40 @@ if config:
     col8.metric("High Price Threshold", f"{strategy_config['high_price_threshold']} EUR/MWh")
 
 
+battery_constraints = get_json("/battery/constraints")
+
+st.header("Battery Constraints")
+
+if battery_constraints is None:
+    st.warning("Could not load battery constraints.")
+
+elif battery_constraints.get("status") != "ok":
+    st.warning(battery_constraints.get("message", "Battery constraints unavailable."))
+
+else:
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric(
+        "Usable Capacity",
+        f"{battery_constraints['usable_capacity_mwh']} MWh",
+    )
+
+    col2.metric(
+        "Initial Usable SOC",
+        f"{battery_constraints['initial_usable_soc_mwh']} MWh",
+    )
+
+    col3.metric(
+        "Charge Duration",
+        f"{battery_constraints['charge_duration_hours']} h",
+    )
+
+    col4.metric(
+        "Discharge Duration",
+        f"{battery_constraints['discharge_duration_hours']} h",
+    )
+
+
 st.header("Latest Battery Signal")
 
 if latest_signal is None:
@@ -434,6 +679,51 @@ signal_data = latest_signal["data"]
 summary = signal_data["summary"]
 dispatch = signal_data["dispatch"]
 
+recommendation = "No dispatch action recommended."
+
+if summary["signal"] == "ACTION":
+    recommendation = (
+        f"Dispatch recommended. Charge for {summary['charge_hours']} hour(s), "
+        f"discharge for {summary['discharge_hours']} hour(s), "
+        f"expected PnL {summary['total_pnl_eur']} EUR."
+    )
+
+if summary["opportunity_level"] == "high":
+    st.success(recommendation)
+elif summary["opportunity_level"] == "medium":
+    st.info(recommendation)
+elif summary["opportunity_level"] == "low":
+    st.warning(recommendation)
+else:
+    st.warning(recommendation)
+
+action_rows = [
+    row for row in dispatch
+    if row["action"] in ["charge", "discharge"]
+]
+
+st.subheader("Why This Action?")
+
+if action_rows:
+    action_df = pd.DataFrame(action_rows)
+
+    st.dataframe(
+        action_df[
+            [
+                "timestamp",
+                "price",
+                "action",
+                "grid_energy_mwh",
+                "battery_energy_mwh",
+                "market_value_eur",
+                "cost_eur",
+                "pnl_eur",
+            ]
+        ],
+        use_container_width=True,
+    )
+else:
+    st.info("No charge or discharge actions selected.")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -449,6 +739,26 @@ col5.metric("Charge Hours", summary["charge_hours"])
 col6.metric("Discharge Hours", summary["discharge_hours"])
 col7.metric("First Charge", summary["first_charge_timestamp"] or "-")
 col8.metric("First Discharge", summary["first_discharge_timestamp"] or "-")
+
+col9, col10, col11, col12 = st.columns(4)
+
+col9.metric("Charged Energy", f"{summary.get('charged_mwh', 0)} MWh")
+col10.metric("Discharged Energy", f"{summary.get('discharged_mwh', 0)} MWh")
+col11.metric("Throughput", f"{summary.get('throughput_mwh', 0)} MWh")
+col12.metric("Equivalent Cycles", summary.get("equivalent_full_cycles", 0))
+
+if dispatch:
+    dispatch_cost_df = pd.DataFrame(dispatch)
+
+    total_market_value = dispatch_cost_df["market_value_eur"].sum()
+    total_cost = dispatch_cost_df["cost_eur"].sum()
+    total_dispatch_pnl = dispatch_cost_df["pnl_eur"].sum()
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("Market Value", f"{total_market_value:.2f} EUR")
+    col2.metric("Commercial Costs", f"{total_cost:.2f} EUR")
+    col3.metric("Dispatch PnL", f"{total_dispatch_pnl:.2f} EUR")
 
 st.header("Signal Explanation")
 
@@ -496,6 +806,39 @@ if dispatch:
     dispatch_df = pd.DataFrame(dispatch)
     dispatch_df["timestamp"] = pd.to_datetime(dispatch_df["timestamp"], errors="coerce")
 
+    selected_actions = st.multiselect(
+        "Filter dispatch actions",
+        options=["charge", "discharge", "idle"],
+        default=["charge", "discharge", "idle"],
+    )
+
+    filtered_dispatch_df = dispatch_df[
+        dispatch_df["action"].isin(selected_actions)
+    ]
+
+    st.subheader("Forecast + Dispatch View")
+
+    dispatch_view_df = dispatch_df[
+        [
+            "timestamp",
+            "price",
+            "action",
+            "soc_mwh",
+            "grid_energy_mwh",
+            "battery_energy_mwh",
+            "market_value_eur",
+            "cost_eur",
+            "pnl_eur",
+            "total_pnl_eur",
+        ]
+    ].copy()
+
+    filtered_dispatch_view_df = dispatch_view_df[
+        dispatch_view_df["action"].isin(selected_actions)
+    ]
+
+    st.dataframe(filtered_dispatch_view_df, use_container_width=True)
+
     st.subheader("Forecast Price")
     st.line_chart(
         dispatch_df,
@@ -520,7 +863,8 @@ if dispatch:
         use_container_width=True,
     )
 
-    dispatch_csv = dispatch_df.to_csv(index=False).encode("utf-8")
+    dispatch_csv = filtered_dispatch_view_df.to_csv(index=False).encode("utf-8")
+
     st.download_button(
         label="Download Dispatch CSV",
         data=dispatch_csv,
@@ -528,8 +872,6 @@ if dispatch:
         mime="text/csv",
     )
 
-    st.subheader("Dispatch Table")
-    st.dataframe(dispatch_df, use_container_width=True)
 
 else:
     st.info("No dispatch rows available.")
@@ -553,6 +895,53 @@ else:
         history_df = pd.DataFrame(runs)
 
         st.dataframe(history_df, use_container_width=True)
+
+        selected_run_file = st.selectbox(
+            "Select historical run",
+            history_df["file_name"].tolist(),
+        )
+
+        if selected_run_file:
+            selected_run_response = get_json(
+            f"/battery/signal/history/{selected_run_file}"
+            )
+
+            selected_dispatch = []
+            if selected_run_response and selected_run_response.get("status") == "ok":
+                selected_run = selected_run_response["data"]
+
+                st.subheader("Selected Historical Run")
+
+                selected_summary = selected_run.get("summary", {})
+                selected_dispatch = selected_run.get("dispatch", [])
+
+                col1, col2, col3, col4 = st.columns(4)
+
+                col1.metric("Signal", selected_summary.get("signal", "-"))
+                col2.metric("Opportunity", selected_summary.get("opportunity_level", "-"))
+                col3.metric("Total PnL", f"{selected_summary.get('total_pnl_eur', 0)} EUR")
+                col4.metric(
+                    "Profit per MW-day",
+                    f"{selected_summary.get('profit_per_mw_day', 0)} EUR/MW-day",
+                )
+
+            if selected_dispatch:
+                selected_dispatch_df = pd.DataFrame(selected_dispatch)
+                selected_dispatch_df["timestamp"] = pd.to_datetime(
+                    selected_dispatch_df["timestamp"],
+                    errors="coerce",
+                )
+
+                st.line_chart(
+                    selected_dispatch_df,
+                    x="timestamp",
+                    y="total_pnl_eur",
+                    use_container_width=True,
+                )
+
+                st.dataframe(selected_dispatch_df, use_container_width=True)
+            else:
+                st.info("Selected run has no dispatch rows.")
 
         history_csv = history_df.to_csv(index=False).encode("utf-8")
 
@@ -619,3 +1008,95 @@ else:
         col4.metric("Opportunity", best_scenario["opportunity_level"])
     else:
         st.info("Scenario result list is empty.")
+
+
+st.header("Price Stress Tests")
+
+if st.button("Run Price Stress Tests"):
+    response = post_json("/stress/run-latest")
+
+    if response is None:
+        st.error("Could not run price stress tests.")
+
+    elif response.get("status") == "ok":
+        st.success("Price stress tests completed successfully.")
+        st.rerun()
+
+    else:
+        st.warning(response.get("message", "Price stress tests could not be generated."))
+
+
+stress_data = get_json("/stress/latest")
+
+if stress_data is None:
+    st.warning("Could not load price stress results.")
+
+elif stress_data.get("status") != "ok":
+    st.info(stress_data.get("message", "No price stress results available."))
+
+else:
+    stress_results = stress_data.get("results", [])
+
+    if stress_results:
+        stress_df = pd.DataFrame(stress_results)
+
+        st.dataframe(stress_df, use_container_width=True)
+
+        stress_csv = stress_df.to_csv(index=False).encode("utf-8")
+
+        st.download_button(
+            label="Download Price Stress CSV",
+            data=stress_csv,
+            file_name="price_stress_results.csv",
+            mime="text/csv",
+        )
+
+        base_case = stress_df[stress_df["scenario_name"] == "Base case"]
+
+        if not base_case.empty:
+            base_pnl = float(base_case.iloc[0]["total_pnl_eur"])
+            stress_df["pnl_delta_vs_base"] = stress_df["total_pnl_eur"] - base_pnl
+
+            st.subheader("PnL Sensitivity vs Base Case")
+            st.bar_chart(
+                stress_df,
+                x="scenario_name",
+                y="pnl_delta_vs_base",
+                use_container_width=True,
+            )
+    else:
+        st.info("Price stress result list is empty.")
+
+st.header("Monthly Report")
+
+report_response = get_json("/reports/monthly/latest")
+
+if report_response is None:
+    st.warning("Could not load monthly report status.")
+
+elif report_response.get("status") != "ok":
+    st.info(report_response.get("message", "No monthly report available."))
+
+else:
+    st.success(f"Latest report available: {report_response['report_name']}")
+
+    report_url = f"{API_BASE_URL}/reports/monthly/latest/view"
+
+    st.link_button(
+        "Open Latest Monthly Report",
+        report_url,
+    )
+
+    try:
+        report_html_response = requests.get(report_url, timeout=10)
+        report_html_response.raise_for_status()
+
+        st.download_button(
+            label="Download Monthly Report HTML",
+            data=report_html_response.text,
+            file_name=report_response["report_name"],
+            mime="text/html",
+        )
+
+    except requests.RequestException as error:
+        st.warning(f"Could not download monthly report: {error}")

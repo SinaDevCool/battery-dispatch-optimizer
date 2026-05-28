@@ -1,6 +1,21 @@
 import pandas as pd
 
 
+def _normalize_timestamp(df):
+    if df is None or df.empty:
+        return df
+
+    df = df.copy()
+
+    if "timestamp" in df.columns:
+        df["timestamp"] = pd.to_datetime(
+            df["timestamp"],
+            errors="coerce",
+        )
+
+    return df
+
+
 def merge_market_and_renewables(
     spot_df,
     solar_df=None,
@@ -9,7 +24,7 @@ def merge_market_and_renewables(
     online_wind_onshore_df=None,
     online_wind_offshore_df=None,
 ):
-    market_df = spot_df.copy()
+    market_df = _normalize_timestamp(spot_df)
 
     dataframes_to_merge = [
         solar_df,
@@ -20,6 +35,8 @@ def merge_market_and_renewables(
     ]
 
     for df_part in dataframes_to_merge:
+        df_part = _normalize_timestamp(df_part)
+
         if df_part is not None and not df_part.empty:
             market_df = market_df.merge(df_part, on="timestamp", how="left")
 
@@ -41,6 +58,112 @@ def merge_market_and_renewables(
     market_df = market_df.sort_values("timestamp").reset_index(drop=True)
 
     return market_df
+
+
+def build_renewable_forecast_features(
+    forecast_df,
+    solar_column="solar_forecast",
+    wind_column="wind_forecast",
+):
+    df = forecast_df.copy()
+
+    has_solar = solar_column in df.columns
+    has_wind = wind_column in df.columns
+
+    if not has_solar and not has_wind:
+        return {
+            "status": "not_available",
+            "message": "No solar or wind forecast columns found.",
+        }
+
+    if has_solar:
+        df[solar_column] = pd.to_numeric(
+            df[solar_column],
+            errors="coerce",
+        )
+
+    if has_wind:
+        df[wind_column] = pd.to_numeric(
+            df[wind_column],
+            errors="coerce",
+        )
+
+    if has_solar and has_wind:
+        df["renewables_forecast_total"] = (
+            df[solar_column].fillna(0) + df[wind_column].fillna(0)
+        )
+    elif has_solar:
+        df["renewables_forecast_total"] = df[solar_column]
+    else:
+        df["renewables_forecast_total"] = df[wind_column]
+
+    renewable_series = df["renewables_forecast_total"].dropna()
+
+    if renewable_series.empty:
+        return {
+            "status": "invalid",
+            "message": "Renewable forecast columns contain no valid numeric values.",
+        }
+
+    return {
+        "status": "ok",
+        "avg_renewables_forecast": round(float(renewable_series.mean()), 2),
+        "max_renewables_forecast": round(float(renewable_series.max()), 2),
+        "min_renewables_forecast": round(float(renewable_series.min()), 2),
+        "renewables_volatility": round(float(renewable_series.std()), 2),
+        "high_renewables_hours": int(
+            (renewable_series >= renewable_series.quantile(0.75)).sum()
+        ),
+        "low_renewables_hours": int(
+            (renewable_series <= renewable_series.quantile(0.25)).sum()
+        ),
+    }
+
+
+def add_renewable_pressure_labels(
+    forecast_df,
+    solar_column="solar_forecast",
+    wind_column="wind_forecast",
+):
+    df = forecast_df.copy()
+
+    has_solar = solar_column in df.columns
+    has_wind = wind_column in df.columns
+
+    if not has_solar and not has_wind:
+        df["renewable_pressure"] = "unknown"
+        return df
+
+    if has_solar:
+        df[solar_column] = pd.to_numeric(df[solar_column], errors="coerce")
+
+    if has_wind:
+        df[wind_column] = pd.to_numeric(df[wind_column], errors="coerce")
+
+    if has_solar and has_wind:
+        df["renewables_forecast_total"] = (
+            df[solar_column].fillna(0) + df[wind_column].fillna(0)
+        )
+    elif has_solar:
+        df["renewables_forecast_total"] = df[solar_column]
+    else:
+        df["renewables_forecast_total"] = df[wind_column]
+
+    low_threshold = df["renewables_forecast_total"].quantile(0.25)
+    high_threshold = df["renewables_forecast_total"].quantile(0.75)
+
+    def classify_pressure(value):
+        if pd.isna(value):
+            return "unknown"
+        if value >= high_threshold:
+            return "high"
+        if value <= low_threshold:
+            return "low"
+        return "normal"
+
+    df["renewable_pressure"] = df["renewables_forecast_total"].apply(classify_pressure)
+
+    return df
 
 
 def calculate_price_renewables_correlation(market_df):

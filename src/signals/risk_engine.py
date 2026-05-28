@@ -1,4 +1,10 @@
-def build_risk_flags(signal_result):
+import pandas as pd
+
+from src.features.forecast_quality_features import build_forecast_quality_features
+from src.features.negative_price_features import build_negative_price_features
+
+
+def build_risk_flags(signal_result, forecast_df=None):
     summary = signal_result.get("summary", {})
     dispatch = signal_result.get("dispatch", [])
 
@@ -108,6 +114,74 @@ def build_risk_flags(signal_result):
                 "message": f"SOC ranges from {min_soc:.2f} MWh to {max_soc:.2f} MWh during the dispatch.",
             }
         )
+
+    equivalent_full_cycles = summary.get("equivalent_full_cycles")
+
+    if equivalent_full_cycles is not None:
+        if equivalent_full_cycles >= 1.0:
+            flags.append(
+                {
+                    "level": "high",
+                    "type": "high_cycle_usage",
+                    "message": f"Equivalent full cycles are high for one day: {equivalent_full_cycles:.2f}.",
+                }
+            )
+
+        elif equivalent_full_cycles >= 0.5:
+            flags.append(
+                {
+                    "level": "medium",
+                    "type": "medium_cycle_usage",
+                    "message": f"Equivalent full cycles are moderate: {equivalent_full_cycles:.2f}.",
+                }
+            )
+
+    if forecast_df is not None:
+        quality_features = build_forecast_quality_features(
+            forecast_df,
+            price_column="forecast_price",
+        )
+
+        negative_features = build_negative_price_features(
+            forecast_df,
+            price_column="forecast_price",
+        )
+
+        if quality_features.get("valid_row_count", 0) < 24:
+            flags.append(
+                {
+                    "level": "medium",
+                    "type": "forecast_quality_short_forecast",
+                    "message": "Forecast quality check confirms fewer than 24 valid forecast rows.",
+                }
+            )
+
+        if quality_features.get("duplicate_timestamps", 0) > 0:
+            flags.append(
+                {
+                    "level": "high",
+                    "type": "forecast_duplicate_timestamps",
+                    "message": "Forecast contains duplicate timestamps.",
+                }
+            )
+
+        if quality_features.get("missing_prices", 0) > 0:
+            flags.append(
+                {
+                    "level": "high",
+                    "type": "forecast_missing_prices",
+                    "message": "Forecast contains missing or invalid prices.",
+                }
+            )
+
+        if negative_features.get("negative_price_hours", 0) > 0:
+            flags.append(
+                {
+                    "level": "info",
+                    "type": "forecast_negative_prices",
+                    "message": f"Forecast contains {negative_features['negative_price_hours']} negative-price hour(s).",
+                }
+            )
 
     if not flags:
         flags.append(

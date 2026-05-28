@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -17,11 +18,25 @@ from src.backtesting.metrics import calculate_backtest_metrics
 from src.config.battery_config import DEFAULT_BATTERY_CONFIG, DEFAULT_STRATEGY_CONFIG
 from src.config.client_config import load_client_config, save_client_config
 from src.scenarios.scenario_runner import run_scenarios
+from src.scenarios.stress_runner import run_price_stress_tests
 from src.signals.signal_engine import generate_battery_signal
 from src.signals.explanation_engine import explain_battery_signal
 from src.signals.risk_engine import build_risk_flags
 from src.markets.data_loader import load_price_data_for_optimizer
 from src.markets.entsoe_client import get_latest_available_price_forecast
+from src.features.forecast_quality_features import build_forecast_quality_features
+from src.features.negative_price_features import build_negative_price_features
+from src.forecasts.forecast_loader import load_forecast_price_data
+from src.config.paths import (
+    CLIENT_CONFIG_FILE,
+    FORECAST_FILE,
+    LATEST_SIGNAL_FILE,
+    MONTHLY_REPORT_PATTERN,
+    OUTPUT_DATA_DIR,
+    PRICE_STRESS_RESULTS_FILE,
+    SCENARIO_RESULTS_FILE,
+    SIGNAL_RUNS_DIR,
+)
 
 
 app = FastAPI(
@@ -90,6 +105,79 @@ def validate_forecast_dataframe(df):
 
     return True, "Forecast is valid."
 
+def validate_client_config(config):
+    errors = []
+
+    battery_config = config.get("battery_config", {})
+    strategy_config = config.get("strategy_config", {})
+
+    capacity_mwh = battery_config.get("capacity_mwh")
+    initial_soc_mwh = battery_config.get("initial_soc_mwh")
+    min_soc_mwh = battery_config.get("min_soc_mwh")
+    max_charge_power_mw = battery_config.get("max_charge_power_mw")
+    max_discharge_power_mw = battery_config.get("max_discharge_power_mw")
+    charge_efficiency = battery_config.get("charge_efficiency")
+    discharge_efficiency = battery_config.get("discharge_efficiency")
+
+    low_price_threshold = strategy_config.get("low_price_threshold")
+    high_price_threshold = strategy_config.get("high_price_threshold")
+    timestep_hours = strategy_config.get("timestep_hours")
+
+    required_fields = {
+        "battery_config.capacity_mwh": capacity_mwh,
+        "battery_config.initial_soc_mwh": initial_soc_mwh,
+        "battery_config.min_soc_mwh": min_soc_mwh,
+        "battery_config.max_charge_power_mw": max_charge_power_mw,
+        "battery_config.max_discharge_power_mw": max_discharge_power_mw,
+        "battery_config.charge_efficiency": charge_efficiency,
+        "battery_config.discharge_efficiency": discharge_efficiency,
+        "strategy_config.low_price_threshold": low_price_threshold,
+        "strategy_config.high_price_threshold": high_price_threshold,
+        "strategy_config.timestep_hours": timestep_hours,
+    }
+
+    for field_name, value in required_fields.items():
+        if value is None:
+            errors.append(f"Missing required field: {field_name}")
+
+    if errors:
+        return errors
+
+    if capacity_mwh <= 0:
+        errors.append("Battery capacity must be greater than 0.")
+
+    if min_soc_mwh < 0:
+        errors.append("Minimum SOC cannot be negative.")
+
+    if min_soc_mwh >= capacity_mwh:
+        errors.append("Minimum SOC must be lower than capacity.")
+
+    if initial_soc_mwh < min_soc_mwh:
+        errors.append("Initial SOC cannot be lower than minimum SOC.")
+
+    if initial_soc_mwh > capacity_mwh:
+        errors.append("Initial SOC cannot be greater than capacity.")
+
+    if max_charge_power_mw <= 0:
+        errors.append("Max charge power must be greater than 0.")
+
+    if max_discharge_power_mw <= 0:
+        errors.append("Max discharge power must be greater than 0.")
+
+    if not 0 < charge_efficiency <= 1:
+        errors.append("Charge efficiency must be between 0 and 1.")
+
+    if not 0 < discharge_efficiency <= 1:
+        errors.append("Discharge efficiency must be between 0 and 1.")
+
+    if high_price_threshold <= low_price_threshold:
+        errors.append("High price threshold must be greater than low price threshold.")
+
+    if timestep_hours <= 0:
+        errors.append("Timestep hours must be greater than 0.")
+
+    return errors
+
 @app.get("/health")
 def health_check():
     return {
@@ -97,6 +185,51 @@ def health_check():
         "service": "battery-dispatch-optimizer",
     }
 
+@app.get("/system/health")
+def system_health():
+    client_config_file = CLIENT_CONFIG_FILE
+    forecast_file = FORECAST_FILE
+    signal_file = LATEST_SIGNAL_FILE
+    scenario_file = SCENARIO_RESULTS_FILE
+    report_dir = SIGNAL_RUNS_DIR
+
+    report_files = []
+    if report_dir.exists():
+        report_files = sorted(report_dir.glob("monthly_report_*.html"))
+
+    checks = {
+        "api": True,
+        "client_config": client_config_file.exists(),
+        "forecast_file": forecast_file.exists(),
+        "latest_signal": signal_file.exists(),
+        "scenario_results": scenario_file.exists(),
+        "monthly_report": len(report_files) > 0,
+        "entsoe_token": bool(os.environ.get("ENTSOE_API_KEY")),
+    }
+
+    required_checks = [
+        "api",
+        "client_config",
+        "forecast_file",
+        "latest_signal",
+    ]
+
+    missing_required = [
+        check_name
+        for check_name in required_checks
+        if not checks[check_name]
+    ]
+
+    if missing_required:
+        status = "not_ready"
+    else:
+        status = "ready"
+
+    return {
+        "status": status,
+        "checks": checks,
+        "missing_required": missing_required,
+    }
 
 @app.get("/status")
 def project_status():
@@ -106,13 +239,18 @@ def project_status():
         "version": "0.1.0",
         "available_endpoints": [
             "/health",
+            "/system/health",
             "/status",
             "/data/status",
             "/data/update-entsoe",
             "/dashboard/summary",
             "/client/config",
             "/forecast/upload",
+            "/forecast/status",
+            "/features/forecast",
+            "/forecast/demo",
             "/battery/config",
+            "/battery/constraints",
             "/battery/signal",
             "/battery/signal/latest",
             "/battery/signal/latest/explanation",
@@ -123,6 +261,8 @@ def project_status():
             "/scenarios/run",
             "/scenarios/run-latest",
             "/scenarios/latest",
+            "/stress/run-latest",
+            "/stress/latest",
             "/reports/monthly/latest",
             "/reports/monthly/latest/view",
             "/workflow/run-daily",
@@ -149,6 +289,15 @@ def get_client_config():
 
 @app.post("/client/config")
 def update_client_config(config: dict):
+    validation_errors = validate_client_config(config)
+
+    if validation_errors:
+        return {
+            "status": "invalid",
+            "message": "Client config validation failed.",
+            "errors": validation_errors,
+        }
+
     config_file = save_client_config(config)
 
     return {
@@ -161,10 +310,10 @@ def update_client_config(config: dict):
 
 @app.get("/data/status")
 def data_status():
-    forecast_file = Path("data/processed/next_day_price_forecast.csv")
-    signal_file = Path("data/outputs/latest_battery_signal.json")
-    scenario_file = Path("data/outputs/scenario_results.json")
-    report_dir = Path("data/outputs")
+    forecast_file = FORECAST_FILE
+    signal_file = LATEST_SIGNAL_FILE
+    scenario_file = SCENARIO_RESULTS_FILE
+    report_dir = OUTPUT_DATA_DIR
 
     report_files = []
     if report_dir.exists():
@@ -186,7 +335,7 @@ def data_status():
 
 @app.post("/data/update-entsoe")
 def update_entsoe_data():
-    forecast_file = Path("data/processed/next_day_price_forecast.csv")
+    forecast_file = FORECAST_FILE
     forecast_file.parent.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -231,7 +380,7 @@ def update_entsoe_data():
 
 @app.post("/forecast/upload")
 def upload_forecast(request: BatterySignalRequest):
-    forecast_file = Path("data/processed/next_day_price_forecast.csv")
+    forecast_file = FORECAST_FILE
     forecast_file.parent.mkdir(parents=True, exist_ok=True)
 
     rows = []
@@ -268,10 +417,7 @@ def upload_forecast(request: BatterySignalRequest):
             "error": str(error),
         }
 
-    price_data = load_price_data_for_optimizer(
-        forecast_file,
-        price_column="forecast_price",
-    )
+    price_data = load_forecast_price_data(forecast_file)
 
     signal_result = generate_battery_signal(
         price_data=price_data,
@@ -279,7 +425,7 @@ def upload_forecast(request: BatterySignalRequest):
         strategy_config=client_config["strategy_config"],
     )
 
-    signal_file = Path("data/outputs/latest_battery_signal.json")
+    signal_file = LATEST_SIGNAL_FILE
     signal_file.parent.mkdir(parents=True, exist_ok=True)
 
     with open(signal_file, "w", encoding="utf-8") as file:
@@ -287,7 +433,7 @@ def upload_forecast(request: BatterySignalRequest):
 
     scenario_results = run_scenarios(price_data)
 
-    scenario_file = Path("data/outputs/scenario_results.json")
+    scenario_file = SCENARIO_RESULTS_FILE
     scenario_file.parent.mkdir(parents=True, exist_ok=True)
 
     with open(scenario_file, "w", encoding="utf-8") as file:
@@ -304,6 +450,95 @@ def upload_forecast(request: BatterySignalRequest):
         "scenarios": scenario_results,
     }
 
+@app.get("/forecast/status")
+def forecast_status():
+    forecast_file = FORECAST_FILE
+
+    if not forecast_file.exists():
+        return {
+            "status": "not_found",
+            "message": f"Forecast file not found: {forecast_file}",
+        }
+
+    df = pd.read_csv(forecast_file)
+    features = build_forecast_quality_features(df)
+
+    if features["status"] != "ok":
+        return {
+            "status": features["status"],
+            "message": "Forecast quality check failed.",
+            "forecast_file": str(forecast_file),
+            **features,
+        }
+
+    return {
+        "status": "ok",
+        "forecast_file": str(forecast_file),
+        **features,
+    }
+
+@app.get("/features/forecast")
+def forecast_features():
+    forecast_file = FORECAST_FILE
+
+    if not forecast_file.exists():
+        return {
+            "status": "not_found",
+            "message": f"Forecast file not found: {forecast_file}",
+        }
+
+    df = pd.read_csv(forecast_file)
+
+    quality_features = build_forecast_quality_features(
+        df,
+        price_column="forecast_price",
+    )
+
+    negative_features = build_negative_price_features(
+        df,
+        price_column="forecast_price",
+    )
+
+    return {
+        "status": "ok",
+        "forecast_file": str(forecast_file),
+        "quality_features": quality_features,
+        "negative_price_features": negative_features,
+    }
+
+@app.post("/forecast/demo")
+def create_demo_forecast():
+    forecast_file = FORECAST_FILE
+    forecast_file.parent.mkdir(parents=True, exist_ok=True)
+
+    start_time = pd.Timestamp.now().normalize() + pd.Timedelta(days=1)
+
+    prices = [
+        42, 38, 30, 22, 15, 8,
+        12, 28, 55, 72, 85, 92,
+        88, 75, 60, 48, 52, 70,
+        96, 120, 110, 82, 58, 45,
+    ]
+
+    rows = []
+
+    for hour, price in enumerate(prices):
+        rows.append(
+            {
+                "timestamp": start_time + pd.Timedelta(hours=hour),
+                "forecast_price": price,
+            }
+        )
+
+    df = pd.DataFrame(rows)
+    df.to_csv(forecast_file, index=False)
+
+    return {
+        "status": "ok",
+        "message": "Demo forecast created successfully.",
+        "forecast_file": str(forecast_file),
+        "rows": len(df),
+    }
 
 @app.get("/battery/config", response_model=BatteryConfigResponse)
 def battery_config():
@@ -312,6 +547,42 @@ def battery_config():
         "strategy_config": DEFAULT_STRATEGY_CONFIG,
     }
 
+@app.get("/battery/constraints")
+def battery_constraints():
+    try:
+        client_config = load_client_config()
+    except FileNotFoundError as error:
+        return {
+            "status": "not_found",
+            "message": str(error),
+        }
+
+    battery_config = client_config["battery_config"]
+
+    capacity_mwh = battery_config["capacity_mwh"]
+    initial_soc_mwh = battery_config["initial_soc_mwh"]
+    min_soc_mwh = battery_config["min_soc_mwh"]
+    max_charge_power_mw = battery_config["max_charge_power_mw"]
+    max_discharge_power_mw = battery_config["max_discharge_power_mw"]
+
+    usable_capacity_mwh = capacity_mwh - min_soc_mwh
+    initial_usable_soc_mwh = initial_soc_mwh - min_soc_mwh
+
+    charge_duration_hours = capacity_mwh / max_charge_power_mw
+    discharge_duration_hours = usable_capacity_mwh / max_discharge_power_mw
+
+    return {
+        "status": "ok",
+        "capacity_mwh": capacity_mwh,
+        "usable_capacity_mwh": round(usable_capacity_mwh, 4),
+        "initial_usable_soc_mwh": round(initial_usable_soc_mwh, 4),
+        "min_soc_mwh": min_soc_mwh,
+        "initial_soc_mwh": initial_soc_mwh,
+        "max_charge_power_mw": max_charge_power_mw,
+        "max_discharge_power_mw": max_discharge_power_mw,
+        "charge_duration_hours": round(charge_duration_hours, 4),
+        "discharge_duration_hours": round(discharge_duration_hours, 4),
+    }
 
 @app.post("/battery/signal", response_model=BatterySignalResponse)
 def battery_signal(request: BatterySignalRequest):
@@ -341,7 +612,7 @@ def battery_signal(request: BatterySignalRequest):
 
 @app.get("/battery/signal/latest")
 def latest_battery_signal():
-    signal_file = Path("data/outputs/latest_battery_signal.json")
+    signal_file = LATEST_SIGNAL_FILE
 
     if not signal_file.exists():
         return {
@@ -360,7 +631,7 @@ def latest_battery_signal():
 
 @app.get("/battery/signal/latest/explanation")
 def latest_battery_signal_explanation():
-    signal_file = Path("data/outputs/latest_battery_signal.json")
+    signal_file = LATEST_SIGNAL_FILE
 
     if not signal_file.exists():
         return {
@@ -371,11 +642,17 @@ def latest_battery_signal_explanation():
     with open(signal_file, "r", encoding="utf-8") as file:
         signal = json.load(file)
 
-    return explain_battery_signal(signal)
+    forecast_file = FORECAST_FILE
+    forecast_df = None
+
+    if forecast_file.exists():
+        forecast_df = pd.read_csv(forecast_file)
+
+    return explain_battery_signal(signal, forecast_df=forecast_df)
 
 @app.get("/battery/signal/latest/risks")
 def latest_battery_signal_risks():
-    signal_file = Path("data/outputs/latest_battery_signal.json")
+    signal_file = LATEST_SIGNAL_FILE
 
     if not signal_file.exists():
         return {
@@ -387,7 +664,13 @@ def latest_battery_signal_risks():
     with open(signal_file, "r", encoding="utf-8") as file:
         signal = json.load(file)
 
-    risks = build_risk_flags(signal)
+    forecast_file = FORECAST_FILE
+    forecast_df = None
+
+    if forecast_file.exists():
+        forecast_df = pd.read_csv(forecast_file)
+
+    risks = build_risk_flags(signal, forecast_df=forecast_df)
 
     return {
         "status": "ok",
@@ -396,69 +679,74 @@ def latest_battery_signal_risks():
 
 @app.post("/battery/signal/run-latest")
 def run_latest_battery_signal():
-    forecast_file = Path("data/processed/next_day_price_forecast.csv")
-    output_file = Path("data/outputs/latest_battery_signal.json")
-    run_history_dir = Path("data/outputs/runs")
-
-    if not forecast_file.exists():
-        return {
-            "status": "not_found",
-            "message": f"Forecast file not found: {forecast_file}",
-        }
-
     try:
-        client_config = load_client_config()
-    except FileNotFoundError as error:
-        return {
-            "status": "not_found",
-            "message": str(error),
+        forecast_file = FORECAST_FILE
+        output_file = LATEST_SIGNAL_FILE
+        run_history_dir = SIGNAL_RUNS_DIR
+
+        if not forecast_file.exists():
+            return {
+                "status": "not_found",
+                "message": f"Forecast file not found: {forecast_file}",
+            }
+
+        try:
+            client_config = load_client_config()
+        except FileNotFoundError as error:
+            return {
+                "status": "not_found",
+                "message": str(error),
+            }
+
+        price_data = load_forecast_price_data(forecast_file)
+
+        result = generate_battery_signal(
+            price_data=price_data,
+            battery_config=client_config["battery_config"],
+            strategy_config=client_config["strategy_config"],
+            commercial_config=client_config.get("commercial_config"),
+        )
+
+        generated_at = datetime.now()
+
+        result["metadata"] = {
+            "source": "processed_forecast_csv",
+            "target_date": None,
+            "generated_at": generated_at.isoformat(timespec="seconds"),
+            "forecast_file": str(forecast_file),
         }
 
-    price_data = load_price_data_for_optimizer(
-        forecast_file,
-        price_column="forecast_price",
-    )
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        run_history_dir.mkdir(parents=True, exist_ok=True)
 
-    result = generate_battery_signal(
-        price_data=price_data,
-        battery_config=client_config["battery_config"],
-        strategy_config=client_config["strategy_config"],
-    )
+        run_history_file = (
+            run_history_dir
+            / f"{generated_at.strftime('%Y%m%d_%H%M%S')}_battery_signal.json"
+        )
 
-    generated_at = datetime.now()
+        with open(output_file, "w", encoding="utf-8") as file:
+            json.dump(result, file, indent=2)
 
-    result["metadata"] = {
-        "source": "processed_forecast_csv",
-        "target_date": None,
-        "generated_at": generated_at.isoformat(timespec="seconds"),
-        "forecast_file": str(forecast_file),
-    }
+        with open(run_history_file, "w", encoding="utf-8") as file:
+            json.dump(result, file, indent=2)
 
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-    run_history_dir.mkdir(parents=True, exist_ok=True)
+        return {
+            "status": "ok",
+            "message": "Latest battery signal generated successfully.",
+            "signal_file": str(output_file),
+            "run_history_file": str(run_history_file),
+            "data": result,
+        }
 
-    run_history_file = (
-        run_history_dir
-        / f"{generated_at.strftime('%Y%m%d_%H%M%S')}_battery_signal.json"
-    )
-
-    with open(output_file, "w", encoding="utf-8") as file:
-        json.dump(result, file, indent=2)
-
-    with open(run_history_file, "w", encoding="utf-8") as file:
-        json.dump(result, file, indent=2)
-
-    return {
-        "status": "ok",
-        "message": "Latest battery signal generated successfully.",
-        "signal_file": str(output_file),
-        "run_history_file": str(run_history_file),
-        "data": result,
-    }
+    except Exception as error:
+        return {
+            "status": "error",
+            "message": f"Could not generate latest battery signal: {error}",
+        }
 
 @app.get("/battery/signal/history")
 def battery_signal_history():
-    run_history_dir = Path("data/outputs/runs")
+    run_history_dir = SIGNAL_RUNS_DIR
 
     if not run_history_dir.exists():
         return {
@@ -490,7 +778,7 @@ def battery_signal_history():
 
 @app.get("/battery/signal/history/{file_name}")
 def get_battery_signal_history_file(file_name: str):
-    run_history_dir = Path("data/outputs/runs")
+    run_history_dir = SIGNAL_RUNS_DIR
     run_file = run_history_dir / file_name
 
     if not run_file.exists():
@@ -559,7 +847,7 @@ def run_battery_scenarios(request: BatterySignalRequest):
 
     scenario_results = run_scenarios(price_data)
 
-    output_file = Path("data/outputs/scenario_results.json")
+    output_file = SCENARIO_RESULTS_FILE
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
     with open(output_file, "w", encoding="utf-8") as file:
@@ -573,8 +861,8 @@ def run_battery_scenarios(request: BatterySignalRequest):
 
 @app.post("/scenarios/run-latest")
 def run_latest_scenarios():
-    forecast_file = Path("data/processed/next_day_price_forecast.csv")
-    output_file = Path("data/outputs/scenario_results.json")
+    forecast_file = FORECAST_FILE
+    output_file = SCENARIO_RESULTS_FILE
 
     if not forecast_file.exists():
         return {
@@ -582,10 +870,7 @@ def run_latest_scenarios():
             "message": f"Forecast file not found: {forecast_file}",
         }
 
-    price_data = load_price_data_for_optimizer(
-        forecast_file,
-        price_column="forecast_price",
-    )
+    price_data = load_forecast_price_data(forecast_file)
 
     scenario_results = run_scenarios(price_data)
 
@@ -603,7 +888,7 @@ def run_latest_scenarios():
 
 @app.get("/scenarios/latest")
 def latest_scenarios():
-    scenario_file = Path("data/outputs/scenario_results.json")
+    scenario_file = SCENARIO_RESULTS_FILE
 
     if not scenario_file.exists():
         return {
@@ -621,10 +906,73 @@ def latest_scenarios():
     }
 
 
+@app.post("/stress/run-latest")
+def run_latest_price_stress_tests():
+    forecast_file = FORECAST_FILE
+    output_file = PRICE_STRESS_RESULTS_FILE
+
+    if not forecast_file.exists():
+        return {
+            "status": "not_found",
+            "message": f"Forecast file not found: {forecast_file}",
+        }
+
+    try:
+        client_config = load_client_config()
+    except FileNotFoundError as error:
+        return {
+            "status": "not_found",
+            "message": str(error),
+        }
+
+    price_data = load_price_data_for_optimizer(
+        forecast_file,
+        price_column="forecast_price",
+    )
+
+    stress_results = run_price_stress_tests(
+        price_data=price_data,
+        battery_config=client_config["battery_config"],
+        strategy_config=client_config["strategy_config"],
+        commercial_config=client_config.get("commercial_config"),
+    )
+
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(output_file, "w", encoding="utf-8") as file:
+        json.dump(stress_results, file, indent=2)
+
+    return {
+        "status": "ok",
+        "message": "Price stress tests completed successfully.",
+        "stress_file": str(output_file),
+        "results": stress_results,
+    }
+
+
+@app.get("/stress/latest")
+def latest_price_stress_tests():
+    stress_file = PRICE_STRESS_RESULTS_FILE
+
+    if not stress_file.exists():
+        return {
+            "status": "not_found",
+            "message": "No price stress results found. Run /stress/run-latest first.",
+        }
+
+    with open(stress_file, "r", encoding="utf-8") as file:
+        results = json.load(file)
+
+    return {
+        "status": "ok",
+        "stress_file": str(stress_file),
+        "results": results,
+    }
+
 @app.get("/dashboard/summary")
 def dashboard_summary():
-    signal_file = Path("data/outputs/latest_battery_signal.json")
-    report_dir = Path("data/outputs")
+    signal_file = LATEST_SIGNAL_FILE
+    report_dir = OUTPUT_DATA_DIR
 
     latest_signal = None
 
@@ -668,7 +1016,7 @@ def dashboard_summary():
 
 @app.get("/reports/monthly/latest")
 def latest_monthly_report():
-    report_dir = Path("data/outputs")
+    report_dir = OUTPUT_DATA_DIR
 
     if not report_dir.exists():
         return {
@@ -695,7 +1043,7 @@ def latest_monthly_report():
 
 @app.get("/reports/monthly/latest/view", response_class=HTMLResponse)
 def view_latest_monthly_report():
-    report_dir = Path("data/outputs")
+    report_dir = OUTPUT_DATA_DIR
 
     if not report_dir.exists():
         return "<h1>No report folder found</h1>"
@@ -712,10 +1060,10 @@ def view_latest_monthly_report():
     
 @app.post("/workflow/run-daily")
 def run_daily_workflow():
-    forecast_file = Path("data/processed/next_day_price_forecast.csv")
-    signal_file = Path("data/outputs/latest_battery_signal.json")
-    scenario_file = Path("data/outputs/scenario_results.json")
-    run_history_dir = Path("data/outputs/runs")
+    forecast_file = FORECAST_FILE
+    signal_file = LATEST_SIGNAL_FILE
+    scenario_file = SCENARIO_RESULTS_FILE
+    run_history_dir = SIGNAL_RUNS_DIR
 
     forecast_file.parent.mkdir(parents=True, exist_ok=True)
     signal_file.parent.mkdir(parents=True, exist_ok=True)
@@ -756,15 +1104,13 @@ def run_daily_workflow():
 
     client_config = load_client_config()
 
-    price_data = load_price_data_for_optimizer(
-        forecast_file,
-        price_column="forecast_price",
-    )
+    price_data = load_forecast_price_data(forecast_file)
 
     signal_result = generate_battery_signal(
         price_data=price_data,
         battery_config=client_config["battery_config"],
         strategy_config=client_config["strategy_config"],
+        commercial_config=client_config.get("commercial_config"),
     )
 
     signal_result["metadata"] = {

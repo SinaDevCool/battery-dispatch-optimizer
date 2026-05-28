@@ -1,3 +1,9 @@
+import pandas as pd
+
+from src.features.forecast_quality_features import build_forecast_quality_features
+from src.features.negative_price_features import build_negative_price_features
+
+
 def format_price(price):
     return f"{price:.2f} EUR/MWh"
 
@@ -6,7 +12,7 @@ def format_money(value):
     return f"{value:.2f} EUR"
 
 
-def explain_battery_signal(signal_result):
+def explain_battery_signal(signal_result, forecast_df=None):
     summary = signal_result.get("summary", {})
     dispatch = signal_result.get("dispatch", [])
     metadata = signal_result.get("metadata", {})
@@ -108,15 +114,65 @@ def explain_battery_signal(signal_result):
             f"The maximum observed spread between selected charge and discharge prices is {format_price(spread)}."
         )
 
+    dispatch_df = pd.DataFrame(dispatch)
+
+    if "market_value_eur" in dispatch_df.columns and "cost_eur" in dispatch_df.columns:
+        market_value = dispatch_df["market_value_eur"].sum()
+        commercial_costs = dispatch_df["cost_eur"].sum()
+
+        if commercial_costs > 0:
+            explanation_parts.append(
+                f"Commercial costs reduce the dispatch value by {format_money(commercial_costs)}. "
+                f"The gross market value is {format_money(market_value)}."
+            )
+
     total_pnl = summary.get("total_pnl_eur", 0.0)
     profit_per_mw_day = summary.get("profit_per_mw_day", 0.0)
     opportunity_level = summary.get("opportunity_level", "none")
+    equivalent_full_cycles = summary.get("equivalent_full_cycles")
+    throughput_mwh = summary.get("throughput_mwh")
 
     explanation_parts.append(
         f"The expected total PnL is {format_money(total_pnl)}, "
         f"equal to {profit_per_mw_day:.2f} EUR/MW-day. "
         f"This is classified as a {opportunity_level} opportunity."
     )
+
+    if equivalent_full_cycles is not None and throughput_mwh is not None:
+        explanation_parts.append(
+        f"The schedule uses {throughput_mwh:.2f} MWh of battery throughput, "
+        f"equal to {equivalent_full_cycles:.2f} equivalent full cycle(s)."
+    )
+
+    if forecast_df is not None:
+        quality_features = build_forecast_quality_features(
+            forecast_df,
+            price_column="forecast_price",
+        )
+
+        negative_features = build_negative_price_features(
+            forecast_df,
+            price_column="forecast_price",
+        )
+
+        valid_rows = quality_features.get("valid_row_count")
+
+        if valid_rows is not None:
+            explanation_parts.append(
+                f"The forecast quality check found {valid_rows} valid row(s)."
+            )
+
+        if valid_rows is not None and valid_rows < 24:
+            explanation_parts.append(
+                "Because the forecast has fewer than 24 valid rows, this should be treated as a partial-day or demo signal."
+            )
+
+        negative_hours = negative_features.get("negative_price_hours", 0)
+
+        if negative_hours > 0:
+            explanation_parts.append(
+                f"The forecast includes {negative_hours} negative-price hour(s), which can improve charging economics."
+            )
 
     return {
         "status": "ok",

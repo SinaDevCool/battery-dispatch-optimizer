@@ -11,10 +11,12 @@ def main():
     monthly_negative_file = Path("data/processed/negative_price_monthly_summary.csv")
     battery_monthly_file = Path("data/outputs/historical_battery_monthly_summary.csv")
     alert_summary_file = Path("data/processed/alert_summary.csv")
+    forecast_file = Path("data/processed/next_day_price_forecast.csv")
 
     monthly_negative = pd.DataFrame()
     battery_monthly = pd.DataFrame()
     alert_summary = pd.DataFrame()
+    forecast_df = pd.DataFrame()
 
     if monthly_negative_file.exists():
         monthly_negative_all = pd.read_csv(monthly_negative_file)
@@ -31,11 +33,15 @@ def main():
     if alert_summary_file.exists():
         alert_summary = pd.read_csv(alert_summary_file)
 
+    if forecast_file.exists():
+        forecast_df = pd.read_csv(forecast_file)
+
     html = build_monthly_report_html(
         report_month=report_month,
         monthly_negative=monthly_negative,
         battery_monthly=battery_monthly,
         alert_summary=alert_summary,
+        forecast_df=forecast_df,
     )
 
     output_file = Path(f"data/outputs/monthly_report_{report_month}.html")
