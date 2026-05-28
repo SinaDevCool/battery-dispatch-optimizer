@@ -1,5 +1,9 @@
 from pathlib import Path
 
+import pandas as pd
+
+from src.markets.entsoe_client import get_next_day_price_forecast
+
 
 def main():
     raw_data_dir = Path("data/raw")
@@ -10,17 +14,42 @@ def main():
     processed_data_dir.mkdir(parents=True, exist_ok=True)
     output_data_dir.mkdir(parents=True, exist_ok=True)
 
+    output_file = processed_data_dir / "next_day_price_forecast.csv"
+
     print("Data folders are ready:")
     print(f"Raw data: {raw_data_dir}")
     print(f"Processed data: {processed_data_dir}")
     print(f"Outputs: {output_data_dir}")
 
-    print("\nNext step:")
-    print("Later this script will download/update data from:")
-    print("- Netztransparenz API")
-    print("- ENTSO-E API")
-    print("- forecast model outputs")
+    print("\nDownloading ENTSO-E next-day day-ahead prices...")
 
+    rows = get_next_day_price_forecast()
+
+    if not rows:
+        print("No ENTSO-E data returned.")
+        return
+
+    df = pd.DataFrame(rows)
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+    df["forecast_price"] = pd.to_numeric(df["forecast_price"], errors="coerce")
+
+    df = df.dropna(subset=["timestamp", "forecast_price"])
+    df = df.drop_duplicates(subset=["timestamp"])
+    df = df.sort_values("timestamp")
+
+    df.to_csv(output_file, index=False)
+
+    print("\nSaved next-day forecast:")
+    print(output_file)
+
+    print("\nRows:", len(df))
+    print("From:", df["timestamp"].min())
+    print("To:", df["timestamp"].max())
+
+    print("\nPreview:")
+    print(df.head())
+    print(df.tail())
+    
 
 if __name__ == "__main__":
     main()
