@@ -398,6 +398,7 @@ def latest_battery_signal_risks():
 def run_latest_battery_signal():
     forecast_file = Path("data/processed/next_day_price_forecast.csv")
     output_file = Path("data/outputs/latest_battery_signal.json")
+    run_history_dir = Path("data/outputs/runs")
 
     if not forecast_file.exists():
         return {
@@ -424,15 +425,34 @@ def run_latest_battery_signal():
         strategy_config=client_config["strategy_config"],
     )
 
+    generated_at = datetime.now()
+
+    result["metadata"] = {
+        "source": "processed_forecast_csv",
+        "target_date": None,
+        "generated_at": generated_at.isoformat(timespec="seconds"),
+        "forecast_file": str(forecast_file),
+    }
+
     output_file.parent.mkdir(parents=True, exist_ok=True)
+    run_history_dir.mkdir(parents=True, exist_ok=True)
+
+    run_history_file = (
+        run_history_dir
+        / f"{generated_at.strftime('%Y%m%d_%H%M%S')}_battery_signal.json"
+    )
 
     with open(output_file, "w", encoding="utf-8") as file:
+        json.dump(result, file, indent=2)
+
+    with open(run_history_file, "w", encoding="utf-8") as file:
         json.dump(result, file, indent=2)
 
     return {
         "status": "ok",
         "message": "Latest battery signal generated successfully.",
         "signal_file": str(output_file),
+        "run_history_file": str(run_history_file),
         "data": result,
     }
 
@@ -466,6 +486,32 @@ def battery_signal_history():
     return {
         "status": "ok",
         "runs": runs,
+    }
+
+@app.get("/battery/signal/history/{file_name}")
+def get_battery_signal_history_file(file_name: str):
+    run_history_dir = Path("data/outputs/runs")
+    run_file = run_history_dir / file_name
+
+    if not run_file.exists():
+        return {
+            "status": "not_found",
+            "message": f"Run history file not found: {file_name}",
+        }
+
+    if run_file.suffix != ".json":
+        return {
+            "status": "invalid_file",
+            "message": "Only JSON run history files can be loaded.",
+        }
+
+    with open(run_file, "r", encoding="utf-8") as file:
+        data = json.load(file)
+
+    return {
+        "status": "ok",
+        "file_name": file_name,
+        "data": data,
     }
 
 @app.post("/battery/backtest", response_model=BacktestResponse)
