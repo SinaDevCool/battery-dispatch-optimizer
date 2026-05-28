@@ -60,8 +60,20 @@ battery dispatch optimizer/
   tests/
     test_api.py
     test_battery_optimizer.py
-Installation
+
+## Installation
+
+```powershell
 pip install -r requirements.txt
+Environment Variables
+To fetch ENTSO-E data, set your ENTSO-E API token before running the update script or daily workflow.
+
+In PowerShell:
+
+$env:ENTSOE_API_KEY="your_entsoe_token_here"
+Without this token, ENTSO-E update endpoints will return:
+
+missing_token
 Run the API
 python -m uvicorn src.api.main:app --reload
 Open:
