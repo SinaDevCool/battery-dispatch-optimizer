@@ -233,13 +233,23 @@ def upload_forecast(request: BatterySignalRequest):
     with open(signal_file, "w", encoding="utf-8") as file:
         json.dump(signal_result, file, indent=2)
 
+    scenario_results = run_scenarios(price_data)
+
+    scenario_file = Path("data/outputs/scenario_results.json")
+    scenario_file.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(scenario_file, "w", encoding="utf-8") as file:
+        json.dump(scenario_results, file, indent=2)
+
     return {
         "status": "ok",
-        "message": "Forecast uploaded and battery signal generated successfully.",
+        "message": "Forecast uploaded, battery signal generated, and scenarios completed successfully.",
         "forecast_file": str(forecast_file),
         "signal_file": str(signal_file),
+        "scenario_file": str(scenario_file),
         "rows": len(df),
         "signal": signal_result,
+        "scenarios": scenario_results,
     }
 
 
