@@ -28,6 +28,22 @@ def get_json(endpoint):
         return None
 
 
+def post_json(endpoint, payload=None):
+    url = f"{API_BASE_URL}{endpoint}"
+
+    if payload is None:
+        payload = {}
+
+    try:
+        response = requests.post(url, json=payload, timeout=30)
+        response.raise_for_status()
+        return response.json()
+
+    except requests.RequestException as error:
+        st.error(f"Could not send data to API: {error}")
+        return None
+
+
 status = get_json("/health")
 
 if status is None:
@@ -36,7 +52,150 @@ if status is None:
 st.success("API is running")
 
 
+st.header("Daily Signal Control")
+
+if st.button("Generate Daily Battery Signal"):
+    response = post_json("/battery/signal/run-latest")
+
+    if response is None:
+        st.error("Could not generate battery signal.")
+
+    elif response.get("status") == "ok":
+        st.success("Daily battery signal generated successfully.")
+        st.rerun()
+
+    else:
+        st.warning(response.get("message", "Signal could not be generated."))
+
+
 client_config_response = get_json("/client/config")
+
+
+if client_config_response and client_config_response.get("status") == "ok":
+    editable_client_config = client_config_response["config"]
+
+    with st.sidebar:
+        st.header("Edit Client Config")
+
+        client_name = st.text_input(
+            "Client name",
+            value=editable_client_config.get("client_name", ""),
+        )
+
+        site_name = st.text_input(
+            "Site name",
+            value=editable_client_config.get("site_name", ""),
+        )
+
+        country = st.text_input(
+            "Country",
+            value=editable_client_config.get("country", ""),
+        )
+
+        market = st.text_input(
+            "Market",
+            value=editable_client_config.get("market", ""),
+        )
+
+        battery_cfg = editable_client_config["battery_config"]
+        strategy_cfg = editable_client_config["strategy_config"]
+        commercial_cfg = editable_client_config.get("commercial_config", {})
+
+        st.subheader("Battery")
+
+        capacity_mwh = st.number_input(
+            "Capacity MWh",
+            min_value=0.1,
+            value=float(battery_cfg["capacity_mwh"]),
+        )
+
+        initial_soc_mwh = st.number_input(
+            "Initial SOC MWh",
+            min_value=0.0,
+            value=float(battery_cfg["initial_soc_mwh"]),
+        )
+
+        min_soc_mwh = st.number_input(
+            "Minimum SOC MWh",
+            min_value=0.0,
+            value=float(battery_cfg["min_soc_mwh"]),
+        )
+
+        max_charge_power_mw = st.number_input(
+            "Max charge power MW",
+            min_value=0.1,
+            value=float(battery_cfg["max_charge_power_mw"]),
+        )
+
+        max_discharge_power_mw = st.number_input(
+            "Max discharge power MW",
+            min_value=0.1,
+            value=float(battery_cfg["max_discharge_power_mw"]),
+        )
+
+        charge_efficiency = st.number_input(
+            "Charge efficiency",
+            min_value=0.01,
+            max_value=1.0,
+            value=float(battery_cfg["charge_efficiency"]),
+        )
+
+        discharge_efficiency = st.number_input(
+            "Discharge efficiency",
+            min_value=0.01,
+            max_value=1.0,
+            value=float(battery_cfg["discharge_efficiency"]),
+        )
+
+        st.subheader("Strategy")
+
+        low_price_threshold = st.number_input(
+            "Low price threshold EUR/MWh",
+            value=float(strategy_cfg["low_price_threshold"]),
+        )
+
+        high_price_threshold = st.number_input(
+            "High price threshold EUR/MWh",
+            value=float(strategy_cfg["high_price_threshold"]),
+        )
+
+        timestep_hours = st.number_input(
+            "Timestep hours",
+            min_value=0.25,
+            value=float(strategy_cfg["timestep_hours"]),
+        )
+
+        save_clicked = st.button("Save Client Config")
+
+        if save_clicked:
+            updated_config = {
+                "client_name": client_name,
+                "site_name": site_name,
+                "country": country,
+                "market": market,
+                "battery_config": {
+                    "capacity_mwh": capacity_mwh,
+                    "initial_soc_mwh": initial_soc_mwh,
+                    "min_soc_mwh": min_soc_mwh,
+                    "max_charge_power_mw": max_charge_power_mw,
+                    "max_discharge_power_mw": max_discharge_power_mw,
+                    "charge_efficiency": charge_efficiency,
+                    "discharge_efficiency": discharge_efficiency,
+                },
+                "strategy_config": {
+                    "low_price_threshold": low_price_threshold,
+                    "high_price_threshold": high_price_threshold,
+                    "timestep_hours": timestep_hours,
+                },
+                "commercial_config": commercial_cfg,
+            }
+
+            response = post_json("/client/config", updated_config)
+
+            if response and response.get("status") == "ok":
+                st.success("Client config saved.")
+                st.info("Click Generate Daily Battery Signal to use the updated config.")
+
 
 st.header("Client / Site")
 
@@ -91,7 +250,7 @@ if latest_signal is None:
 
 if latest_signal.get("status") != "ok":
     st.warning(latest_signal.get("message", "No latest signal available."))
-    st.info("Run this first: python -m scripts.run_daily_signal")
+    st.info("Click Generate Daily Battery Signal first.")
     st.stop()
 
 
