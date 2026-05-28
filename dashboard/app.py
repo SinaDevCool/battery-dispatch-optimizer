@@ -324,6 +324,26 @@ if client_config_response and client_config_response.get("status") == "ok":
         save_clicked = st.button("Save Client Config")
 
         if save_clicked:
+            validation_errors = []
+
+            if initial_soc_mwh > capacity_mwh:
+                validation_errors.append("Initial SOC cannot be greater than capacity.")
+
+            if min_soc_mwh >= capacity_mwh:
+                validation_errors.append("Minimum SOC must be lower than capacity.")
+
+            if initial_soc_mwh < min_soc_mwh:
+                validation_errors.append("Initial SOC cannot be lower than minimum SOC.")
+
+            if high_price_threshold <= low_price_threshold:
+                validation_errors.append("High price threshold must be greater than low price threshold.")
+
+            if validation_errors:
+                for error in validation_errors:
+                    st.error(error)
+
+                st.stop()
+
             updated_config = {
                 "client_name": client_name,
                 "site_name": site_name,
@@ -514,6 +534,34 @@ if dispatch:
 else:
     st.info("No dispatch rows available.")
 
+st.header("Signal Run History")
+
+history_data = get_json("/battery/signal/history")
+
+if history_data is None:
+    st.warning("Could not load signal run history.")
+
+elif history_data.get("status") != "ok":
+    st.info(history_data.get("message", "No signal run history found yet."))
+
+else:
+    runs = history_data.get("runs", [])
+
+    if not runs:
+        st.info("No historical signal runs saved yet.")
+    else:
+        history_df = pd.DataFrame(runs)
+
+        st.dataframe(history_df, use_container_width=True)
+
+        history_csv = history_df.to_csv(index=False).encode("utf-8")
+
+        st.download_button(
+            label="Download Run History CSV",
+            data=history_csv,
+            file_name="battery_signal_run_history.csv",
+            mime="text/csv",
+        )
 
 st.header("Scenario Analysis")
 
