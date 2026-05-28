@@ -46,6 +46,46 @@ def file_status(path):
         "size_bytes": path.stat().st_size,
     }
 
+def validate_forecast_dataframe(df):
+    required_columns = ["timestamp", "forecast_price"]
+
+    missing_columns = [
+        column for column in required_columns
+        if column not in df.columns
+    ]
+
+    if missing_columns:
+        return False, f"Missing required columns: {', '.join(missing_columns)}"
+
+    df = df.copy()
+
+    df["timestamp"] = pd.to_datetime(
+        df["timestamp"],
+        errors="coerce",
+    )
+
+    df["forecast_price"] = pd.to_numeric(
+        df["forecast_price"],
+        errors="coerce",
+    )
+
+    invalid_timestamps = df["timestamp"].isna().sum()
+    missing_prices = df["forecast_price"].isna().sum()
+    duplicate_timestamps = df["timestamp"].duplicated().sum()
+
+    if invalid_timestamps > 0:
+        return False, f"Forecast has {invalid_timestamps} invalid timestamps."
+
+    if missing_prices > 0:
+        return False, f"Forecast has {missing_prices} missing or invalid prices."
+
+    if duplicate_timestamps > 0:
+        return False, f"Forecast has {duplicate_timestamps} duplicate timestamps."
+
+    if len(df) < 2:
+        return False, "Forecast must contain at least 2 rows."
+
+    return True, "Forecast is valid."
 
 @app.get("/health")
 def health_check():
@@ -153,6 +193,15 @@ def upload_forecast(request: BatterySignalRequest):
         )
 
     df = pd.DataFrame(rows)
+    is_valid, validation_message = validate_forecast_dataframe(df)
+
+    if not is_valid:
+        return {
+            "status": "invalid",
+            "message": validation_message,
+            "forecast_file": str(forecast_file),
+            "rows": len(df),
+        }
     df.to_csv(forecast_file, index=False)
 
     return {
