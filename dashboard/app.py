@@ -70,7 +70,7 @@ if st.button("Run Full Daily Workflow"):
 
 data_status = get_json("/data/status")
 
-st.header("Data Status")
+st.header("Forecast / Data Status")
 
 if data_status and data_status.get("status") == "ok":
     forecast_status = data_status["forecast_file"]
