@@ -132,8 +132,8 @@ if uploaded_file is not None:
             )
 
             if response and response.get("status") == "ok":
-                st.success("Forecast CSV saved successfully.")
-                st.info("Now click Generate Daily Battery Signal.")
+                st.info("Battery signal was generated automatically. The dashboard will refresh.")
+                st.rerun()  
             else:
                 st.warning("Forecast upload failed.")
 

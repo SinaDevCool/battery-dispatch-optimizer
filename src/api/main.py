@@ -204,11 +204,42 @@ def upload_forecast(request: BatterySignalRequest):
         }
     df.to_csv(forecast_file, index=False)
 
+    try:
+        client_config = load_client_config()
+    except FileNotFoundError as error:
+        return {
+            "status": "ok",
+            "message": "Forecast uploaded successfully, but signal was not generated because client config is missing.",
+            "forecast_file": str(forecast_file),
+            "rows": len(df),
+            "signal": None,
+            "error": str(error),
+        }
+
+    price_data = load_price_data_for_optimizer(
+        forecast_file,
+        price_column="forecast_price",
+    )
+
+    signal_result = generate_battery_signal(
+        price_data=price_data,
+        battery_config=client_config["battery_config"],
+        strategy_config=client_config["strategy_config"],
+    )
+
+    signal_file = Path("data/outputs/latest_battery_signal.json")
+    signal_file.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(signal_file, "w", encoding="utf-8") as file:
+        json.dump(signal_result, file, indent=2)
+
     return {
         "status": "ok",
-        "message": "Forecast uploaded successfully.",
+        "message": "Forecast uploaded and battery signal generated successfully.",
         "forecast_file": str(forecast_file),
+        "signal_file": str(signal_file),
         "rows": len(df),
+        "signal": signal_result,
     }
 
 
