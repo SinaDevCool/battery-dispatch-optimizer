@@ -2,6 +2,7 @@ import pandas as pd
 
 from src.config.battery_config import DEFAULT_BATTERY_CONFIG, DEFAULT_STRATEGY_CONFIG
 from src.optimizer.battery_optimizer import BatteryOptimizer
+from src.optimizer.dispatch_strategy import find_daily_arbitrage_hours
 
 
 def classify_opportunity(profit_per_mw_day):
@@ -27,8 +28,15 @@ def generate_battery_signal(
 
     battery = BatteryOptimizer(**battery_config)
 
+    strategy_hours = find_daily_arbitrage_hours(
+        price_data=price_data,
+        charge_hours=2,
+        discharge_hours=2,
+    )
+
     dispatch_rows = battery.optimize(
         price_data=price_data,
+        strategy_hours=strategy_hours,
         **strategy_config,
     )
 
@@ -39,6 +47,10 @@ def generate_battery_signal(
                 "total_pnl_eur": 0.0,
                 "profit_per_mw_day": 0.0,
                 "opportunity_level": "none",
+                "charge_hours": 0,
+                "discharge_hours": 0,
+                "first_charge_timestamp": None,
+                "first_discharge_timestamp": None,
             },
             "dispatch": [],
         }
@@ -52,10 +64,7 @@ def generate_battery_signal(
     charge_rows = [row for row in dispatch_rows if row["action"] == "charge"]
     discharge_rows = [row for row in dispatch_rows if row["action"] == "discharge"]
 
-    if total_pnl_eur > 0:
-        signal = "ACTION"
-    else:
-        signal = "NO_ACTION"
+    signal = "ACTION" if total_pnl_eur > 0 else "NO_ACTION"
 
     summary = {
         "signal": signal,
@@ -101,8 +110,14 @@ def generate_signal_from_dataframe(
     strategy_config=None,
 ):
     forecast_df = forecast_df.copy()
+
     forecast_df["timestamp"] = pd.to_datetime(
         forecast_df["timestamp"],
+        errors="coerce",
+    )
+
+    forecast_df[price_column] = pd.to_numeric(
+        forecast_df[price_column],
         errors="coerce",
     )
 

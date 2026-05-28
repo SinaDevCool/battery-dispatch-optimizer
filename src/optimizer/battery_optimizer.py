@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 class BatteryOptimizer:
@@ -53,6 +53,7 @@ class BatteryOptimizer:
         low_price_threshold: float,
         high_price_threshold: float,
         timestep_hours: float = 1.0,
+        strategy_hours: Optional[Dict[str, List[str]]] = None,
     ) -> List[Dict[str, Any]]:
         soc_mwh = self.initial_soc_mwh
         total_pnl_eur = 0.0
@@ -62,19 +63,26 @@ class BatteryOptimizer:
             timestamp = row["timestamp"]
             price = float(row["price"])
 
-            action = "idle"
+            action = self._choose_action(
+                timestamp=timestamp,
+                price=price,
+                low_price_threshold=low_price_threshold,
+                high_price_threshold=high_price_threshold,
+                strategy_hours=strategy_hours,
+            )
+
             grid_energy_mwh = 0.0
             battery_energy_mwh = 0.0
             pnl_eur = 0.0
 
-            if price <= low_price_threshold:
+            if action == "charge":
                 action, grid_energy_mwh, battery_energy_mwh, pnl_eur, soc_mwh = self._charge(
                     price=price,
                     soc_mwh=soc_mwh,
                     timestep_hours=timestep_hours,
                 )
 
-            elif price >= high_price_threshold:
+            elif action == "discharge":
                 action, grid_energy_mwh, battery_energy_mwh, pnl_eur, soc_mwh = self._discharge(
                     price=price,
                     soc_mwh=soc_mwh,
@@ -97,6 +105,34 @@ class BatteryOptimizer:
             )
 
         return results
+
+    def _choose_action(
+        self,
+        timestamp: str,
+        price: float,
+        low_price_threshold: float,
+        high_price_threshold: float,
+        strategy_hours: Optional[Dict[str, List[str]]] = None,
+    ) -> str:
+        if strategy_hours is not None:
+            charge_timestamps = strategy_hours.get("charge_timestamps", [])
+            discharge_timestamps = strategy_hours.get("discharge_timestamps", [])
+
+            if timestamp in charge_timestamps:
+                return "charge"
+
+            if timestamp in discharge_timestamps:
+                return "discharge"
+
+            return "idle"
+
+        if price <= low_price_threshold:
+            return "charge"
+
+        if price >= high_price_threshold:
+            return "discharge"
+
+        return "idle"
 
     def _charge(self, price: float, soc_mwh: float, timestep_hours: float):
         available_storage_mwh = self.capacity_mwh - soc_mwh
