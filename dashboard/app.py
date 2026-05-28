@@ -355,6 +355,14 @@ if dispatch:
         use_container_width=True,
     )
 
+    st.subheader("Cumulative PnL")
+    st.line_chart(
+        dispatch_df,
+        x="timestamp",
+        y="total_pnl_eur",
+        use_container_width=True,
+    )
+
     st.subheader("Dispatch Table")
     st.dataframe(dispatch_df, use_container_width=True)
 
