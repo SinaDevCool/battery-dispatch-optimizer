@@ -1,7 +1,10 @@
-import json
+﻿import json
 import os
 from datetime import datetime
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 import pandas as pd
 from fastapi import FastAPI
@@ -17,13 +20,13 @@ from src.api.schemas import (
 from src.backtesting.metrics import calculate_backtest_metrics
 from src.config.battery_config import DEFAULT_BATTERY_CONFIG, DEFAULT_STRATEGY_CONFIG
 from src.config.client_config import load_client_config, save_client_config
+from src.config.client_presets import CLIENT_PRESETS
 from src.scenarios.scenario_runner import run_scenarios
 from src.scenarios.stress_runner import run_price_stress_tests
 from src.signals.signal_engine import generate_battery_signal
 from src.signals.explanation_engine import explain_battery_signal
 from src.signals.risk_engine import build_risk_flags
 from src.markets.data_loader import load_price_data_for_optimizer
-from src.markets.entsoe_client import get_latest_available_price_forecast
 from src.features.forecast_quality_features import build_forecast_quality_features
 from src.features.negative_price_features import build_negative_price_features
 from src.forecasts.forecast_loader import load_forecast_price_data
@@ -37,6 +40,11 @@ from src.config.paths import (
     SCENARIO_RESULTS_FILE,
     SIGNAL_RUNS_DIR,
 )
+from src.forecasts.entsoe_forecast_provider import (
+    EntsoeForecastError,
+    build_next_day_entsoe_forecast,
+)
+from src.forecasts.forecast_comparison import compare_forecast_profitability
 
 
 app = FastAPI(
@@ -247,6 +255,9 @@ def project_status():
             "/client/config",
             "/forecast/upload",
             "/forecast/status",
+            "/forecast/preview",
+            "/forecasts/compare-profitability",
+            "/forecasts/compare-profitability/latest",
             "/features/forecast",
             "/forecast/demo",
             "/battery/config",
@@ -307,6 +318,40 @@ def update_client_config(config: dict):
         "config": config,
     }
 
+@app.get("/client/presets")
+def list_client_presets():
+    return {
+        "status": "ok",
+        "presets": list(CLIENT_PRESETS.keys()),
+    }
+
+
+@app.post("/client/presets/{preset_name}/apply")
+def apply_client_preset(preset_name: str):
+    if preset_name not in CLIENT_PRESETS:
+        return {
+            "status": "not_found",
+            "message": f"Unknown preset: {preset_name}",
+        }
+
+    config = CLIENT_PRESETS[preset_name]
+    validation_errors = validate_client_config(config)
+
+    if validation_errors:
+        return {
+            "status": "invalid",
+            "message": "Preset config validation failed.",
+            "errors": validation_errors,
+        }
+
+    config_file = save_client_config(config)
+
+    return {
+        "status": "ok",
+        "message": f"Applied client preset: {preset_name}",
+        "config_file": str(config_file),
+        "config": config,
+    }
 
 @app.get("/data/status")
 def data_status():
@@ -333,42 +378,68 @@ def data_status():
         "latest_monthly_report": file_status(latest_report),
     }
 
+
 @app.post("/data/update-entsoe")
 def update_entsoe_data():
     forecast_file = FORECAST_FILE
     forecast_file.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        result = get_latest_available_price_forecast()
+        df = build_next_day_entsoe_forecast()
+
     except ValueError as error:
         return {
             "status": "missing_token",
             "message": str(error),
         }
+
+    except EntsoeForecastError as error:
+        if forecast_file.exists():
+            return {
+                "status": "fallback",
+                "message": (
+                    f"{error} Existing local forecast file was kept, "
+                    "so the dashboard can continue in local CSV mode."
+                ),
+                "forecast_file": str(forecast_file),
+            }
+
+        return {
+            "status": "not_found",
+            "message": str(error),
+        }
+
     except Exception as error:
         return {
             "status": "error",
             "message": f"Could not update ENTSO-E forecast: {error}",
         }
 
-    rows = result["rows"]
-    target_date = result["target_date"]
-
-    if not rows:
+    if df is None or df.empty:
         return {
             "status": "not_found",
-            "message": "No ENTSO-E data returned for tomorrow, today, or yesterday.",
+            "message": "No ENTSO-E forecast data returned.",
         }
 
-    df = pd.DataFrame(rows)
     df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-    df["forecast_price"] = pd.to_numeric(df["forecast_price"], errors="coerce")
+    df["forecast_price"] = pd.to_numeric(
+        df["forecast_price"],
+        errors="coerce",
+    )
 
     df = df.dropna(subset=["timestamp", "forecast_price"])
     df = df.drop_duplicates(subset=["timestamp"])
     df = df.sort_values("timestamp")
 
+    if df.empty:
+        return {
+            "status": "invalid",
+            "message": "ENTSO-E forecast was returned, but no valid timestamp and price rows were available.",
+        }
+
     df.to_csv(forecast_file, index=False)
+
+    target_date = str(df["timestamp"].dt.date.iloc[0])
 
     return {
         "status": "ok",
@@ -376,6 +447,9 @@ def update_entsoe_data():
         "target_date": target_date,
         "forecast_file": str(forecast_file),
         "rows": len(df),
+        "columns": df.columns.tolist(),
+        "forecast_provider": "entsoe",
+        "forecast_model": "entsoe_day_ahead",
     }
 
 @app.post("/forecast/upload")
@@ -477,6 +551,79 @@ def forecast_status():
         **features,
     }
 
+@app.get("/forecast/preview")
+def forecast_preview():
+    forecast_file = FORECAST_FILE
+
+    if not forecast_file.exists():
+        return {
+            "status": "not_found",
+            "message": f"Forecast file not found: {forecast_file}",
+        }
+
+    df = pd.read_csv(forecast_file)
+
+    if df.empty:
+        return {
+            "status": "empty",
+            "message": "Forecast file exists but is empty.",
+            "forecast_file": str(forecast_file),
+        }
+
+    preview_rows = df.head(24).copy()
+
+    return {
+        "status": "ok",
+        "forecast_file": str(forecast_file),
+        "rows": len(df),
+        "columns": df.columns.tolist(),
+        "preview": preview_rows.to_dict(orient="records"),
+    }
+
+@app.post("/forecasts/compare-profitability")
+def run_forecast_profitability_comparison():
+    output_file = Path("data/outputs/forecast_profitability_comparison.json")
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    forecast_files = {
+        "local_saved_forecast": FORECAST_FILE,
+        
+    }
+
+    results = compare_forecast_profitability(forecast_files)
+
+    with open(output_file, "w", encoding="utf-8") as file:
+        json.dump(results, file, indent=2)
+
+    return {
+        "status": "ok",
+        "message": "Forecast profitability comparison completed successfully.",
+        "comparison_file": str(output_file),
+        "results": results,
+    }
+
+
+@app.get("/forecasts/compare-profitability/latest")
+def latest_forecast_profitability_comparison():
+    comparison_file = Path("data/outputs/forecast_profitability_comparison.json")
+
+    if not comparison_file.exists():
+        return {
+            "status": "not_found",
+            "message": "No forecast profitability comparison found. Run /forecasts/compare-profitability first.",
+            "results": [],
+        }
+
+    with open(comparison_file, "r", encoding="utf-8") as file:
+        results = json.load(file)
+
+    return {
+        "status": "ok",
+        "comparison_file": str(comparison_file),
+        "results": results,
+    }
+
+
 @app.get("/features/forecast")
 def forecast_features():
     forecast_file = FORECAST_FILE
@@ -527,6 +674,8 @@ def create_demo_forecast():
             {
                 "timestamp": start_time + pd.Timedelta(hours=hour),
                 "forecast_price": price,
+                "forecast_provider": "demo",
+                "forecast_model": "demo_base",
             }
         )
 
@@ -538,6 +687,46 @@ def create_demo_forecast():
         "message": "Demo forecast created successfully.",
         "forecast_file": str(forecast_file),
         "rows": len(df),
+        "forecast_provider": "demo",
+        "forecast_model": "demo_base",
+    }
+
+@app.post("/forecast/demo-high-spread")
+def create_demo_high_spread_forecast():
+    forecast_file = Path("data/processed/demo_high_spread_forecast.csv")
+    forecast_file.parent.mkdir(parents=True, exist_ok=True)
+
+    start_time = pd.Timestamp.now().normalize() + pd.Timedelta(days=1)
+
+    prices = [
+        55, 48, 40, 28, 12, -5,
+        -8, 20, 58, 85, 110, 125,
+        118, 95, 72, 55, 62, 88,
+        130, 155, 145, 100, 75, 60,
+    ]
+
+    rows = []
+
+    for hour, price in enumerate(prices):
+        rows.append(
+            {
+                "timestamp": start_time + pd.Timedelta(hours=hour),
+                "forecast_price": price,
+                "forecast_provider": "demo_high_spread",
+                "forecast_model": "demo_high_spread",
+            }
+        )
+
+    df = pd.DataFrame(rows)
+    df.to_csv(forecast_file, index=False)
+
+    return {
+        "status": "ok",
+        "message": "Demo high-spread forecast created successfully.",
+        "forecast_file": str(forecast_file),
+        "rows": len(df),
+        "forecast_provider": "demo_high_spread",
+        "forecast_model": "demo_high_spread",
     }
 
 @app.get("/battery/config", response_model=BatteryConfigResponse)
@@ -1058,6 +1247,7 @@ def view_latest_monthly_report():
     with open(latest_report, "r", encoding="utf-8") as file:
         return file.read()
     
+
 @app.post("/workflow/run-daily")
 def run_daily_workflow():
     forecast_file = FORECAST_FILE
@@ -1071,38 +1261,70 @@ def run_daily_workflow():
     run_history_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        entsoe_result = get_latest_available_price_forecast()
+        df = build_next_day_entsoe_forecast()
+
     except ValueError as error:
         return {
             "status": "missing_token",
             "message": str(error),
         }
+
+    except EntsoeForecastError as error:
+        if forecast_file.exists():
+            df = pd.read_csv(forecast_file)
+            workflow_source = "local_saved_forecast"
+            workflow_warning = (
+                f"{error} Existing local forecast file was used instead."
+            )
+        else:
+            return {
+                "status": "not_found",
+                "message": str(error),
+            }
+
     except Exception as error:
         return {
             "status": "error",
             "message": f"Could not update ENTSO-E forecast: {error}",
         }
+    
+    if "workflow_source" not in locals():
+        workflow_source = "entsoe"
+        workflow_warning = None
 
-    rows = entsoe_result["rows"]
-    target_date = entsoe_result["target_date"]
-
-    if not rows:
+    if df is None or df.empty:
         return {
             "status": "not_found",
-            "message": "No ENTSO-E data returned for tomorrow, today, or yesterday.",
+            "message": "No ENTSO-E forecast data returned.",
         }
 
-    df = pd.DataFrame(rows)
     df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-    df["forecast_price"] = pd.to_numeric(df["forecast_price"], errors="coerce")
+    df["forecast_price"] = pd.to_numeric(
+        df["forecast_price"],
+        errors="coerce",
+    )
 
     df = df.dropna(subset=["timestamp", "forecast_price"])
     df = df.drop_duplicates(subset=["timestamp"])
     df = df.sort_values("timestamp")
 
+    if df.empty:
+        return {
+            "status": "invalid",
+            "message": "ENTSO-E forecast was returned, but no valid timestamp and price rows were available.",
+        }
+
     df.to_csv(forecast_file, index=False)
 
-    client_config = load_client_config()
+    target_date = str(df["timestamp"].dt.date.iloc[0])
+
+    try:
+        client_config = load_client_config()
+    except FileNotFoundError as error:
+        return {
+            "status": "not_found",
+            "message": str(error),
+        }
 
     price_data = load_forecast_price_data(forecast_file)
 
@@ -1113,14 +1335,23 @@ def run_daily_workflow():
         commercial_config=client_config.get("commercial_config"),
     )
 
+    generated_at = datetime.now()
+
     signal_result["metadata"] = {
-        "source": "ENTSO-E",
+        "source": workflow_source,
+        "forecast_provider": workflow_source,
+        "forecast_model": (
+        "entsoe_day_ahead"
+            if workflow_source == "entsoe"
+            else "local_saved_forecast"
+        ),
         "target_date": target_date,
-        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "generated_at": generated_at.isoformat(timespec="seconds"),
         "forecast_file": str(forecast_file),
     }
 
-    run_history_file = run_history_dir / f"{target_date}_battery_signal.json"
+    safe_target_date = target_date.replace("-", "")
+    run_history_file = run_history_dir / f"{safe_target_date}_battery_signal.json"
 
     with open(signal_file, "w", encoding="utf-8") as file:
         json.dump(signal_result, file, indent=2)
@@ -1134,14 +1365,23 @@ def run_daily_workflow():
         json.dump(scenario_results, file, indent=2)
 
     return {
-    "status": "ok",
-    "message": "Daily workflow completed successfully.",
-    "target_date": target_date,
-    "forecast_file": str(forecast_file),
-    "signal_file": str(signal_file),
-    "run_history_file": str(run_history_file),
-    "scenario_file": str(scenario_file),
-    "forecast_rows": len(df),
-    "signal": signal_result["summary"],
-    "scenarios": scenario_results,
-    }   
+        "status": "ok",
+        "message": "Daily workflow completed successfully.",
+        "target_date": target_date,
+        "forecast_file": str(forecast_file),
+        "signal_file": str(signal_file),
+        "run_history_file": str(run_history_file),
+        "scenario_file": str(scenario_file),
+        "forecast_rows": len(df),
+        "forecast_columns": df.columns.tolist(),
+        "workflow_source": workflow_source,
+        "warning": workflow_warning,
+        "forecast_provider": workflow_source,
+        "forecast_model": (
+        "entsoe_day_ahead"
+            if workflow_source == "entsoe"
+            else "local_saved_forecast"
+        ),
+        "signal": signal_result["summary"],
+        "scenarios": scenario_results,
+    }

@@ -24,14 +24,10 @@ def build_feature_summary_html(forecast_df=None):
     rows = []
 
     for key, value in quality_features.items():
-        rows.append(
-            f"<tr><td>{key}</td><td>{value}</td></tr>"
-        )
+        rows.append(f"<tr><td>{key}</td><td>{value}</td></tr>")
 
     for key, value in negative_features.items():
-        rows.append(
-            f"<tr><td>{key}</td><td>{value}</td></tr>"
-        )
+        rows.append(f"<tr><td>{key}</td><td>{value}</td></tr>")
 
     return f"""
 <h2>Forecast Feature Summary</h2>
@@ -103,48 +99,87 @@ def build_monthly_report_html(
     <meta charset="utf-8">
     <title>Battery Dispatch Market Report - {report_month}</title>
     <style>
-        body {{
-            font-family: Arial, sans-serif;
-            margin: 40px;
-            color: #1f2937;
+        * {{
+            box-sizing: border-box;
         }}
 
-        h1, h2 {{
+        html, body {{
+            margin: 0;
+            padding: 0;
+            background: #ffffff;
+            color: #111827;
+            font-family: Arial, sans-serif;
+            line-height: 1.5;
+        }}
+
+        body {{
+            padding: 40px;
+        }}
+
+        h1 {{
+            color: #111827;
+            font-size: 32px;
+            margin: 0 0 8px 0;
+        }}
+
+        h2 {{
+            color: #111827;
+            font-size: 22px;
+            margin: 32px 0 12px 0;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #e5e7eb;
+        }}
+
+        p {{
+            color: #374151;
+            font-size: 15px;
+            margin: 10px 0;
+        }}
+
+        b {{
             color: #111827;
         }}
 
         table {{
-            border-collapse: collapse;
             width: 100%;
-            margin: 20px 0;
-        }}
-
-        th, td {{
-            border: 1px solid #e5e7eb;
-            padding: 8px 10px;
-            text-align: left;
+            border-collapse: collapse;
+            margin-top: 16px;
+            font-size: 14px;
+            color: #111827;
         }}
 
         th {{
             background: #f3f4f6;
+            color: #111827;
+            text-align: left;
+            padding: 10px;
+            border: 1px solid #d1d5db;
+        }}
+
+        td {{
+            padding: 10px;
+            border: 1px solid #e5e7eb;
+            color: #374151;
+            vertical-align: top;
         }}
 
         .subtitle {{
             color: #6b7280;
-            margin-bottom: 30px;
+            margin-bottom: 32px;
+            font-size: 15px;
         }}
 
         .kpi-grid {{
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 16px;
-            margin: 24px 0;
+            margin: 28px 0;
         }}
 
         .kpi {{
-            border: 1px solid #e5e7eb;
+            border: 1px solid #d1d5db;
             border-radius: 8px;
-            padding: 16px;
+            padding: 18px;
             background: #f9fafb;
         }}
 
@@ -153,19 +188,28 @@ def build_monthly_report_html(
             color: #6b7280;
             text-transform: uppercase;
             margin-bottom: 8px;
+            font-weight: bold;
         }}
 
         .kpi-value {{
-            font-size: 24px;
+            font-size: 26px;
             font-weight: bold;
             color: #111827;
         }}
 
         .note {{
-            background: #fef3c7;
-            padding: 12px;
+            background: #fffbeb;
+            color: #92400e;
+            padding: 14px;
             border-left: 4px solid #f59e0b;
-            margin: 20px 0;
+            margin: 28px 0;
+            border-radius: 4px;
+        }}
+
+        @media print {{
+            body {{
+                padding: 24px;
+            }}
         }}
     </style>
 </head>

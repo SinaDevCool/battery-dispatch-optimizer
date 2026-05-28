@@ -143,3 +143,24 @@ def test_run_latest_battery_signal_endpoint():
         assert "data" in data
         assert "summary" in data["data"]
         assert "dispatch" in data["data"]
+
+def test_client_presets_endpoint():
+    response = client.get("/client/presets")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["status"] == "ok"
+    assert "presets" in data
+    assert "grid_scale_battery" in data["presets"]
+
+
+def test_apply_missing_client_preset():
+    response = client.post("/client/presets/not_a_real_preset/apply")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["status"] == "not_found"
