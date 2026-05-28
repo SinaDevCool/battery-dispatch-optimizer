@@ -52,6 +52,40 @@ if status is None:
 
 st.success("API is running")
 
+data_status = get_json("/data/status")
+
+st.header("Data Status")
+
+if data_status and data_status.get("status") == "ok":
+    forecast_status = data_status["forecast_file"]
+    signal_status = data_status["latest_signal_file"]
+    scenario_status = data_status["scenario_file"]
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric(
+        "Forecast File",
+        "Available" if forecast_status["exists"] else "Missing",
+    )
+
+    col2.metric(
+        "Latest Signal",
+        "Available" if signal_status["exists"] else "Missing",
+    )
+
+    col3.metric(
+        "Scenario Results",
+        "Available" if scenario_status["exists"] else "Missing",
+    )
+
+    with st.expander("File details"):
+        st.write("Forecast file:", forecast_status)
+        st.write("Latest signal file:", signal_status)
+        st.write("Scenario file:", scenario_status)
+
+else:
+    st.warning("Could not load data status.")
+
 st.header("Forecast Upload")
 
 uploaded_file = st.file_uploader(
@@ -140,6 +174,23 @@ if uploaded_file is not None:
     except Exception as error:
         st.error(f"Could not read forecast CSV: {error}")
 
+st.header("Data Update")
+
+if st.button("Update ENTSO-E Forecast"):
+    response = post_json("/data/update-entsoe")
+
+    if response is None:
+        st.error("Could not update ENTSO-E forecast.")
+
+    elif response.get("status") == "ok":
+        st.success(
+            f"ENTSO-E forecast updated for {response.get('target_date')} "
+            f"with {response.get('rows')} rows."
+        )
+        st.info("Now click Generate Daily Battery Signal.")
+
+    else:
+        st.warning(response.get("message", "ENTSO-E update failed."))
 
 st.header("Daily Signal Control")
 

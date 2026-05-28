@@ -19,6 +19,7 @@ from src.config.client_config import load_client_config, save_client_config
 from src.scenarios.scenario_runner import run_scenarios
 from src.signals.signal_engine import generate_battery_signal
 from src.markets.data_loader import load_price_data_for_optimizer
+from src.markets.entsoe_client import get_latest_available_price_forecast
 
 
 app = FastAPI(
@@ -105,6 +106,7 @@ def project_status():
             "/health",
             "/status",
             "/data/status",
+            "/data/update-entsoe",
             "/dashboard/summary",
             "/client/config",
             "/forecast/upload",
@@ -176,6 +178,38 @@ def data_status():
         "latest_monthly_report": file_status(latest_report),
     }
 
+@app.post("/data/update-entsoe")
+def update_entsoe_data():
+    forecast_file = Path("data/processed/next_day_price_forecast.csv")
+    forecast_file.parent.mkdir(parents=True, exist_ok=True)
+
+    result = get_latest_available_price_forecast()
+    rows = result["rows"]
+    target_date = result["target_date"]
+
+    if not rows:
+        return {
+            "status": "not_found",
+            "message": "No ENTSO-E data returned for tomorrow, today, or yesterday.",
+        }
+
+    df = pd.DataFrame(rows)
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+    df["forecast_price"] = pd.to_numeric(df["forecast_price"], errors="coerce")
+
+    df = df.dropna(subset=["timestamp", "forecast_price"])
+    df = df.drop_duplicates(subset=["timestamp"])
+    df = df.sort_values("timestamp")
+
+    df.to_csv(forecast_file, index=False)
+
+    return {
+        "status": "ok",
+        "message": "ENTSO-E forecast data updated successfully.",
+        "target_date": target_date,
+        "forecast_file": str(forecast_file),
+        "rows": len(df),
+    }
 
 @app.post("/forecast/upload")
 def upload_forecast(request: BatterySignalRequest):
