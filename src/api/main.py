@@ -184,7 +184,19 @@ def update_entsoe_data():
     forecast_file = Path("data/processed/next_day_price_forecast.csv")
     forecast_file.parent.mkdir(parents=True, exist_ok=True)
 
-    result = get_latest_available_price_forecast()
+    try:
+        result = get_latest_available_price_forecast()
+    except ValueError as error:
+        return {
+            "status": "missing_token",
+            "message": str(error),
+        }
+    except Exception as error:
+        return {
+            "status": "error",
+            "message": f"Could not update ENTSO-E forecast: {error}",
+        }
+
     rows = result["rows"]
     target_date = result["target_date"]
 
@@ -591,7 +603,19 @@ def run_daily_workflow():
     forecast_file.parent.mkdir(parents=True, exist_ok=True)
     signal_file.parent.mkdir(parents=True, exist_ok=True)
 
-    entsoe_result = get_latest_available_price_forecast()
+    try:
+        entsoe_result = get_latest_available_price_forecast()
+    except ValueError as error:
+        return {
+            "status": "missing_token",
+            "message": str(error),
+        }
+    except Exception as error:
+        return {
+            "status": "error",
+            "message": f"Could not update ENTSO-E forecast: {error}",
+        }
+
     rows = entsoe_result["rows"]
     target_date = entsoe_result["target_date"]
 
