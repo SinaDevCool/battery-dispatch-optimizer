@@ -285,6 +285,20 @@ else:
 
 st.header("Scenario Analysis")
 
+if st.button("Run Scenario Analysis"):
+    response = post_json("/scenarios/run-latest")
+
+    if response is None:
+        st.error("Could not run scenario analysis.")
+
+    elif response.get("status") == "ok":
+        st.success("Scenario analysis completed successfully.")
+        st.rerun()
+
+    else:
+        st.warning(response.get("message", "Scenario analysis could not be generated."))
+
+
 scenario_data = get_json("/scenarios/latest")
 
 if scenario_data is None:
@@ -292,7 +306,7 @@ if scenario_data is None:
 
 if scenario_data.get("status") != "ok":
     st.warning(scenario_data.get("message", "No scenario results available."))
-    st.info("Run scenarios first using POST /scenarios/run or python -m scripts.run_scenarios.")
+    st.info("Click Run Scenario Analysis first.")
 else:
     scenarios = scenario_data["results"]
 

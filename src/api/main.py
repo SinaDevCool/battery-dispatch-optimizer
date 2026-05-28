@@ -74,6 +74,7 @@ def project_status():
             "/battery/signal/run-latest",
             "/battery/backtest",
             "/scenarios/run",
+            "/scenarios/run-latest",
             "/scenarios/latest",
             "/reports/monthly/latest",
             "/reports/monthly/latest/view",
@@ -316,6 +317,35 @@ def run_battery_scenarios(request: BatterySignalRequest):
         "output_file": str(output_file),
     }
 
+@app.post("/scenarios/run-latest")
+def run_latest_scenarios():
+    forecast_file = Path("data/processed/next_day_price_forecast.csv")
+    output_file = Path("data/outputs/scenario_results.json")
+
+    if not forecast_file.exists():
+        return {
+            "status": "not_found",
+            "message": f"Forecast file not found: {forecast_file}",
+        }
+
+    price_data = load_price_data_for_optimizer(
+        forecast_file,
+        price_column="forecast_price",
+    )
+
+    scenario_results = run_scenarios(price_data)
+
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(output_file, "w", encoding="utf-8") as file:
+        json.dump(scenario_results, file, indent=2)
+
+    return {
+        "status": "ok",
+        "message": "Scenario analysis completed successfully.",
+        "scenario_file": str(output_file),
+        "results": scenario_results,
+    }
 
 @app.get("/scenarios/latest")
 def latest_scenarios():
