@@ -4,5 +4,5 @@ pandas
 pydantic
 requests
 streamlit
-requests
 pytest
+httpx
