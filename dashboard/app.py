@@ -363,6 +363,14 @@ if dispatch:
         use_container_width=True,
     )
 
+    dispatch_csv = dispatch_df.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="Download Dispatch CSV",
+        data=dispatch_csv,
+        file_name="battery_dispatch_schedule.csv",
+        mime="text/csv",
+    )
+
     st.subheader("Dispatch Table")
     st.dataframe(dispatch_df, use_container_width=True)
 
@@ -398,7 +406,18 @@ else:
     scenarios = scenario_data["results"]
 
     if scenarios:
-        st.dataframe(scenarios, use_container_width=True)
+        scenario_df = pd.DataFrame(scenarios)
+
+        st.dataframe(scenario_df, use_container_width=True)
+
+        scenario_csv = scenario_df.to_csv(index=False).encode("utf-8")
+
+        st.download_button(
+            label="Download Scenario CSV",
+            data=scenario_csv,
+            file_name="battery_scenario_results.csv",
+            mime="text/csv",
+        )
 
         best_scenario = max(
             scenarios,
