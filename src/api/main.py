@@ -18,6 +18,8 @@ from src.config.battery_config import DEFAULT_BATTERY_CONFIG, DEFAULT_STRATEGY_C
 from src.config.client_config import load_client_config, save_client_config
 from src.scenarios.scenario_runner import run_scenarios
 from src.signals.signal_engine import generate_battery_signal
+from src.signals.explanation_engine import explain_battery_signal
+from src.signals.risk_engine import build_risk_flags
 from src.markets.data_loader import load_price_data_for_optimizer
 from src.markets.entsoe_client import get_latest_available_price_forecast
 
@@ -113,6 +115,8 @@ def project_status():
             "/battery/config",
             "/battery/signal",
             "/battery/signal/latest",
+            "/battery/signal/latest/explanation",
+            "/battery/signal/latest/risks",
             "/battery/signal/run-latest",
             "/battery/backtest",
             "/scenarios/run",
@@ -353,7 +357,41 @@ def latest_battery_signal():
         "data": signal,
     }
 
+@app.get("/battery/signal/latest/explanation")
+def latest_battery_signal_explanation():
+    signal_file = Path("data/outputs/latest_battery_signal.json")
 
+    if not signal_file.exists():
+        return {
+            "status": "not_found",
+            "message": "No latest battery signal found. Run the daily workflow first.",
+        }
+
+    with open(signal_file, "r", encoding="utf-8") as file:
+        signal = json.load(file)
+
+    return explain_battery_signal(signal)
+
+@app.get("/battery/signal/latest/risks")
+def latest_battery_signal_risks():
+    signal_file = Path("data/outputs/latest_battery_signal.json")
+
+    if not signal_file.exists():
+        return {
+            "status": "not_found",
+            "message": "No latest battery signal found. Run the daily workflow first.",
+            "risks": [],
+        }
+
+    with open(signal_file, "r", encoding="utf-8") as file:
+        signal = json.load(file)
+
+    risks = build_risk_flags(signal)
+
+    return {
+        "status": "ok",
+        "risks": risks,
+    }
 
 @app.post("/battery/signal/run-latest")
 def run_latest_battery_signal():
