@@ -1,11 +1,14 @@
+import json
 from pathlib import Path
 
+from src.config.client_config import load_client_config
 from src.markets.data_loader import load_price_data_for_optimizer
 from src.signals.signal_engine import generate_battery_signal
 
 
 def main():
     forecast_file = Path("data/processed/next_day_price_forecast.csv")
+    output_file = Path("data/outputs/latest_battery_signal.json")
 
     if not forecast_file.exists():
         print("No next-day forecast file found.")
@@ -13,12 +16,29 @@ def main():
         print("Create a CSV with columns: timestamp, forecast_price")
         return
 
+    client_config = load_client_config()
+
+    battery_config = client_config["battery_config"]
+    strategy_config = client_config["strategy_config"]
+
+    print(f"Client: {client_config.get('client_name')}")
+    print(f"Site: {client_config.get('site_name')}")
+
     price_data = load_price_data_for_optimizer(
         forecast_file,
         price_column="forecast_price",
     )
 
-    result = generate_battery_signal(price_data)
+    result = generate_battery_signal(
+        price_data=price_data,
+        battery_config=battery_config,
+        strategy_config=strategy_config,
+    )
+
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(output_file, "w", encoding="utf-8") as file:
+        json.dump(result, file, indent=2)
 
     print("Battery Signal Summary")
     print("=" * 60)
@@ -45,6 +65,9 @@ def main():
             f"SOC={row['soc_mwh']:>6.2f} | "
             f"PnL={row['pnl_eur']:>8.2f}"
         )
+
+    print("\nSaved latest battery signal to:")
+    print(output_file)
 
 
 if __name__ == "__main__":

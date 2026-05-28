@@ -4,7 +4,7 @@
   "country": "Germany",
   "market": "Day-ahead spot",
   "battery_config": {
-    "capacity_mwh": 20.0,
+    "capacity_mwh": 20.14,
     "initial_soc_mwh": 10.0,
     "min_soc_mwh": 2.0,
     "max_charge_power_mw": 10.0,
