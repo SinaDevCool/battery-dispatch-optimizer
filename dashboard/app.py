@@ -52,6 +52,22 @@ if status is None:
 
 st.success("API is running")
 
+st.header("Daily Workflow")
+
+if st.button("Run Full Daily Workflow"):
+    response = post_json("/workflow/run-daily")
+
+    if response is None:
+        st.error("Could not run daily workflow.")
+
+    elif response.get("status") == "ok":
+        st.success("Daily workflow completed successfully.")
+        st.info(f"Used ENTSO-E data for: {response.get('target_date')}")
+        st.rerun()
+
+    else:
+        st.warning(response.get("message", "Daily workflow failed."))
+
 data_status = get_json("/data/status")
 
 st.header("Data Status")

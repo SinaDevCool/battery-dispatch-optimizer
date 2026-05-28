@@ -120,6 +120,7 @@ def project_status():
             "/scenarios/latest",
             "/reports/monthly/latest",
             "/reports/monthly/latest/view",
+            "/workflow/run-daily",
         ],
     }
 
@@ -579,3 +580,66 @@ def view_latest_monthly_report():
 
     with open(latest_report, "r", encoding="utf-8") as file:
         return file.read()
+    
+
+@app.post("/workflow/run-daily")
+def run_daily_workflow():
+    forecast_file = Path("data/processed/next_day_price_forecast.csv")
+    signal_file = Path("data/outputs/latest_battery_signal.json")
+    scenario_file = Path("data/outputs/scenario_results.json")
+
+    forecast_file.parent.mkdir(parents=True, exist_ok=True)
+    signal_file.parent.mkdir(parents=True, exist_ok=True)
+
+    entsoe_result = get_latest_available_price_forecast()
+    rows = entsoe_result["rows"]
+    target_date = entsoe_result["target_date"]
+
+    if not rows:
+        return {
+            "status": "not_found",
+            "message": "No ENTSO-E data returned for tomorrow, today, or yesterday.",
+        }
+
+    df = pd.DataFrame(rows)
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+    df["forecast_price"] = pd.to_numeric(df["forecast_price"], errors="coerce")
+
+    df = df.dropna(subset=["timestamp", "forecast_price"])
+    df = df.drop_duplicates(subset=["timestamp"])
+    df = df.sort_values("timestamp")
+
+    df.to_csv(forecast_file, index=False)
+
+    client_config = load_client_config()
+
+    price_data = load_price_data_for_optimizer(
+        forecast_file,
+        price_column="forecast_price",
+    )
+
+    signal_result = generate_battery_signal(
+        price_data=price_data,
+        battery_config=client_config["battery_config"],
+        strategy_config=client_config["strategy_config"],
+    )
+
+    with open(signal_file, "w", encoding="utf-8") as file:
+        json.dump(signal_result, file, indent=2)
+
+    scenario_results = run_scenarios(price_data)
+
+    with open(scenario_file, "w", encoding="utf-8") as file:
+        json.dump(scenario_results, file, indent=2)
+
+    return {
+        "status": "ok",
+        "message": "Daily workflow completed successfully.",
+        "target_date": target_date,
+        "forecast_file": str(forecast_file),
+        "signal_file": str(signal_file),
+        "scenario_file": str(scenario_file),
+        "forecast_rows": len(df),
+        "signal": signal_result["summary"],
+        "scenarios": scenario_results,
+    }
