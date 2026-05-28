@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.markets.entsoe_client import get_next_day_price_forecast
+from src.markets.entsoe_client import get_latest_available_price_forecast
 
 
 def main():
@@ -23,11 +23,15 @@ def main():
 
     print("\nDownloading ENTSO-E next-day day-ahead prices...")
 
-    rows = get_next_day_price_forecast()
+    result = get_latest_available_price_forecast()
+    rows = result["rows"]
+    target_date = result["target_date"]
 
     if not rows:
-        print("No ENTSO-E data returned.")
+        print("No ENTSO-E data returned for tomorrow, today, or yesterday.")
         return
+
+    print(f"Using ENTSO-E prices for: {target_date}")
 
     df = pd.DataFrame(rows)
     df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")

@@ -144,3 +144,64 @@ def get_next_day_price_forecast(
     )
 
     return parse_day_ahead_prices(xml_text)
+
+
+def get_price_forecast_for_date(
+    target_date,
+    bidding_zone=GERMANY_LUXEMBOURG_BIDDING_ZONE,
+    api_key=None,
+):
+    start_datetime = datetime(
+        target_date.year,
+        target_date.month,
+        target_date.day,
+        0,
+        0,
+        tzinfo=timezone.utc,
+    )
+
+    end_datetime = start_datetime + timedelta(days=1)
+
+    xml_text = fetch_day_ahead_prices(
+        start_datetime=start_datetime,
+        end_datetime=end_datetime,
+        bidding_zone=bidding_zone,
+        api_key=api_key,
+    )
+
+    return parse_day_ahead_prices(xml_text)
+
+
+def get_latest_available_price_forecast(
+    bidding_zone=GERMANY_LUXEMBOURG_BIDDING_ZONE,
+    api_key=None,
+):
+    now_utc = datetime.now(timezone.utc)
+
+    candidate_dates = [
+        now_utc.date() + timedelta(days=1),
+        now_utc.date(),
+        now_utc.date() - timedelta(days=1),
+    ]
+
+    for target_date in candidate_dates:
+        try:
+            rows = get_price_forecast_for_date(
+                target_date=target_date,
+                bidding_zone=bidding_zone,
+                api_key=api_key,
+            )
+
+            if rows:
+                return {
+                    "target_date": str(target_date),
+                    "rows": rows,
+                }
+
+        except Exception as error:
+            print(f"Could not fetch ENTSO-E prices for {target_date}: {error}")
+
+    return {
+        "target_date": None,
+        "rows": [],
+    }
