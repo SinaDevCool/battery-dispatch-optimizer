@@ -51,6 +51,63 @@ if status is None:
 
 st.success("API is running")
 
+st.header("Forecast Upload")
+
+uploaded_file = st.file_uploader(
+    "Upload next-day price forecast CSV",
+    type=["csv"],
+)
+
+if uploaded_file is not None:
+    try:
+        import pandas as pd
+
+        forecast_df = pd.read_csv(uploaded_file)
+
+        st.write("Preview")
+        st.dataframe(forecast_df.head(), use_container_width=True)
+
+        required_columns = ["timestamp", "forecast_price"]
+
+        missing_columns = [
+            col for col in required_columns
+            if col not in forecast_df.columns
+        ]
+
+        if missing_columns:
+            st.error(
+                "Missing required columns: "
+                + ", ".join(missing_columns)
+            )
+
+        elif st.button("Save Forecast CSV"):
+            price_data = []
+
+            for _, row in forecast_df.iterrows():
+                price_data.append(
+                    {
+                        "timestamp": str(row["timestamp"]),
+                        "price": float(row["forecast_price"]),
+                    }
+                )
+
+            response = post_json(
+                "/forecast/upload",
+                {
+                    "price_data": price_data,
+                },
+            )
+
+            if response and response.get("status") == "ok":
+                st.success("Forecast CSV saved successfully.")
+                st.info("Now click Generate Daily Battery Signal.")
+
+            else:
+                st.warning("Forecast upload failed.")
+
+    except Exception as error:
+        st.error(f"Could not read forecast CSV: {error}")
+
 
 st.header("Daily Signal Control")
 
