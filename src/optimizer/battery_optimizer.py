@@ -151,6 +151,9 @@ class BatteryOptimizer:
         grid_energy_mwh = battery_energy_mwh / self.charge_efficiency
         new_soc_mwh = soc_mwh + battery_energy_mwh
 
+        if new_soc_mwh > self.capacity_mwh:
+            new_soc_mwh = self.capacity_mwh
+
         pnl_eur = -price * grid_energy_mwh
 
         return "charge", grid_energy_mwh, battery_energy_mwh, pnl_eur, new_soc_mwh
