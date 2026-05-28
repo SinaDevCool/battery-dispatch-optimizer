@@ -118,6 +118,7 @@ def project_status():
             "/battery/signal/latest/explanation",
             "/battery/signal/latest/risks",
             "/battery/signal/run-latest",
+            "/battery/signal/history",
             "/battery/backtest",
             "/scenarios/run",
             "/scenarios/run-latest",
@@ -435,6 +436,38 @@ def run_latest_battery_signal():
         "data": result,
     }
 
+@app.get("/battery/signal/history")
+def battery_signal_history():
+    run_history_dir = Path("data/outputs/runs")
+
+    if not run_history_dir.exists():
+        return {
+            "status": "not_found",
+            "message": "No run history folder found.",
+            "runs": [],
+        }
+
+    run_files = sorted(run_history_dir.glob("*_battery_signal.json"))
+
+    runs = []
+
+    for file_path in run_files:
+        runs.append(
+            {
+                "file_name": file_path.name,
+                "file_path": str(file_path),
+                "last_modified": datetime.fromtimestamp(
+                    file_path.stat().st_mtime
+                ).isoformat(timespec="seconds"),
+                "size_bytes": file_path.stat().st_size,
+            }
+        )
+
+    return {
+        "status": "ok",
+        "runs": runs,
+    }
+
 @app.post("/battery/backtest", response_model=BacktestResponse)
 def battery_backtest(request: BacktestRequest):
     price_data = [
@@ -631,15 +664,17 @@ def view_latest_monthly_report():
     with open(latest_report, "r", encoding="utf-8") as file:
         return file.read()
     
-
 @app.post("/workflow/run-daily")
 def run_daily_workflow():
     forecast_file = Path("data/processed/next_day_price_forecast.csv")
     signal_file = Path("data/outputs/latest_battery_signal.json")
     scenario_file = Path("data/outputs/scenario_results.json")
+    run_history_dir = Path("data/outputs/runs")
 
     forecast_file.parent.mkdir(parents=True, exist_ok=True)
     signal_file.parent.mkdir(parents=True, exist_ok=True)
+    scenario_file.parent.mkdir(parents=True, exist_ok=True)
+    run_history_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         entsoe_result = get_latest_available_price_forecast()
@@ -686,7 +721,19 @@ def run_daily_workflow():
         strategy_config=client_config["strategy_config"],
     )
 
+    signal_result["metadata"] = {
+        "source": "ENTSO-E",
+        "target_date": target_date,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "forecast_file": str(forecast_file),
+    }
+
+    run_history_file = run_history_dir / f"{target_date}_battery_signal.json"
+
     with open(signal_file, "w", encoding="utf-8") as file:
+        json.dump(signal_result, file, indent=2)
+
+    with open(run_history_file, "w", encoding="utf-8") as file:
         json.dump(signal_result, file, indent=2)
 
     scenario_results = run_scenarios(price_data)
@@ -695,13 +742,14 @@ def run_daily_workflow():
         json.dump(scenario_results, file, indent=2)
 
     return {
-        "status": "ok",
-        "message": "Daily workflow completed successfully.",
-        "target_date": target_date,
-        "forecast_file": str(forecast_file),
-        "signal_file": str(signal_file),
-        "scenario_file": str(scenario_file),
-        "forecast_rows": len(df),
-        "signal": signal_result["summary"],
-        "scenarios": scenario_results,
-    }
+    "status": "ok",
+    "message": "Daily workflow completed successfully.",
+    "target_date": target_date,
+    "forecast_file": str(forecast_file),
+    "signal_file": str(signal_file),
+    "run_history_file": str(run_history_file),
+    "scenario_file": str(scenario_file),
+    "forecast_rows": len(df),
+    "signal": signal_result["summary"],
+    "scenarios": scenario_results,
+    }   
