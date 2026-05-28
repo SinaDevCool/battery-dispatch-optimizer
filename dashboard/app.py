@@ -75,11 +75,43 @@ if uploaded_file is not None:
             if col not in forecast_df.columns
         ]
 
+        forecast_df["timestamp"] = pd.to_datetime(
+        forecast_df["timestamp"],
+            errors="coerce",
+        )
+
+        forecast_df["forecast_price"] = pd.to_numeric(
+        forecast_df["forecast_price"],
+        errors="coerce",
+        )
+
+        invalid_timestamps = forecast_df["timestamp"].isna().sum()
+        missing_prices = forecast_df["forecast_price"].isna().sum()
+        duplicate_timestamps = forecast_df["timestamp"].duplicated().sum()
+        row_count = len(forecast_df)
+
         if missing_columns:
             st.error(
                 "Missing required columns: "
                 + ", ".join(missing_columns)
             )
+
+        elif invalid_timestamps > 0:
+            st.error(f"Forecast has {invalid_timestamps} invalid timestamps.")
+
+        elif missing_prices > 0:
+            st.error(f"Forecast has {missing_prices} missing or invalid prices.")
+
+        elif duplicate_timestamps > 0:
+            st.error(f"Forecast has {duplicate_timestamps} duplicate timestamps.")
+
+        elif row_count < 2:
+            st.error("Forecast must contain at least 2 rows.")
+
+        elif row_count != 24:
+            st.warning(
+                f"Forecast has {row_count} rows. Expected 24 hourly rows for a full next-day signal."
+        )
 
         elif st.button("Save Forecast CSV"):
             price_data = []
@@ -102,7 +134,6 @@ if uploaded_file is not None:
             if response and response.get("status") == "ok":
                 st.success("Forecast CSV saved successfully.")
                 st.info("Now click Generate Daily Battery Signal.")
-
             else:
                 st.warning("Forecast upload failed.")
 
