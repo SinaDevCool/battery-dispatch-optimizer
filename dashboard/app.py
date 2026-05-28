@@ -1,3 +1,4 @@
+import pandas as pd
 import requests
 import streamlit as st
 
@@ -335,7 +336,28 @@ col8.metric("First Discharge", summary["first_discharge_timestamp"] or "-")
 st.header("Dispatch Schedule")
 
 if dispatch:
-    st.dataframe(dispatch, use_container_width=True)
+    dispatch_df = pd.DataFrame(dispatch)
+    dispatch_df["timestamp"] = pd.to_datetime(dispatch_df["timestamp"], errors="coerce")
+
+    st.subheader("Forecast Price")
+    st.line_chart(
+        dispatch_df,
+        x="timestamp",
+        y="price",
+        use_container_width=True,
+    )
+
+    st.subheader("Battery SOC")
+    st.line_chart(
+        dispatch_df,
+        x="timestamp",
+        y="soc_mwh",
+        use_container_width=True,
+    )
+
+    st.subheader("Dispatch Table")
+    st.dataframe(dispatch_df, use_container_width=True)
+
 else:
     st.info("No dispatch rows available.")
 
