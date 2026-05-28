@@ -1,8 +1,15 @@
 .venv/
+.env
+
 __pycache__/
 *.pyc
-*.zip
+*.pyo
+*.pyd
+
+.pytest_cache/
 .ipynb_checkpoints/
+
+*.zip
 
 data/raw/
 data/processed/

@@ -3,6 +3,10 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 
 import requests
+from dotenv import load_dotenv
+
+
+load_dotenv()
 
 
 ENTSOE_API_URL = "https://web-api.tp.entsoe.eu/api"
@@ -18,7 +22,8 @@ def get_entsoe_api_key(api_key=None):
     if not api_key:
         raise ValueError(
             "Missing ENTSOE_API_KEY. "
-            "Set it in PowerShell with: $env:ENTSOE_API_KEY='your_token_here'"
+            "Set it in PowerShell with: $env:ENTSOE_API_KEY='your_token_here' "
+            "or add it to a local .env file."
         )
 
     return api_key
@@ -125,25 +130,11 @@ def get_next_day_price_forecast(
     now_utc = datetime.now(timezone.utc)
     tomorrow = now_utc.date() + timedelta(days=1)
 
-    start_datetime = datetime(
-        tomorrow.year,
-        tomorrow.month,
-        tomorrow.day,
-        0,
-        0,
-        tzinfo=timezone.utc,
-    )
-
-    end_datetime = start_datetime + timedelta(days=1)
-
-    xml_text = fetch_day_ahead_prices(
-        start_datetime=start_datetime,
-        end_datetime=end_datetime,
+    return get_price_forecast_for_date(
+        target_date=tomorrow,
         bidding_zone=bidding_zone,
         api_key=api_key,
     )
-
-    return parse_day_ahead_prices(xml_text)
 
 
 def get_price_forecast_for_date(
