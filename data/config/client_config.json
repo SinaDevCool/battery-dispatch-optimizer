@@ -4,7 +4,7 @@
   "country": "Germany",
   "market": "Day-ahead spot",
   "battery_config": {
-    "capacity_mwh": 20.14,
+    "capacity_mwh": 20.0,
     "initial_soc_mwh": 10.0,
     "min_soc_mwh": 2.0,
     "max_charge_power_mw": 10.0,
@@ -18,9 +18,11 @@
     "timestep_hours": 1.0
   },
   "commercial_config": {
-    "currency": "EUR",
-    "market_fee_eur_per_mwh": 0.0,
-    "grid_fee_eur_per_mwh": 0.0,
-    "degradation_cost_eur_per_mwh": 0.0
+    "trading_fee_eur_per_mwh": 0.2,
+    "market_access_fee_eur_per_mwh": 0.3,
+    "grid_fee_import_eur_per_mwh": 0.0,
+    "grid_fee_export_eur_per_mwh": 0.0,
+    "tax_or_levy_eur_per_mwh": 0.0,
+    "degradation_cost_eur_per_mwh_throughput": 3.0
   }
 }

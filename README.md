@@ -1,127 +1,138 @@
-
 # Battery Dispatch Optimizer
 
-A simple battery dispatch optimizer for grid-scale battery arbitrage.
+A Python-based battery dispatch optimizer for grid-scale battery arbitrage.
 
-The project takes hourly electricity price forecasts, creates a charge/discharge schedule, tracks battery state of charge, calculates simple PnL, runs scenario analysis, and exposes the results through a FastAPI backend and Streamlit dashboard.
+## What This Project Does
+
+This project takes hourly electricity price forecasts and converts them into battery charge/discharge signals.
+
+It tracks battery state of charge, calculates simple PnL, runs scenario analysis, and exposes results through a FastAPI backend and Streamlit dashboard.
 
 ## Features
 
 - Battery SOC tracking
 - Charge and discharge efficiency
 - Max charge/discharge power constraints
-- Simple PnL calculation
 - Daily battery signal generation
 - Historical backtesting
-- Scenario analysis for different battery sizes
-- Forecast CSV upload
-- Streamlit dashboard
+- Scenario analysis
 - FastAPI backend
-- Monthly HTML report support
+- Streamlit dashboard
 
 ## Project Structure
 
 ```text
-battery dispatch optimizer/
-  dashboard/
-    app.py
-  data/
-    config/
-      client_config.json
-    processed/
-      next_day_price_forecast.csv
-    outputs/
-      latest_battery_signal.json
-      scenario_results.json
-  scripts/
-    run_daily_signal.py
-    run_scenarios.py
-    run_historical_backtest.py
-    run_monthly_report.py
-  src/
-    api/
-      main.py
-      schemas.py
-    backtesting/
-      backtester.py
-      historical_backtest.py
-      metrics.py
-    config/
-      battery_config.py
-      client_config.py
-      market_config.py
-    optimizer/
-      battery_optimizer.py
-      dispatch_strategy.py
-    scenarios/
-      scenario_runner.py
-    signals/
-      signal_engine.py
-  tests/
-    test_api.py
-    test_battery_optimizer.py
+battery-dispatch-optimizer/
+├── dashboard/
+│   └── app.py
+├── data/
+│   ├── processed/
+│   └── outputs/
+├── scripts/
+├── src/
+│   ├── api/
+│   ├── backtesting/
+│   ├── config/
+│   ├── optimizer/
+│   ├── scenarios/
+│   └── signals/
+├── tests/
+├── requirements.txt
+└── README.md
+```
 
 ## Installation
 
-```powershell
+```bash
 pip install -r requirements.txt
-Environment Variables
-To fetch ENTSO-E data, set your ENTSO-E API token before running the update script or daily workflow.
+```
 
-In PowerShell:
+## Environment Variables
 
+To fetch ENTSO-E data, set your API token.
+
+PowerShell:
+
+```powershell
 $env:ENTSOE_API_KEY="your_entsoe_token_here"
-Without this token, ENTSO-E update endpoints will return:
+```
 
-missing_token
-Run the API
+## Run the API
+
+```bash
 python -m uvicorn src.api.main:app --reload
-Open:
+```
 
+Then open:
+
+```text
 http://127.0.0.1:8000/docs
-Run the Dashboard
-In a second terminal:
+```
 
+## Run the Dashboard
+
+```bash
 python -m streamlit run dashboard/app.py
-Forecast Input Format
-The dashboard and backend expect a CSV like:
+```
 
+## Forecast Input Format
+
+The system expects a CSV file like this:
+
+```csv
 timestamp,forecast_price
 2026-01-02 00:00:00,35
 2026-01-02 01:00:00,10
 2026-01-02 02:00:00,-8
 2026-01-02 03:00:00,95
-2026-01-02 04:00:00,130
+```
+
 Expected path:
 
+```text
 data/processed/next_day_price_forecast.csv
-Main API Endpoints
-GET  /health
-GET  /status
-GET  /data/status
-GET  /client/config
-POST /client/config
-POST /forecast/upload
-GET  /battery/config
-POST /battery/signal
-POST /battery/signal/run-latest
-GET  /battery/signal/latest
-POST /battery/backtest
-POST /scenarios/run
-POST /scenarios/run-latest
-GET  /scenarios/latest
-GET  /reports/monthly/latest
-GET  /reports/monthly/latest/view
-Run Daily Signal from Terminal
-python -m scripts.run_daily_signal
-Run Scenario Analysis from Terminal
-python -m scripts.run_scenarios
-Run Historical Backtest
-python -m scripts.run_historical_backtest
-Run Tests
-python -m pytest
-Notes
-This project currently uses a simple rule-based dispatch engine. It is intended for analysis, prototyping, and product development.
-
-It is not financial trading advice and does not yet include full market execution risk, grid fees, taxes, imbalance costs, degradation modeling, or advanced mathematical optimization.
 ```
+
+## API Endpoints
+
+| Method | Endpoint |
+|---|---|
+| GET | `/health` |
+| GET | `/status` |
+| POST | `/forecast/upload` |
+| POST | `/battery/signal` |
+| GET | `/battery/signal/latest` |
+| POST | `/battery/backtest` |
+| POST | `/scenarios/run` |
+
+## Run Scripts
+
+Daily signal:
+
+```bash
+python -m scripts.run_daily_signal
+```
+
+Scenario analysis:
+
+```bash
+python -m scripts.run_scenarios
+```
+
+Historical backtest:
+
+```bash
+python -m scripts.run_historical_backtest
+```
+
+## Run Tests
+
+```bash
+python -m pytest
+```
+
+## Notes
+
+This project currently uses a rule-based dispatch engine.
+
+It is intended for analysis, prototyping, and product development. It does not yet include full market execution risk, grid fees, taxes, imbalance costs, degradation modelling, or advanced mathematical optimization.
