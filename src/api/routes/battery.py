@@ -1,0 +1,326 @@
+import json
+from datetime import datetime
+
+import pandas as pd
+from fastapi import APIRouter
+
+from src.api.schemas import (
+    BacktestRequest,
+    BacktestResponse,
+    BatteryConfigResponse,
+    BatterySignalRequest,
+    BatterySignalResponse,
+)
+from src.backtesting.metrics import calculate_backtest_metrics
+from src.config.battery_config import DEFAULT_BATTERY_CONFIG, DEFAULT_STRATEGY_CONFIG
+from src.config.client_config import load_client_config
+from src.config.paths import FORECAST_FILE, LATEST_SIGNAL_FILE, SIGNAL_RUNS_DIR
+from src.optimization.optimizer_registry import list_optimizer_engines
+from src.services.dispatch_service import optimize_dispatch_from_forecast_file
+from src.services.signal_service import add_signal_metadata, save_signal_outputs
+from src.signals.explanation_engine import explain_battery_signal
+from src.signals.risk_engine import build_risk_flags
+from src.signals.signal_engine import generate_battery_signal
+
+
+router = APIRouter()
+
+
+@router.get("/battery/optimizers")
+def battery_optimizers():
+    return {
+        "status": "ok",
+        "default_optimizer": "rule_based_v1",
+        "available_optimizers": list_optimizer_engines(),
+    }
+
+
+@router.get("/battery/config", response_model=BatteryConfigResponse)
+def battery_config():
+    return {
+        "battery_config": DEFAULT_BATTERY_CONFIG,
+        "strategy_config": DEFAULT_STRATEGY_CONFIG,
+    }
+
+
+@router.get("/battery/constraints")
+def battery_constraints():
+    try:
+        client_config = load_client_config()
+    except FileNotFoundError as error:
+        return {
+            "status": "not_found",
+            "message": str(error),
+        }
+
+    battery_config = client_config["battery_config"]
+
+    capacity_mwh = battery_config["capacity_mwh"]
+    initial_soc_mwh = battery_config["initial_soc_mwh"]
+    min_soc_mwh = battery_config["min_soc_mwh"]
+    max_charge_power_mw = battery_config["max_charge_power_mw"]
+    max_discharge_power_mw = battery_config["max_discharge_power_mw"]
+
+    usable_capacity_mwh = capacity_mwh - min_soc_mwh
+    initial_usable_soc_mwh = initial_soc_mwh - min_soc_mwh
+
+    charge_duration_hours = capacity_mwh / max_charge_power_mw
+    discharge_duration_hours = usable_capacity_mwh / max_discharge_power_mw
+
+    return {
+        "status": "ok",
+        "capacity_mwh": capacity_mwh,
+        "usable_capacity_mwh": round(usable_capacity_mwh, 4),
+        "initial_usable_soc_mwh": round(initial_usable_soc_mwh, 4),
+        "min_soc_mwh": min_soc_mwh,
+        "initial_soc_mwh": initial_soc_mwh,
+        "max_charge_power_mw": max_charge_power_mw,
+        "max_discharge_power_mw": max_discharge_power_mw,
+        "charge_duration_hours": round(charge_duration_hours, 4),
+        "discharge_duration_hours": round(discharge_duration_hours, 4),
+    }
+
+
+@router.post("/battery/signal", response_model=BatterySignalResponse)
+def battery_signal(request: BatterySignalRequest):
+    price_data = [
+        {
+            "timestamp": item.timestamp,
+            "price": item.price,
+        }
+        for item in request.price_data
+    ]
+
+    battery_config = None
+    strategy_config = None
+
+    if request.battery_config is not None:
+        battery_config = request.battery_config.model_dump()
+
+    if request.strategy_config is not None:
+        strategy_config = request.strategy_config.model_dump()
+
+    return generate_battery_signal(
+        price_data=price_data,
+        battery_config=battery_config,
+        strategy_config=strategy_config,
+    )
+
+
+@router.get("/battery/signal/latest")
+def latest_battery_signal():
+    signal_file = LATEST_SIGNAL_FILE
+
+    if not signal_file.exists():
+        return {
+            "status": "not_found",
+            "message": "No latest battery signal found. Run scripts/run_daily_signal.py first.",
+        }
+
+    with open(signal_file, "r", encoding="utf-8") as file:
+        signal = json.load(file)
+
+    return {
+        "status": "ok",
+        "signal_file": str(signal_file),
+        "data": signal,
+    }
+
+
+@router.get("/battery/signal/latest/explanation")
+def latest_battery_signal_explanation():
+    signal_file = LATEST_SIGNAL_FILE
+
+    if not signal_file.exists():
+        return {
+            "status": "not_found",
+            "message": "No latest battery signal found. Run the daily workflow first.",
+        }
+
+    with open(signal_file, "r", encoding="utf-8") as file:
+        signal = json.load(file)
+
+    forecast_df = None
+
+    if FORECAST_FILE.exists():
+        forecast_df = pd.read_csv(FORECAST_FILE)
+
+    return explain_battery_signal(signal, forecast_df=forecast_df)
+
+
+@router.get("/battery/signal/latest/risks")
+def latest_battery_signal_risks():
+    signal_file = LATEST_SIGNAL_FILE
+
+    if not signal_file.exists():
+        return {
+            "status": "not_found",
+            "message": "No latest battery signal found. Run the daily workflow first.",
+            "risks": [],
+        }
+
+    with open(signal_file, "r", encoding="utf-8") as file:
+        signal = json.load(file)
+
+    forecast_df = None
+
+    if FORECAST_FILE.exists():
+        forecast_df = pd.read_csv(FORECAST_FILE)
+
+    risks = build_risk_flags(signal, forecast_df=forecast_df)
+
+    return {
+        "status": "ok",
+        "risks": risks,
+    }
+
+
+@router.post("/battery/signal/run-latest")
+def run_latest_battery_signal():
+    try:
+        forecast_file = FORECAST_FILE
+
+        if not forecast_file.exists():
+            return {
+                "status": "not_found",
+                "message": f"Forecast file not found: {forecast_file}",
+            }
+
+        try:
+            client_config = load_client_config()
+        except FileNotFoundError as error:
+            return {
+                "status": "not_found",
+                "message": str(error),
+            }
+
+        dispatch_result = optimize_dispatch_from_forecast_file(
+            forecast_file=forecast_file,
+            battery_config=client_config["battery_config"],
+            strategy_config=client_config["strategy_config"],
+            commercial_config=client_config.get("commercial_config"),
+        )
+
+        generated_at = datetime.now()
+
+        result = add_signal_metadata(
+            signal_result=dispatch_result.signal_result,
+            source="processed_forecast_csv",
+            forecast_model="processed_forecast_csv",
+            target_date=None,
+            forecast_file=forecast_file,
+            generated_at=generated_at,
+        )
+
+        saved_signal_files = save_signal_outputs(
+            signal_result=result,
+            target_date=None,
+        )
+
+        return {
+            "status": "ok",
+            "message": "Latest battery signal generated successfully.",
+            "signal_file": str(saved_signal_files["signal_file"]),
+            "run_history_file": str(saved_signal_files["run_history_file"]),
+            "optimizer_engine": dispatch_result.optimizer_engine,
+            "data": result,
+        }
+
+    except Exception as error:
+        return {
+            "status": "error",
+            "message": f"Could not generate latest battery signal: {error}",
+        }
+
+
+@router.get("/battery/signal/history")
+def battery_signal_history():
+    run_history_dir = SIGNAL_RUNS_DIR
+
+    if not run_history_dir.exists():
+        return {
+            "status": "not_found",
+            "message": "No run history folder found.",
+            "runs": [],
+        }
+
+    run_files = sorted(run_history_dir.glob("*_battery_signal.json"))
+
+    runs = []
+
+    for file_path in run_files:
+        runs.append(
+            {
+                "file_name": file_path.name,
+                "file_path": str(file_path),
+                "last_modified": datetime.fromtimestamp(
+                    file_path.stat().st_mtime
+                ).isoformat(timespec="seconds"),
+                "size_bytes": file_path.stat().st_size,
+            }
+        )
+
+    return {
+        "status": "ok",
+        "runs": runs,
+    }
+
+
+@router.get("/battery/signal/history/{file_name}")
+def get_battery_signal_history_file(file_name: str):
+    run_history_dir = SIGNAL_RUNS_DIR
+    run_file = run_history_dir / file_name
+
+    if not run_file.exists():
+        return {
+            "status": "not_found",
+            "message": f"Run history file not found: {file_name}",
+        }
+
+    if run_file.suffix != ".json":
+        return {
+            "status": "invalid_file",
+            "message": "Only JSON run history files can be loaded.",
+        }
+
+    with open(run_file, "r", encoding="utf-8") as file:
+        data = json.load(file)
+
+    return {
+        "status": "ok",
+        "file_name": file_name,
+        "data": data,
+    }
+
+
+@router.post("/battery/backtest", response_model=BacktestResponse)
+def battery_backtest(request: BacktestRequest):
+    price_data = [
+        {
+            "timestamp": item.timestamp,
+            "price": item.price,
+        }
+        for item in request.price_data
+    ]
+
+    battery_config = None
+    strategy_config = None
+
+    if request.battery_config is not None:
+        battery_config = request.battery_config.model_dump()
+
+    if request.strategy_config is not None:
+        strategy_config = request.strategy_config.model_dump()
+
+    result = generate_battery_signal(
+        price_data=price_data,
+        battery_config=battery_config,
+        strategy_config=strategy_config,
+    )
+
+    metrics = calculate_backtest_metrics(result["dispatch"])
+
+    return {
+        "summary": metrics,
+        "dispatch": result["dispatch"],
+    }
