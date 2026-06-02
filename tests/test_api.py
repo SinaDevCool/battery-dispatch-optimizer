@@ -1,4 +1,4 @@
-from fastapi.testclient import TestClient
+﻿from fastapi.testclient import TestClient
 
 from src.api.main import app
 
@@ -27,6 +27,21 @@ def test_status_endpoint():
     assert "/markets/products" in data["available_endpoints"]
     assert "/assets/{asset_id}/eligible-products" in data["available_endpoints"]
     assert "/assets/{asset_id}/revenue-stack/run" in data["available_endpoints"]
+    assert "/assets/{asset_id}/revenue-stack/allocate" in data["available_endpoints"]
+    assert "/assets/{asset_id}/revenue-stack/allocation/latest" in data["available_endpoints"]
+    assert "/assets/{asset_id}/signals" in data["available_endpoints"]
+    assert "/assets/{asset_id}/revenue-stack/runs" in data["available_endpoints"]
+    assert "/backtesting/forecast-actual/run" in data["available_endpoints"]
+    assert "/backtesting/forecast-actual/latest" in data["available_endpoints"]
+    assert "/assets/{asset_id}/forecast-performance" in data["available_endpoints"]
+    assert "/data/update-actual-prices" in data["available_endpoints"]
+    assert "/data/actual-prices/status" in data["available_endpoints"]
+    assert "/assets/{asset_id}/storage-classification" in data["available_endpoints"]
+    assert "/assets/{asset_id}/eeg-compliance/latest" in data["available_endpoints"]
+    assert "/assets/{asset_id}/ancillary/germany/eligibility" in data["available_endpoints"]
+    assert "/assets/{asset_id}/grid-fees/germany/sensitivity" in data["available_endpoints"]
+    assert "/assets/{asset_id}/energy-origin/latest" in data["available_endpoints"]
+    assert "/assets/{asset_id}/hedging/revenue" in data["available_endpoints"]
 
 
 def test_battery_config_endpoint():
@@ -236,6 +251,18 @@ def test_asset_revenue_stack_latest_endpoint():
     assert data["asset_id"] == "default_site"
 
 
+def test_asset_revenue_stack_database_history_endpoint():
+    response = client.get("/assets/default_site/revenue-stack/runs")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["status"] == "ok"
+    assert data["asset_id"] == "default_site"
+    assert "runs" in data
+
+
 def test_run_asset_revenue_stack_endpoint():
     response = client.post("/assets/default_site/revenue-stack/run")
 
@@ -297,6 +324,18 @@ def test_asset_signal_latest_endpoint():
     assert data["asset_id"] == "default_site"
 
 
+def test_asset_signal_database_history_endpoint():
+    response = client.get("/assets/default_site/signals")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["status"] == "ok"
+    assert data["asset_id"] == "default_site"
+    assert "runs" in data
+
+
 def test_run_latest_battery_signal_endpoint():
     response = client.post("/battery/signal/run-latest")
 
@@ -333,3 +372,121 @@ def test_apply_missing_client_preset():
     data = response.json()
 
     assert data["status"] == "not_found"
+
+def test_latest_forecast_actual_endpoint():
+    response = client.get("/backtesting/forecast-actual/latest")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert "status" in data
+    assert data.get("asset_id") == "default_site"
+
+
+def test_asset_forecast_performance_endpoint():
+    response = client.get("/assets/default_site/forecast-performance")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["status"] == "ok"
+    assert data["asset_id"] == "default_site"
+    assert "runs" in data
+
+def test_actual_price_status_endpoint():
+    response = client.get("/data/actual-prices/status")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert "status" in data
+    assert "actual_file" in data
+
+def test_storage_classification_endpoint():
+    response = client.get("/assets/default_site/storage-classification")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert "status" in data
+    assert data["asset_id"] == "default_site"
+    assert "storage_mode" in data
+
+
+def test_eeg_compliance_endpoint():
+    response = client.get("/assets/default_site/eeg-compliance/latest")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert "status" in data
+    assert data["asset_id"] == "default_site"
+    assert "recommended_actions" in data
+
+
+def test_ancillary_germany_eligibility_endpoint():
+    response = client.get("/assets/default_site/ancillary/germany/eligibility")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["status"] == "ok"
+    assert data["asset_id"] == "default_site"
+    assert "products" in data
+
+
+def test_grid_fee_sensitivity_endpoint():
+    response = client.get("/assets/default_site/grid-fees/germany/sensitivity")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["status"] == "ok"
+    assert data["asset_id"] == "default_site"
+    assert "scenarios" in data
+
+
+def test_hedged_revenue_endpoint():
+    response = client.get("/assets/default_site/hedging/revenue")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["status"] == "ok"
+    assert data["asset_id"] == "default_site"
+    assert "contracts" in data
+
+def test_revenue_stack_allocation_latest_endpoint():
+    response = client.get("/assets/default_site/revenue-stack/allocation/latest")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert "status" in data
+    assert data["asset_id"] == "default_site"
+    assert "allocation" in data
+
+
+def test_revenue_stack_allocate_endpoint():
+    response = client.post("/assets/default_site/revenue-stack/allocate")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert "status" in data
+
+    if data["status"] == "ok":
+        assert data["asset_id"] == "default_site"
+        assert "constraints" in data
+        assert "allocation" in data
+        assert "excluded_products" in data

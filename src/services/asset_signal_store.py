@@ -1,7 +1,8 @@
-import json
 from datetime import datetime
 
-from src.config.paths import ASSET_OUTPUTS_DIR
+from src.config.paths import ASSET_OUTPUTS_DIR, DATABASE_FILE
+from src.db.repositories.signal_repository import save_signal_run
+from src.storage import get_storage_client
 
 
 def get_asset_signal_dir(asset_id, base_dir=ASSET_OUTPUTS_DIR):
@@ -16,13 +17,17 @@ def get_asset_latest_signal_file(asset_id, base_dir=ASSET_OUTPUTS_DIR):
     return get_asset_signal_dir(asset_id, base_dir=base_dir) / "latest_signal.json"
 
 
-def save_asset_signal(signal_result, asset_id, target_date=None, base_dir=ASSET_OUTPUTS_DIR):
+def save_asset_signal(
+    signal_result,
+    asset_id,
+    target_date=None,
+    base_dir=ASSET_OUTPUTS_DIR,
+    db_file=DATABASE_FILE,
+):
+    storage = get_storage_client()
     asset_dir = get_asset_signal_dir(asset_id, base_dir=base_dir)
     runs_dir = get_asset_signal_runs_dir(asset_id, base_dir=base_dir)
     latest_signal_file = get_asset_latest_signal_file(asset_id, base_dir=base_dir)
-
-    asset_dir.mkdir(parents=True, exist_ok=True)
-    runs_dir.mkdir(parents=True, exist_ok=True)
 
     if target_date:
         safe_target_date = str(target_date).replace("-", "")
@@ -31,22 +36,27 @@ def save_asset_signal(signal_result, asset_id, target_date=None, base_dir=ASSET_
         generated_at = datetime.now()
         run_file = runs_dir / f"{generated_at.strftime('%Y%m%d_%H%M%S')}_signal.json"
 
-    with open(latest_signal_file, "w", encoding="utf-8") as file:
-        json.dump(signal_result, file, indent=2)
+    storage.write_json(latest_signal_file, signal_result)
+    storage.write_json(run_file, signal_result)
 
-    with open(run_file, "w", encoding="utf-8") as file:
-        json.dump(signal_result, file, indent=2)
+    signal_id = save_signal_run(
+        signal_result=signal_result,
+        asset_id=asset_id,
+        db_file=db_file,
+    )
 
     return {
         "asset_latest_signal_file": latest_signal_file,
         "asset_run_file": run_file,
+        "signal_id": signal_id,
     }
 
 
 def load_asset_latest_signal(asset_id, base_dir=ASSET_OUTPUTS_DIR):
+    storage = get_storage_client()
     latest_signal_file = get_asset_latest_signal_file(asset_id, base_dir=base_dir)
 
-    if not latest_signal_file.exists():
+    if not storage.exists(latest_signal_file):
         return {
             "status": "not_found",
             "message": f"No latest signal found for asset: {asset_id}",
@@ -54,8 +64,7 @@ def load_asset_latest_signal(asset_id, base_dir=ASSET_OUTPUTS_DIR):
             "data": None,
         }
 
-    with open(latest_signal_file, "r", encoding="utf-8") as file:
-        signal = json.load(file)
+    signal = storage.read_json(latest_signal_file)
 
     return {
         "status": "ok",
@@ -66,9 +75,10 @@ def load_asset_latest_signal(asset_id, base_dir=ASSET_OUTPUTS_DIR):
 
 
 def list_asset_signal_history(asset_id, base_dir=ASSET_OUTPUTS_DIR):
+    storage = get_storage_client()
     runs_dir = get_asset_signal_runs_dir(asset_id, base_dir=base_dir)
 
-    if not runs_dir.exists():
+    if not storage.exists(runs_dir) and not storage.list_files(runs_dir, "*_signal.json"):
         return {
             "status": "not_found",
             "message": f"No signal history found for asset: {asset_id}",
@@ -76,18 +86,17 @@ def list_asset_signal_history(asset_id, base_dir=ASSET_OUTPUTS_DIR):
             "runs": [],
         }
 
-    run_files = sorted(runs_dir.glob("*_signal.json"))
+    run_files = storage.list_files(runs_dir, "*_signal.json")
     runs = []
 
     for run_file in run_files:
+        status = storage.file_status(run_file)
         runs.append(
             {
                 "file_name": run_file.name,
                 "file_path": str(run_file),
-                "size_bytes": run_file.stat().st_size,
-                "last_modified": datetime.fromtimestamp(
-                    run_file.stat().st_mtime
-                ).isoformat(timespec="seconds"),
+                "size_bytes": status["size_bytes"],
+                "last_modified": status["last_modified"],
             }
         )
 
@@ -99,10 +108,11 @@ def list_asset_signal_history(asset_id, base_dir=ASSET_OUTPUTS_DIR):
 
 
 def load_asset_signal_run(asset_id, file_name, base_dir=ASSET_OUTPUTS_DIR):
+    storage = get_storage_client()
     runs_dir = get_asset_signal_runs_dir(asset_id, base_dir=base_dir)
     run_file = runs_dir / file_name
 
-    if not run_file.exists():
+    if not storage.exists(run_file):
         return {
             "status": "not_found",
             "message": f"Signal run not found for asset {asset_id}: {file_name}",
@@ -110,8 +120,7 @@ def load_asset_signal_run(asset_id, file_name, base_dir=ASSET_OUTPUTS_DIR):
             "data": None,
         }
 
-    with open(run_file, "r", encoding="utf-8") as file:
-        signal = json.load(file)
+    signal = storage.read_json(run_file)
 
     return {
         "status": "ok",

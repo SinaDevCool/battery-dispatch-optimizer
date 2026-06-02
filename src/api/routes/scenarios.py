@@ -1,5 +1,3 @@
-import json
-
 from fastapi import APIRouter
 
 from src.api.schemas import BatterySignalRequest
@@ -13,6 +11,7 @@ from src.forecasts.forecast_loader import load_forecast_price_data
 from src.markets.data_loader import load_price_data_for_optimizer
 from src.scenarios.scenario_runner import run_scenarios
 from src.scenarios.stress_runner import run_price_stress_tests
+from src.storage import get_storage_client
 
 
 router = APIRouter()
@@ -31,10 +30,7 @@ def run_battery_scenarios(request: BatterySignalRequest):
     scenario_results = run_scenarios(price_data)
 
     output_file = SCENARIO_RESULTS_FILE
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(output_file, "w", encoding="utf-8") as file:
-        json.dump(scenario_results, file, indent=2)
+    get_storage_client().write_json(output_file, scenario_results)
 
     return {
         "status": "ok",
@@ -47,8 +43,9 @@ def run_battery_scenarios(request: BatterySignalRequest):
 def run_latest_scenarios():
     forecast_file = FORECAST_FILE
     output_file = SCENARIO_RESULTS_FILE
+    storage = get_storage_client()
 
-    if not forecast_file.exists():
+    if not storage.exists(forecast_file):
         return {
             "status": "not_found",
             "message": f"Forecast file not found: {forecast_file}",
@@ -58,10 +55,7 @@ def run_latest_scenarios():
 
     scenario_results = run_scenarios(price_data)
 
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(output_file, "w", encoding="utf-8") as file:
-        json.dump(scenario_results, file, indent=2)
+    storage.write_json(output_file, scenario_results)
 
     return {
         "status": "ok",
@@ -74,15 +68,15 @@ def run_latest_scenarios():
 @router.get("/scenarios/latest")
 def latest_scenarios():
     scenario_file = SCENARIO_RESULTS_FILE
+    storage = get_storage_client()
 
-    if not scenario_file.exists():
+    if not storage.exists(scenario_file):
         return {
             "status": "not_found",
             "message": "No scenario results found. Run /scenarios/run first.",
         }
 
-    with open(scenario_file, "r", encoding="utf-8") as file:
-        results = json.load(file)
+    results = storage.read_json(scenario_file)
 
     return {
         "status": "ok",
@@ -95,8 +89,9 @@ def latest_scenarios():
 def run_latest_price_stress_tests():
     forecast_file = FORECAST_FILE
     output_file = PRICE_STRESS_RESULTS_FILE
+    storage = get_storage_client()
 
-    if not forecast_file.exists():
+    if not storage.exists(forecast_file):
         return {
             "status": "not_found",
             "message": f"Forecast file not found: {forecast_file}",
@@ -122,10 +117,7 @@ def run_latest_price_stress_tests():
         commercial_config=client_config.get("commercial_config"),
     )
 
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(output_file, "w", encoding="utf-8") as file:
-        json.dump(stress_results, file, indent=2)
+    storage.write_json(output_file, stress_results)
 
     return {
         "status": "ok",
@@ -138,15 +130,15 @@ def run_latest_price_stress_tests():
 @router.get("/stress/latest")
 def latest_price_stress_tests():
     stress_file = PRICE_STRESS_RESULTS_FILE
+    storage = get_storage_client()
 
-    if not stress_file.exists():
+    if not storage.exists(stress_file):
         return {
             "status": "not_found",
             "message": "No price stress results found. Run /stress/run-latest first.",
         }
 
-    with open(stress_file, "r", encoding="utf-8") as file:
-        results = json.load(file)
+    results = storage.read_json(stress_file)
 
     return {
         "status": "ok",

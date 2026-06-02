@@ -1,8 +1,10 @@
-from src.api.routes.assets import router as assets_router
+﻿from src.api.routes.assets import router as assets_router
 from src.api.routes.asset_signals import router as asset_signals_router
 from src.api.routes.battery import router as battery_router
 from src.api.routes.client import router as client_router
+from src.api.routes.forecast_actual import router as forecast_actual_router
 from src.api.routes.forecasts import router as forecasts_router
+from src.api.routes.history import router as history_router
 from src.api.routes.markets import router as markets_router
 from src.api.routes.market_products import router as market_products_router
 from src.api.routes.reports import router as reports_router
@@ -21,6 +23,8 @@ API_ROUTERS = [
     markets_router,
     regulatory_router,
     revenue_router,
+    history_router,
+    forecast_actual_router,
     client_router,
     forecasts_router,
     battery_router,

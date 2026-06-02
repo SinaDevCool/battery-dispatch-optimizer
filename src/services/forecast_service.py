@@ -1,6 +1,4 @@
 from dataclasses import dataclass
-from pathlib import Path
-
 import pandas as pd
 
 from src.config.paths import FORECAST_FILE
@@ -8,6 +6,7 @@ from src.forecasts.entsoe_forecast_provider import (
     EntsoeForecastError,
     build_next_day_entsoe_forecast,
 )
+from src.storage import get_storage_client
 
 
 @dataclass
@@ -46,22 +45,19 @@ def normalize_forecast_dataframe(forecast_df):
 
 
 def save_forecast_dataframe(forecast_df, forecast_file=FORECAST_FILE):
-    forecast_file = Path(forecast_file)
-    forecast_file.parent.mkdir(parents=True, exist_ok=True)
-
     df = normalize_forecast_dataframe(forecast_df)
-    df.to_csv(forecast_file, index=False)
+    get_storage_client().write_dataframe(forecast_file, df)
 
     return df
 
 
 def load_local_forecast_dataframe(forecast_file=FORECAST_FILE):
-    forecast_file = Path(forecast_file)
+    storage = get_storage_client()
 
-    if not forecast_file.exists():
+    if not storage.exists(forecast_file):
         raise FileNotFoundError(f"Forecast file not found: {forecast_file}")
 
-    forecast_df = pd.read_csv(forecast_file)
+    forecast_df = storage.read_dataframe(forecast_file)
 
     return normalize_forecast_dataframe(forecast_df)
 
@@ -81,9 +77,9 @@ def load_next_day_forecast_with_fallback(forecast_file=FORECAST_FILE):
         )
 
     except EntsoeForecastError as error:
-        forecast_file = Path(forecast_file)
+        storage = get_storage_client()
 
-        if not forecast_file.exists():
+        if not storage.exists(forecast_file):
             raise
 
         forecast_df = load_local_forecast_dataframe(forecast_file)

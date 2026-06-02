@@ -1,7 +1,5 @@
-import json
 from datetime import datetime
 
-import pandas as pd
 from fastapi import APIRouter
 
 from src.api.schemas import (
@@ -23,10 +21,15 @@ from src.services.asset_dispatch_service import (
     dispatch_default_asset,
 )
 from src.services.asset_signal_store import save_asset_signal
-from src.services.signal_service import add_signal_metadata, save_signal_outputs
+from src.services.signal_service import (
+    add_signal_metadata,
+    load_latest_signal,
+    save_signal_outputs,
+)
 from src.signals.explanation_engine import explain_battery_signal
 from src.signals.risk_engine import build_risk_flags
 from src.signals.signal_engine import generate_battery_signal
+from src.storage import get_storage_client
 
 
 router = APIRouter()
@@ -122,15 +125,15 @@ def battery_signal(request: BatterySignalRequest):
 @router.get("/battery/signal/latest")
 def latest_battery_signal():
     signal_file = LATEST_SIGNAL_FILE
+    storage = get_storage_client()
 
-    if not signal_file.exists():
+    if not storage.exists(signal_file):
         return {
             "status": "not_found",
             "message": "No latest battery signal found. Run scripts/run_daily_signal.py first.",
         }
 
-    with open(signal_file, "r", encoding="utf-8") as file:
-        signal = json.load(file)
+    signal = load_latest_signal(signal_file)
 
     return {
         "status": "ok",
@@ -142,20 +145,20 @@ def latest_battery_signal():
 @router.get("/battery/signal/latest/explanation")
 def latest_battery_signal_explanation():
     signal_file = LATEST_SIGNAL_FILE
+    storage = get_storage_client()
 
-    if not signal_file.exists():
+    if not storage.exists(signal_file):
         return {
             "status": "not_found",
             "message": "No latest battery signal found. Run the daily workflow first.",
         }
 
-    with open(signal_file, "r", encoding="utf-8") as file:
-        signal = json.load(file)
+    signal = load_latest_signal(signal_file)
 
     forecast_df = None
 
-    if FORECAST_FILE.exists():
-        forecast_df = pd.read_csv(FORECAST_FILE)
+    if storage.exists(FORECAST_FILE):
+        forecast_df = storage.read_dataframe(FORECAST_FILE)
 
     return explain_battery_signal(signal, forecast_df=forecast_df)
 
@@ -163,21 +166,21 @@ def latest_battery_signal_explanation():
 @router.get("/battery/signal/latest/risks")
 def latest_battery_signal_risks():
     signal_file = LATEST_SIGNAL_FILE
+    storage = get_storage_client()
 
-    if not signal_file.exists():
+    if not storage.exists(signal_file):
         return {
             "status": "not_found",
             "message": "No latest battery signal found. Run the daily workflow first.",
             "risks": [],
         }
 
-    with open(signal_file, "r", encoding="utf-8") as file:
-        signal = json.load(file)
+    signal = load_latest_signal(signal_file)
 
     forecast_df = None
 
-    if FORECAST_FILE.exists():
-        forecast_df = pd.read_csv(FORECAST_FILE)
+    if storage.exists(FORECAST_FILE):
+        forecast_df = storage.read_dataframe(FORECAST_FILE)
 
     risks = build_risk_flags(signal, forecast_df=forecast_df)
 
@@ -191,8 +194,9 @@ def latest_battery_signal_risks():
 def run_latest_battery_signal(optimizer_engine: str = "rule_based_v1"):
     try:
         forecast_file = FORECAST_FILE
+        storage = get_storage_client()
 
-        if not forecast_file.exists():
+        if not storage.exists(forecast_file):
             return {
                 "status": "not_found",
                 "message": f"Forecast file not found: {forecast_file}",
@@ -239,6 +243,7 @@ def run_latest_battery_signal(optimizer_engine: str = "rule_based_v1"):
                 saved_asset_signal_files["asset_latest_signal_file"]
             ),
             "asset_run_file": str(saved_asset_signal_files["asset_run_file"]),
+            "signal_id": saved_asset_signal_files["signal_id"],
             "optimizer_engine": dispatch_result.optimizer_engine,
             "asset_id": asset_dispatch_result.asset.asset_id,
             "market_profile_id": asset_dispatch_result.asset.market_profile_id,
@@ -263,27 +268,26 @@ def run_latest_battery_signal(optimizer_engine: str = "rule_based_v1"):
 @router.get("/battery/signal/history")
 def battery_signal_history():
     run_history_dir = SIGNAL_RUNS_DIR
+    storage = get_storage_client()
+    run_files = storage.list_files(run_history_dir, "*_battery_signal.json")
 
-    if not run_history_dir.exists():
+    if not run_files:
         return {
             "status": "not_found",
-            "message": "No run history folder found.",
+            "message": "No run history found.",
             "runs": [],
         }
-
-    run_files = sorted(run_history_dir.glob("*_battery_signal.json"))
 
     runs = []
 
     for file_path in run_files:
+        status = storage.file_status(file_path)
         runs.append(
             {
                 "file_name": file_path.name,
                 "file_path": str(file_path),
-                "last_modified": datetime.fromtimestamp(
-                    file_path.stat().st_mtime
-                ).isoformat(timespec="seconds"),
-                "size_bytes": file_path.stat().st_size,
+                "last_modified": status["last_modified"],
+                "size_bytes": status["size_bytes"],
             }
         )
 
@@ -297,8 +301,9 @@ def battery_signal_history():
 def get_battery_signal_history_file(file_name: str):
     run_history_dir = SIGNAL_RUNS_DIR
     run_file = run_history_dir / file_name
+    storage = get_storage_client()
 
-    if not run_file.exists():
+    if not storage.exists(run_file):
         return {
             "status": "not_found",
             "message": f"Run history file not found: {file_name}",
@@ -310,8 +315,7 @@ def get_battery_signal_history_file(file_name: str):
             "message": "Only JSON run history files can be loaded.",
         }
 
-    with open(run_file, "r", encoding="utf-8") as file:
-        data = json.load(file)
+    data = storage.read_json(run_file)
 
     return {
         "status": "ok",

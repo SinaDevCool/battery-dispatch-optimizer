@@ -1,5 +1,3 @@
-import json
-
 from src.config.paths import (
     FORECAST_FILE,
     SCENARIO_RESULTS_FILE,
@@ -14,6 +12,7 @@ from src.services.asset_dispatch_service import (
 from src.services.asset_signal_store import save_asset_signal
 from src.services.forecast_service import load_next_day_forecast_with_fallback
 from src.services.signal_service import add_signal_metadata, save_signal_outputs
+from src.storage import get_storage_client
 
 
 def run_daily_battery_workflow(optimizer_engine="rule_based_v1"):
@@ -84,10 +83,7 @@ def run_daily_battery_workflow(optimizer_engine="rule_based_v1"):
 
     scenario_results = run_scenarios(dispatch_result.price_data)
 
-    SCENARIO_RESULTS_FILE.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(SCENARIO_RESULTS_FILE, "w", encoding="utf-8") as file:
-        json.dump(scenario_results, file, indent=2)
+    get_storage_client().write_json(SCENARIO_RESULTS_FILE, scenario_results)
 
     return {
         "status": "ok",
@@ -100,6 +96,7 @@ def run_daily_battery_workflow(optimizer_engine="rule_based_v1"):
             saved_asset_signal_files["asset_latest_signal_file"]
         ),
         "asset_run_file": str(saved_asset_signal_files["asset_run_file"]),
+        "signal_id": saved_asset_signal_files["signal_id"],
         "scenario_file": str(SCENARIO_RESULTS_FILE),
         "forecast_rows": len(forecast_result.dataframe),
         "forecast_columns": forecast_result.dataframe.columns.tolist(),

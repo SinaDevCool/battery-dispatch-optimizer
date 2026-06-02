@@ -1,25 +1,10 @@
-from datetime import datetime
-
 import pandas as pd
+
+from src.storage import get_storage_client
 
 
 def file_status(path):
-    if not path.exists():
-        return {
-            "exists": False,
-            "path": str(path),
-            "last_modified": None,
-            "size_bytes": 0,
-        }
-
-    modified_time = datetime.fromtimestamp(path.stat().st_mtime)
-
-    return {
-        "exists": True,
-        "path": str(path),
-        "last_modified": modified_time.isoformat(timespec="seconds"),
-        "size_bytes": path.stat().st_size,
-    }
+    return get_storage_client().file_status(path)
 
 
 def validate_forecast_dataframe(df):

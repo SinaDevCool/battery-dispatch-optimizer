@@ -1,7 +1,8 @@
-import os
+﻿import os
 from datetime import datetime, timezone
 
 import pandas as pd
+import requests
 from entsoe import EntsoePandasClient
 
 from src.markets.market_profile_loader import get_default_market_profile
@@ -9,8 +10,10 @@ from src.markets.market_profile_loader import get_default_market_profile
 
 DEFAULT_COUNTRY_CODE = "DE_LU"
 
+
 class EntsoeForecastError(RuntimeError):
     pass
+
 
 def get_entsoe_client():
     token = os.environ.get("ENTSOE_API_KEY") or os.environ.get("ENTSOE_TOKEN")
@@ -20,7 +23,33 @@ def get_entsoe_client():
             "Missing ENTSO-E API token. Set ENTSOE_API_KEY in your environment."
         )
 
-    return EntsoePandasClient(api_key=token)
+    session = build_entsoe_requests_session()
+
+    return EntsoePandasClient(api_key=token, session=session)
+
+
+def build_entsoe_requests_session():
+    session = requests.Session()
+    verify_ssl = os.environ.get("ENTSOE_VERIFY_SSL", "true").lower()
+    ca_bundle = (
+        os.environ.get("ENTSOE_CA_BUNDLE")
+        or os.environ.get("REQUESTS_CA_BUNDLE")
+        or os.environ.get("SSL_CERT_FILE")
+    )
+
+    if ca_bundle:
+        session.verify = ca_bundle
+    elif verify_ssl in ["0", "false", "no", "off"]:
+        session.verify = False
+
+        try:
+            import urllib3
+
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        except Exception:
+            pass
+
+    return session
 
 
 def save_series_or_df(data, value_name):

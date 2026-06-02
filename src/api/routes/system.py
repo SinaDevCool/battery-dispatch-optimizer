@@ -1,11 +1,14 @@
-import json
+﻿import json
 import os
 from pathlib import Path
 
 from fastapi import APIRouter
 
 from src.api.common import file_status
+from src.api.schemas import DataStatusResponse, HealthResponse
+from src.config.app_settings import get_app_settings
 from src.config.paths import (
+    ACTUAL_PRICE_FILE,
     CLIENT_CONFIG_FILE,
     FORECAST_FILE,
     LATEST_SIGNAL_FILE,
@@ -17,11 +20,13 @@ from src.config.paths import (
 router = APIRouter()
 
 
-@router.get("/health")
+@router.get("/health", response_model=HealthResponse)
 def health_check():
+    settings = get_app_settings()
+
     return {
         "status": "ok",
-        "service": "battery-dispatch-optimizer",
+        "service": settings.service_name,
     }
 
 
@@ -71,16 +76,23 @@ def system_health():
 
 @router.get("/status")
 def project_status():
+    settings = get_app_settings()
+
     return {
         "status": "ok",
         "project": "battery-dispatch-optimizer",
         "version": "0.1.0",
+        "environment": settings.environment,
+        "storage_backend": settings.storage_backend,
+        "auth_mode": settings.auth_mode,
         "available_endpoints": [
             "/health",
             "/system/health",
             "/status",
             "/data/status",
             "/data/update-entsoe",
+            "/data/update-actual-prices",
+            "/data/actual-prices/status",
             "/dashboard/summary",
             "/assets",
             "/assets/{asset_id}/signal/run-latest",
@@ -96,8 +108,24 @@ def project_status():
             "/assets/{asset_id}/eligible-products",
             "/assets/{asset_id}/revenue-stack/run",
             "/assets/{asset_id}/revenue-stack/latest",
+            "/assets/{asset_id}/revenue-stack/allocate",
+            "/assets/{asset_id}/revenue-stack/allocation/latest",
+            "/assets/{asset_id}/signals",
+            "/assets/{asset_id}/signals/{signal_id}",
+            "/assets/{asset_id}/revenue-stack/runs",
+            "/assets/{asset_id}/revenue-stack/runs/{revenue_stack_id}",
+            "/backtesting/forecast-actual/run",
+            "/backtesting/forecast-actual/latest",
+            "/assets/{asset_id}/forecast-performance",
+            "/assets/{asset_id}/forecast-performance/{forecast_actual_id}",
             "/regulatory/germany/requirements",
             "/assets/{asset_id}/regulatory/germany",
+            "/assets/{asset_id}/storage-classification",
+            "/assets/{asset_id}/eeg-compliance/latest",
+            "/assets/{asset_id}/ancillary/germany/eligibility",
+            "/assets/{asset_id}/grid-fees/germany/sensitivity",
+            "/assets/{asset_id}/energy-origin/latest",
+            "/assets/{asset_id}/hedging/revenue",
             "/client/config",
             "/forecast/upload",
             "/forecast/status",
@@ -130,9 +158,10 @@ def project_status():
     }
 
 
-@router.get("/data/status")
+@router.get("/data/status", response_model=DataStatusResponse)
 def data_status():
     forecast_file = FORECAST_FILE
+    actual_file = ACTUAL_PRICE_FILE
     signal_file = LATEST_SIGNAL_FILE
     scenario_file = SCENARIO_RESULTS_FILE
     report_dir = OUTPUT_DATA_DIR
@@ -150,6 +179,7 @@ def data_status():
     return {
         "status": "ok",
         "forecast_file": file_status(forecast_file),
+        "actual_price_file": file_status(actual_file),
         "latest_signal_file": file_status(signal_file),
         "scenario_file": file_status(scenario_file),
         "latest_monthly_report": file_status(latest_report),
@@ -199,3 +229,8 @@ def dashboard_summary():
         "latest_report_available": latest_report is not None,
         "latest_report_url": "/reports/monthly/latest/view" if latest_report else None,
     }
+
+
+
+
+

@@ -1,13 +1,20 @@
-import json
 from pathlib import Path
 
 import pandas as pd
 from fastapi import APIRouter
 
-from src.api.common import validate_forecast_dataframe
-from src.api.schemas import BatterySignalRequest
+from src.api.common import file_status, validate_forecast_dataframe
+from src.api.schemas import (
+    ActualPriceStatusResponse,
+    ApiResponse,
+    BatterySignalRequest,
+    ForecastPreviewResponse,
+    ForecastProfitabilityResponse,
+    ForecastStatusResponse,
+)
 from src.config.client_config import load_client_config
 from src.config.paths import (
+    ACTUAL_PRICE_FILE,
     FORECAST_FILE,
     LATEST_SIGNAL_FILE,
     SCENARIO_RESULTS_FILE,
@@ -22,18 +29,163 @@ from src.forecasts.forecast_comparison import compare_forecast_profitability
 from src.forecasts.forecast_loader import load_forecast_price_data
 from src.forecasts.forecast_registry import get_forecast_files
 from src.forecasts.inhouse_forecast_provider import build_next_day_inhouse_forecast
+from src.markets.actual_price_provider import (
+    ActualPriceDataError,
+    build_entsoe_actual_day_ahead_prices,
+)
 from src.markets.market_profile_loader import get_default_market_profile
 from src.scenarios.scenario_runner import run_scenarios
+from src.services.forecast_service import save_forecast_dataframe
+from src.services.signal_service import save_signal_outputs
 from src.signals.signal_engine import generate_battery_signal
+from src.storage import get_storage_client
 
 
 router = APIRouter()
 
 
-@router.post("/data/update-entsoe")
+@router.post("/data/update-actual-prices")
+def update_actual_day_ahead_prices(
+    target_date: str | None = None,
+    country_code: str = "DE_LU",
+):
+    actual_file = ACTUAL_PRICE_FILE
+    storage = get_storage_client()
+
+    try:
+        df = build_entsoe_actual_day_ahead_prices(
+            target_date=target_date,
+            country_code=country_code,
+        )
+
+    except ValueError as error:
+        return {
+            "status": "missing_token",
+            "message": str(error),
+        }
+
+    except (ActualPriceDataError, EntsoeForecastError) as error:
+        return {
+            "status": "not_found",
+            "message": str(error),
+            "actual_file": str(actual_file),
+        }
+
+    except Exception as error:
+        return {
+            "status": "error",
+            "message": f"Could not update actual day-ahead prices: {error}",
+            "actual_file": str(actual_file),
+        }
+
+    if df is None or df.empty:
+        return {
+            "status": "not_found",
+            "message": "No actual day-ahead price data returned.",
+            "actual_file": str(actual_file),
+        }
+
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+    df["actual_price"] = pd.to_numeric(
+        df["actual_price"],
+        errors="coerce",
+    )
+
+    df = df.dropna(subset=["timestamp", "actual_price"])
+    df = df.drop_duplicates(subset=["timestamp"])
+    df = df.sort_values("timestamp")
+
+    if df.empty:
+        return {
+            "status": "invalid",
+            "message": "Actual price data was returned, but no valid timestamp and price rows were available.",
+            "actual_file": str(actual_file),
+        }
+
+    storage.write_dataframe(actual_file, df)
+
+    target_delivery_date = str(df["timestamp"].dt.date.iloc[0])
+
+    return {
+        "status": "ok",
+        "message": "Actual day-ahead prices updated successfully.",
+        "target_date": target_delivery_date,
+        "actual_file": str(actual_file),
+        "rows": len(df),
+        "columns": df.columns.tolist(),
+        "actual_provider": "entsoe",
+        "actual_market": "day_ahead",
+    }
+
+
+@router.get(
+    "/data/actual-prices/status",
+    response_model=ActualPriceStatusResponse,
+)
+def actual_day_ahead_price_status():
+    actual_file = ACTUAL_PRICE_FILE
+    storage = get_storage_client()
+
+    if not storage.exists(actual_file):
+        return {
+            "status": "not_found",
+            "message": f"Actual price file not found: {actual_file}",
+            "actual_file": file_status(actual_file),
+        }
+
+    df = storage.read_dataframe(actual_file)
+
+    if df.empty:
+        return {
+            "status": "empty",
+            "message": "Actual price file exists but is empty.",
+            "actual_file": file_status(actual_file),
+        }
+
+    if "timestamp" not in df.columns or "actual_price" not in df.columns:
+        return {
+            "status": "invalid",
+            "message": "Actual price file must contain timestamp and actual_price columns.",
+            "actual_file": file_status(actual_file),
+            "columns": df.columns.tolist(),
+        }
+
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+    df["actual_price"] = pd.to_numeric(df["actual_price"], errors="coerce")
+
+    invalid_timestamps = int(df["timestamp"].isna().sum())
+    missing_prices = int(df["actual_price"].isna().sum())
+    valid_df = df.dropna(subset=["timestamp", "actual_price"])
+
+    if valid_df.empty:
+        return {
+            "status": "invalid",
+            "message": "Actual price file contains no valid timestamp and price rows.",
+            "actual_file": file_status(actual_file),
+            "rows": len(df),
+            "invalid_timestamps": invalid_timestamps,
+            "missing_prices": missing_prices,
+        }
+
+    return {
+        "status": "ok",
+        "actual_file": file_status(actual_file),
+        "rows": len(df),
+        "valid_rows": len(valid_df),
+        "columns": df.columns.tolist(),
+        "first_timestamp": str(valid_df["timestamp"].min()),
+        "last_timestamp": str(valid_df["timestamp"].max()),
+        "min_actual_price": round(float(valid_df["actual_price"].min()), 4),
+        "max_actual_price": round(float(valid_df["actual_price"].max()), 4),
+        "average_actual_price": round(float(valid_df["actual_price"].mean()), 4),
+        "invalid_timestamps": invalid_timestamps,
+        "missing_prices": missing_prices,
+    }
+
+@router.post("/data/update-entsoe", response_model=ApiResponse)
 def update_entsoe_data():
     forecast_file = FORECAST_FILE
-    forecast_file.parent.mkdir(parents=True, exist_ok=True)
+    storage = get_storage_client()
 
     try:
         df = build_next_day_entsoe_forecast()
@@ -45,7 +197,7 @@ def update_entsoe_data():
         }
 
     except EntsoeForecastError as error:
-        if forecast_file.exists():
+        if storage.exists(forecast_file):
             return {
                 "status": "fallback",
                 "message": (
@@ -88,7 +240,7 @@ def update_entsoe_data():
             "message": "ENTSO-E forecast was returned, but no valid timestamp and price rows were available.",
         }
 
-    df.to_csv(forecast_file, index=False)
+    storage.write_dataframe(forecast_file, df)
 
     target_date = str(df["timestamp"].dt.date.iloc[0])
 
@@ -107,7 +259,7 @@ def update_entsoe_data():
 @router.post("/forecast/upload")
 def upload_forecast(request: BatterySignalRequest):
     forecast_file = FORECAST_FILE
-    forecast_file.parent.mkdir(parents=True, exist_ok=True)
+    storage = get_storage_client()
 
     rows = []
 
@@ -130,7 +282,7 @@ def upload_forecast(request: BatterySignalRequest):
             "rows": len(df),
         }
 
-    df.to_csv(forecast_file, index=False)
+    storage.write_dataframe(forecast_file, df)
 
     try:
         client_config = load_client_config()
@@ -153,18 +305,12 @@ def upload_forecast(request: BatterySignalRequest):
     )
 
     signal_file = LATEST_SIGNAL_FILE
-    signal_file.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(signal_file, "w", encoding="utf-8") as file:
-        json.dump(signal_result, file, indent=2)
+    save_signal_outputs(signal_result, signal_file=signal_file)
 
     scenario_results = run_scenarios(price_data)
 
     scenario_file = SCENARIO_RESULTS_FILE
-    scenario_file.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(scenario_file, "w", encoding="utf-8") as file:
-        json.dump(scenario_results, file, indent=2)
+    storage.write_json(scenario_file, scenario_results)
 
     return {
         "status": "ok",
@@ -178,17 +324,18 @@ def upload_forecast(request: BatterySignalRequest):
     }
 
 
-@router.get("/forecast/status")
+@router.get("/forecast/status", response_model=ForecastStatusResponse)
 def forecast_status():
     forecast_file = FORECAST_FILE
+    storage = get_storage_client()
 
-    if not forecast_file.exists():
+    if not storage.exists(forecast_file):
         return {
             "status": "not_found",
             "message": f"Forecast file not found: {forecast_file}",
         }
 
-    df = pd.read_csv(forecast_file)
+    df = storage.read_dataframe(forecast_file)
     features = build_forecast_quality_features(df)
 
     if features["status"] != "ok":
@@ -206,17 +353,18 @@ def forecast_status():
     }
 
 
-@router.get("/forecast/preview")
+@router.get("/forecast/preview", response_model=ForecastPreviewResponse)
 def forecast_preview():
     forecast_file = FORECAST_FILE
+    storage = get_storage_client()
 
-    if not forecast_file.exists():
+    if not storage.exists(forecast_file):
         return {
             "status": "not_found",
             "message": f"Forecast file not found: {forecast_file}",
         }
 
-    df = pd.read_csv(forecast_file)
+    df = storage.read_dataframe(forecast_file)
 
     if df.empty:
         return {
@@ -241,17 +389,19 @@ def forecast_preview():
     }
 
 
-@router.post("/forecasts/compare-profitability")
+@router.post(
+    "/forecasts/compare-profitability",
+    response_model=ForecastProfitabilityResponse,
+)
 def run_forecast_profitability_comparison():
     output_file = Path("data/outputs/forecast_profitability_comparison.json")
-    output_file.parent.mkdir(parents=True, exist_ok=True)
+    storage = get_storage_client()
 
     forecast_files = get_forecast_files()
 
     results = compare_forecast_profitability(forecast_files)
 
-    with open(output_file, "w", encoding="utf-8") as file:
-        json.dump(results, file, indent=2)
+    storage.write_json(output_file, results)
 
     return {
         "status": "ok",
@@ -262,19 +412,22 @@ def run_forecast_profitability_comparison():
     }
 
 
-@router.get("/forecasts/compare-profitability/latest")
+@router.get(
+    "/forecasts/compare-profitability/latest",
+    response_model=ForecastProfitabilityResponse,
+)
 def latest_forecast_profitability_comparison():
     comparison_file = Path("data/outputs/forecast_profitability_comparison.json")
+    storage = get_storage_client()
 
-    if not comparison_file.exists():
+    if not storage.exists(comparison_file):
         return {
             "status": "not_found",
             "message": "No forecast profitability comparison found. Run /forecasts/compare-profitability first.",
             "results": [],
         }
 
-    with open(comparison_file, "r", encoding="utf-8") as file:
-        results = json.load(file)
+    results = storage.read_json(comparison_file)
 
     return {
         "status": "ok",
@@ -286,14 +439,15 @@ def latest_forecast_profitability_comparison():
 @router.get("/features/forecast")
 def forecast_features():
     forecast_file = FORECAST_FILE
+    storage = get_storage_client()
 
-    if not forecast_file.exists():
+    if not storage.exists(forecast_file):
         return {
             "status": "not_found",
             "message": f"Forecast file not found: {forecast_file}",
         }
 
-    df = pd.read_csv(forecast_file)
+    df = storage.read_dataframe(forecast_file)
 
     quality_features = build_forecast_quality_features(
         df,
@@ -316,7 +470,6 @@ def forecast_features():
 @router.post("/forecast/demo")
 def create_demo_forecast():
     forecast_file = FORECAST_FILE
-    forecast_file.parent.mkdir(parents=True, exist_ok=True)
 
     start_time = pd.Timestamp.now().normalize() + pd.Timedelta(days=1)
 
@@ -347,7 +500,7 @@ def create_demo_forecast():
             )
 
     df = pd.DataFrame(rows)
-    df.to_csv(forecast_file, index=False)
+    save_forecast_dataframe(df, forecast_file)
 
     return {
         "status": "ok",
@@ -362,7 +515,6 @@ def create_demo_forecast():
 @router.post("/forecast/demo-high-spread")
 def create_demo_high_spread_forecast():
     forecast_file = Path("data/processed/demo_high_spread_forecast.csv")
-    forecast_file.parent.mkdir(parents=True, exist_ok=True)
 
     start_time = pd.Timestamp.now().normalize() + pd.Timedelta(days=1)
 
@@ -393,7 +545,7 @@ def create_demo_high_spread_forecast():
             )
 
     df = pd.DataFrame(rows)
-    df.to_csv(forecast_file, index=False)
+    save_forecast_dataframe(df, forecast_file)
 
     return {
         "status": "ok",
@@ -408,10 +560,9 @@ def create_demo_high_spread_forecast():
 @router.post("/forecast/inhouse-placeholder")
 def create_inhouse_placeholder_forecast():
     forecast_file = Path("data/processed/inhouse_placeholder_forecast.csv")
-    forecast_file.parent.mkdir(parents=True, exist_ok=True)
 
     df = build_next_day_inhouse_forecast()
-    df.to_csv(forecast_file, index=False)
+    save_forecast_dataframe(df, forecast_file)
 
     return {
         "status": "ok",
@@ -421,3 +572,4 @@ def create_inhouse_placeholder_forecast():
         "forecast_provider": "inhouse_placeholder",
         "forecast_model": "inhouse_placeholder_v0",
     }
+

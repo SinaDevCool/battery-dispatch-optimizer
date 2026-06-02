@@ -86,6 +86,7 @@ def run_portfolio_dispatch(
                         saved_asset_signal_files["asset_latest_signal_file"]
                     ),
                     "asset_run_file": str(saved_asset_signal_files["asset_run_file"]),
+                    "signal_id": saved_asset_signal_files["signal_id"],
                     "summary": summary,
                     "dispatch": signal_result["dispatch"],
                     "optimization": signal_result.get("optimization", {}),

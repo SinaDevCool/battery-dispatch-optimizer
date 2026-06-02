@@ -23,6 +23,7 @@ def test_save_and_load_asset_signal(tmp_path):
         asset_id="test_asset",
         target_date="2026-01-02",
         base_dir=tmp_path,
+        db_file=tmp_path / "test.sqlite",
     )
 
     assert saved_files["asset_latest_signal_file"].exists()

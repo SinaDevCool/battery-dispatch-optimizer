@@ -3,6 +3,7 @@ from datetime import datetime
 
 from src.assets.asset_loader import get_asset
 from src.config.paths import ASSET_OUTPUTS_DIR, REVENUE_STACK_RESULTS_FILE
+from src.db.repositories.revenue_repository import save_revenue_stack_run
 from src.markets.products.product_registry import (
     build_asset_product_eligibility_list,
 )
@@ -65,6 +66,8 @@ def run_asset_revenue_stack(asset_id, optimizer_engine="rule_based_v1"):
         "products": product_results,
     }
 
+    revenue_stack_id = save_revenue_stack_run(result)
+    result["revenue_stack_id"] = revenue_stack_id
     save_revenue_stack_result(asset_id, result)
 
     return result

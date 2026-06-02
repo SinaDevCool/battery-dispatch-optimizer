@@ -229,6 +229,93 @@ Dashboard tabs:
 - Reports
 - Settings
 
+## Run the Product Frontend
+
+The commercial UI is a Next.js frontend in:
+
+```text
+frontend/
+```
+
+Start it locally:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Then open:
+
+```text
+http://localhost:3000
+```
+
+The frontend reads the API URL from:
+
+```text
+NEXT_PUBLIC_API_BASE_URL
+```
+
+For local development, the default API URL is:
+
+```text
+http://127.0.0.1:8000
+```
+
+For Azure, set:
+
+```text
+NEXT_PUBLIC_API_BASE_URL=https://your-backend-app.azurewebsites.net
+```
+
+Streamlit is still useful as an internal prototype dashboard, but the Next.js
+frontend is the recommended path for a customer-facing product.
+
+## Azure App Service Deployment
+
+The recommended commercial deployment is App Service-first:
+
+```text
+Next.js frontend App Service
+FastAPI backend App Service
+Azure PostgreSQL
+Azure Blob Storage
+Azure Key Vault
+Microsoft Entra ID
+Application Insights
+```
+
+Deployment notes are in:
+
+```text
+docs/azure-app-service.md
+```
+
+Backend startup command:
+
+```bash
+bash startup.sh
+```
+
+Frontend startup command:
+
+```bash
+bash startup.sh
+```
+
+For backend Azure app settings, copy from:
+
+```text
+.env.azure.example
+```
+
+For frontend Azure app settings, copy from:
+
+```text
+frontend/.env.azure.example
+```
+
 ## Forecast Input Format
 
 The system expects forecast files with at least:

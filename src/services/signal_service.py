@@ -1,7 +1,7 @@
-import json
 from datetime import datetime
 
 from src.config.paths import LATEST_SIGNAL_FILE, SIGNAL_RUNS_DIR
+from src.storage import get_storage_client
 
 
 def add_signal_metadata(
@@ -39,8 +39,7 @@ def save_signal_outputs(
     signal_file=LATEST_SIGNAL_FILE,
     run_history_dir=SIGNAL_RUNS_DIR,
 ):
-    signal_file.parent.mkdir(parents=True, exist_ok=True)
-    run_history_dir.mkdir(parents=True, exist_ok=True)
+    storage = get_storage_client()
 
     if target_date:
         safe_target_date = str(target_date).replace("-", "")
@@ -52,13 +51,19 @@ def save_signal_outputs(
             / f"{generated_at.strftime('%Y%m%d_%H%M%S')}_battery_signal.json"
         )
 
-    with open(signal_file, "w", encoding="utf-8") as file:
-        json.dump(signal_result, file, indent=2)
-
-    with open(run_history_file, "w", encoding="utf-8") as file:
-        json.dump(signal_result, file, indent=2)
+    storage.write_json(signal_file, signal_result)
+    storage.write_json(run_history_file, signal_result)
 
     return {
         "signal_file": signal_file,
         "run_history_file": run_history_file,
     }
+
+
+def load_latest_signal(signal_file=LATEST_SIGNAL_FILE):
+    storage = get_storage_client()
+
+    if not storage.exists(signal_file):
+        raise FileNotFoundError(f"Signal file not found: {signal_file}")
+
+    return storage.read_json(signal_file)

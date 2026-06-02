@@ -1,5 +1,8 @@
 .venv/
 .env
+.env.local
+.env.production
+!.env.azure.example
 
 __pycache__/
 *.pyc

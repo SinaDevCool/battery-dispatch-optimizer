@@ -2,6 +2,7 @@ from datetime import datetime
 
 from fastapi import APIRouter
 
+from src.api.schemas import AssetSignalRunResponse, LatestSignalResponse
 from src.assets.asset_loader import get_asset
 from src.services.asset_dispatch_service import (
     add_asset_dispatch_validation,
@@ -20,7 +21,10 @@ from src.services.signal_service import add_signal_metadata
 router = APIRouter()
 
 
-@router.post("/assets/{asset_id}/signal/run-latest")
+@router.post(
+    "/assets/{asset_id}/signal/run-latest",
+    response_model=AssetSignalRunResponse,
+)
 def run_asset_latest_signal(asset_id: str, optimizer_engine: str = "rule_based_v1"):
     try:
         asset = get_asset(asset_id)
@@ -73,13 +77,14 @@ def run_asset_latest_signal(asset_id: str, optimizer_engine: str = "rule_based_v
         "optimizer_engine": dispatch_result.optimizer_engine,
         "asset_latest_signal_file": str(saved_files["asset_latest_signal_file"]),
         "asset_run_file": str(saved_files["asset_run_file"]),
+        "signal_id": saved_files["signal_id"],
         "assumption_risk_flags": asset_dispatch_result.assumption_risk_flags,
         "validation": signal_result["validation"],
         "data": signal_result,
     }
 
 
-@router.get("/assets/{asset_id}/signal/latest")
+@router.get("/assets/{asset_id}/signal/latest", response_model=LatestSignalResponse)
 def latest_asset_signal(asset_id: str):
     return load_asset_latest_signal(asset_id)
 

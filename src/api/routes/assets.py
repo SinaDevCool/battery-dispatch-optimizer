@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from src.api.schemas import ApiResponse, AssetListResponse
 from src.assets.asset_loader import load_assets
 from src.assets.portfolio_runner import (
     load_latest_portfolio_results,
@@ -10,7 +11,7 @@ from src.assets.portfolio_runner import (
 router = APIRouter()
 
 
-@router.get("/assets")
+@router.get("/assets", response_model=AssetListResponse)
 def list_assets():
     assets = load_assets()
 
@@ -21,11 +22,11 @@ def list_assets():
     }
 
 
-@router.post("/portfolio/run-daily")
+@router.post("/portfolio/run-daily", response_model=ApiResponse)
 def run_portfolio_daily(optimizer_engine: str = "rule_based_v1"):
     return run_portfolio_dispatch(optimizer_engine=optimizer_engine)
 
 
-@router.get("/portfolio/latest")
+@router.get("/portfolio/latest", response_model=ApiResponse)
 def latest_portfolio_results():
     return load_latest_portfolio_results()
