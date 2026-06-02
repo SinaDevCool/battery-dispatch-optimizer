@@ -11,11 +11,12 @@ def add_signal_metadata(
     target_date,
     forecast_file,
     generated_at=None,
+    extra_metadata=None,
 ):
     if generated_at is None:
         generated_at = datetime.now()
 
-    signal_result["metadata"] = {
+    metadata = {
         "source": source,
         "forecast_provider": source,
         "forecast_model": forecast_model,
@@ -23,6 +24,11 @@ def add_signal_metadata(
         "generated_at": generated_at.isoformat(timespec="seconds"),
         "forecast_file": str(forecast_file),
     }
+
+    if extra_metadata:
+        metadata.update(extra_metadata)
+
+    signal_result["metadata"] = metadata
 
     return signal_result
 

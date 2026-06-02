@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 import pandas as pd
 from entsoe import EntsoePandasClient
 
+from src.markets.market_profile_loader import get_default_market_profile
+
 
 DEFAULT_COUNTRY_CODE = "DE_LU"
 
@@ -80,6 +82,9 @@ def merge_forecast_column(base_df, source_df):
 
 def build_next_day_entsoe_forecast(country_code=DEFAULT_COUNTRY_CODE):
     client = get_entsoe_client()
+    market_profile = get_default_market_profile()
+    market_time_unit_minutes = int(market_profile["market_time_unit_minutes"])
+    resample_frequency = f"{market_time_unit_minutes}min"
 
     today = pd.Timestamp.now(tz="Europe/Brussels").normalize()
     start = today + pd.Timedelta(days=1)
@@ -151,7 +156,7 @@ def build_next_day_entsoe_forecast(country_code=DEFAULT_COUNTRY_CODE):
     forecast_df = (
         forecast_df
         .set_index("timestamp")
-        .resample("1h")
+        .resample(resample_frequency)
         .mean(numeric_only=True)
         .reset_index()
     )
@@ -190,6 +195,8 @@ def build_next_day_entsoe_forecast(country_code=DEFAULT_COUNTRY_CODE):
     forecast_df["date"] = forecast_df["timestamp"].dt.date.astype(str)
     forecast_df["forecast_provider"] = "entsoe"
     forecast_df["forecast_model"] = "entsoe_day_ahead"
+    forecast_df["market_profile_id"] = market_profile["market_profile_id"]
+    forecast_df["market_time_unit_minutes"] = market_time_unit_minutes
     forecast_df["created_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     required_columns = [
@@ -204,6 +211,8 @@ def build_next_day_entsoe_forecast(country_code=DEFAULT_COUNTRY_CODE):
         "date",
         "forecast_provider",
         "forecast_model",
+        "market_profile_id",
+        "market_time_unit_minutes",
         "created_at",
     ]
 

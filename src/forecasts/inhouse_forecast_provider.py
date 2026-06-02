@@ -17,23 +17,30 @@ def build_next_day_inhouse_forecast():
     created_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     for hour, price in enumerate(prices):
-        timestamp = start_time + pd.Timedelta(hours=hour)
+        for quarter in range(4):
+            timestamp = (
+                start_time
+                + pd.Timedelta(hours=hour)
+                + pd.Timedelta(minutes=15 * quarter)
+            )
 
-        rows.append(
-            {
-                "timestamp": timestamp,
-                "forecast_price": price,
-                "load_forecast": None,
-                "generation_forecast": None,
-                "forecast_solar": None,
-                "forecast_wind": None,
-                "forecast_renewables_total": None,
-                "hour": timestamp.hour,
-                "date": str(timestamp.date()),
-                "forecast_provider": "inhouse_placeholder",
-                "forecast_model": "inhouse_placeholder_v0",
-                "created_at": created_at,
-            }
-        )
+            rows.append(
+                {
+                    "timestamp": timestamp,
+                    "forecast_price": price,
+                    "load_forecast": None,
+                    "generation_forecast": None,
+                    "forecast_solar": None,
+                    "forecast_wind": None,
+                    "forecast_renewables_total": None,
+                    "hour": timestamp.hour,
+                    "date": str(timestamp.date()),
+                    "forecast_provider": "inhouse_placeholder",
+                    "forecast_model": "inhouse_placeholder_v0_15min",
+                    "market_profile_id": "de_lu_day_ahead",
+                    "market_time_unit_minutes": 15,
+                    "created_at": created_at,
+                }
+            )
 
     return pd.DataFrame(rows)

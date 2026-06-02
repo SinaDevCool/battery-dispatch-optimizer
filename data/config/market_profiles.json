@@ -1,0 +1,34 @@
+{
+  "markets": [
+    {
+      "market_profile_id": "de_lu_day_ahead",
+      "country": "Germany",
+      "bidding_zone": "DE_LU",
+      "currency": "EUR",
+      "timezone": "Europe/Berlin",
+      "market_time_unit_minutes": 15,
+      "expected_intervals_per_day": 96,
+      "default_forecast_provider": "entsoe",
+      "settlement_market": "day_ahead",
+      "supports_negative_prices": true,
+      "regulatory_assumption_version": "de_2026_initial_product_assumption",
+      "notes": [
+        "German day-ahead wholesale prices have used 15-minute products since 2025-10-01.",
+        "Grid fees, BKZ, and storage tariff assumptions remain project-specific and should be reviewed before commercial use."
+      ],
+      "commercial_defaults": {
+        "trading_fee_eur_per_mwh": 0.2,
+        "market_access_fee_eur_per_mwh": 0.3,
+        "grid_fee_import_eur_per_mwh": 0.0,
+        "grid_fee_export_eur_per_mwh": 0.0,
+        "tax_or_levy_eur_per_mwh": 0.0,
+        "degradation_cost_eur_per_mwh_throughput": 3.0,
+        "connection_cost_eur": 0.0,
+        "construction_cost_contribution_eur_per_mw": 0.0,
+        "ordered_capacity_mw": null,
+        "network_tariff_model": "configurable",
+        "netting_storage_losses_only": false
+      }
+    }
+  ]
+}

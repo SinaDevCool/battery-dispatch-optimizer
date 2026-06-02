@@ -16,7 +16,13 @@ from src.config.battery_config import DEFAULT_BATTERY_CONFIG, DEFAULT_STRATEGY_C
 from src.config.client_config import load_client_config
 from src.config.paths import FORECAST_FILE, LATEST_SIGNAL_FILE, SIGNAL_RUNS_DIR
 from src.optimization.optimizer_registry import list_optimizer_engines
-from src.services.dispatch_service import optimize_dispatch_from_forecast_file
+from src.services.asset_dispatch_service import (
+    add_asset_dispatch_validation,
+    apply_grid_connection_limits,
+    build_asset_signal_metadata,
+    dispatch_default_asset,
+)
+from src.services.asset_signal_store import save_asset_signal
 from src.services.signal_service import add_signal_metadata, save_signal_outputs
 from src.signals.explanation_engine import explain_battery_signal
 from src.signals.risk_engine import build_risk_flags
@@ -53,7 +59,11 @@ def battery_constraints():
             "message": str(error),
         }
 
-    battery_config = client_config["battery_config"]
+    battery_config = apply_grid_connection_limits(
+        client_config["battery_config"],
+        client_config.get("grid_connection", {}),
+    )
+    grid_connection = client_config.get("grid_connection", {})
 
     capacity_mwh = battery_config["capacity_mwh"]
     initial_soc_mwh = battery_config["initial_soc_mwh"]
@@ -76,6 +86,8 @@ def battery_constraints():
         "initial_soc_mwh": initial_soc_mwh,
         "max_charge_power_mw": max_charge_power_mw,
         "max_discharge_power_mw": max_discharge_power_mw,
+        "grid_connection": grid_connection,
+        "constraints_source": "asset_aware_grid_connection",
         "charge_duration_hours": round(charge_duration_hours, 4),
         "discharge_duration_hours": round(discharge_duration_hours, 4),
     }
@@ -176,7 +188,7 @@ def latest_battery_signal_risks():
 
 
 @router.post("/battery/signal/run-latest")
-def run_latest_battery_signal():
+def run_latest_battery_signal(optimizer_engine: str = "rule_based_v1"):
     try:
         forecast_file = FORECAST_FILE
 
@@ -186,20 +198,11 @@ def run_latest_battery_signal():
                 "message": f"Forecast file not found: {forecast_file}",
             }
 
-        try:
-            client_config = load_client_config()
-        except FileNotFoundError as error:
-            return {
-                "status": "not_found",
-                "message": str(error),
-            }
-
-        dispatch_result = optimize_dispatch_from_forecast_file(
+        asset_dispatch_result = dispatch_default_asset(
             forecast_file=forecast_file,
-            battery_config=client_config["battery_config"],
-            strategy_config=client_config["strategy_config"],
-            commercial_config=client_config.get("commercial_config"),
+            optimizer_engine=optimizer_engine,
         )
+        dispatch_result = asset_dispatch_result.dispatch_result
 
         generated_at = datetime.now()
 
@@ -210,10 +213,20 @@ def run_latest_battery_signal():
             target_date=None,
             forecast_file=forecast_file,
             generated_at=generated_at,
+            extra_metadata=build_asset_signal_metadata(asset_dispatch_result),
+        )
+        result = add_asset_dispatch_validation(
+            signal_result=result,
+            asset_dispatch_result=asset_dispatch_result,
         )
 
         saved_signal_files = save_signal_outputs(
             signal_result=result,
+            target_date=None,
+        )
+        saved_asset_signal_files = save_asset_signal(
+            signal_result=result,
+            asset_id=asset_dispatch_result.asset.asset_id,
             target_date=None,
         )
 
@@ -222,8 +235,22 @@ def run_latest_battery_signal():
             "message": "Latest battery signal generated successfully.",
             "signal_file": str(saved_signal_files["signal_file"]),
             "run_history_file": str(saved_signal_files["run_history_file"]),
+            "asset_latest_signal_file": str(
+                saved_asset_signal_files["asset_latest_signal_file"]
+            ),
+            "asset_run_file": str(saved_asset_signal_files["asset_run_file"]),
             "optimizer_engine": dispatch_result.optimizer_engine,
+            "asset_id": asset_dispatch_result.asset.asset_id,
+            "market_profile_id": asset_dispatch_result.asset.market_profile_id,
+            "assumption_risk_flags": asset_dispatch_result.assumption_risk_flags,
+            "validation": result["validation"],
             "data": result,
+        }
+
+    except FileNotFoundError as error:
+        return {
+            "status": "not_found",
+            "message": str(error),
         }
 
     except Exception as error:

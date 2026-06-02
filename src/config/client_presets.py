@@ -4,6 +4,7 @@ CLIENT_PRESETS = {
         "site_name": "Small Commercial Battery",
         "country": "Germany",
         "market": "Day-ahead spot",
+        "market_profile_id": "de_lu_day_ahead",
         "battery_config": {
             "capacity_mwh": 5.0,
             "initial_soc_mwh": 2.5,
@@ -16,7 +17,7 @@ CLIENT_PRESETS = {
         "strategy_config": {
             "low_price_threshold": 20.0,
             "high_price_threshold": 80.0,
-            "timestep_hours": 1.0,
+            "timestep_hours": 0.25,
         },
         "commercial_config": {
             "trading_fee_eur_per_mwh": 0.20,
@@ -32,6 +33,7 @@ CLIENT_PRESETS = {
         "site_name": "Demo Grid Scale Battery",
         "country": "Germany",
         "market": "Day-ahead spot",
+        "market_profile_id": "de_lu_day_ahead",
         "battery_config": {
             "capacity_mwh": 20.0,
             "initial_soc_mwh": 10.0,
@@ -44,7 +46,7 @@ CLIENT_PRESETS = {
         "strategy_config": {
             "low_price_threshold": 20.0,
             "high_price_threshold": 80.0,
-            "timestep_hours": 1.0,
+            "timestep_hours": 0.25,
         },
         "commercial_config": {
             "trading_fee_eur_per_mwh": 0.20,
@@ -60,6 +62,7 @@ CLIENT_PRESETS = {
         "site_name": "Large Grid Battery",
         "country": "Germany",
         "market": "Day-ahead spot",
+        "market_profile_id": "de_lu_day_ahead",
         "battery_config": {
             "capacity_mwh": 100.0,
             "initial_soc_mwh": 50.0,
@@ -72,7 +75,7 @@ CLIENT_PRESETS = {
         "strategy_config": {
             "low_price_threshold": 20.0,
             "high_price_threshold": 80.0,
-            "timestep_hours": 1.0,
+            "timestep_hours": 0.25,
         },
         "commercial_config": {
             "trading_fee_eur_per_mwh": 0.20,

@@ -22,6 +22,7 @@ from src.forecasts.forecast_comparison import compare_forecast_profitability
 from src.forecasts.forecast_loader import load_forecast_price_data
 from src.forecasts.forecast_registry import get_forecast_files
 from src.forecasts.inhouse_forecast_provider import build_next_day_inhouse_forecast
+from src.markets.market_profile_loader import get_default_market_profile
 from src.scenarios.scenario_runner import run_scenarios
 from src.signals.signal_engine import generate_battery_signal
 
@@ -224,13 +225,18 @@ def forecast_preview():
             "forecast_file": str(forecast_file),
         }
 
-    preview_rows = df.head(24).copy()
+    market_profile = get_default_market_profile()
+    expected_intervals = int(market_profile.get("expected_intervals_per_day", 24))
+    preview_rows = df.head(expected_intervals).copy()
 
     return {
         "status": "ok",
         "forecast_file": str(forecast_file),
         "rows": len(df),
         "columns": df.columns.tolist(),
+        "market_profile_id": market_profile["market_profile_id"],
+        "expected_intervals_per_day": expected_intervals,
+        "market_time_unit_minutes": market_profile["market_time_unit_minutes"],
         "preview": preview_rows.to_dict(orient="records"),
     }
 
@@ -324,14 +330,21 @@ def create_demo_forecast():
     rows = []
 
     for hour, price in enumerate(prices):
-        rows.append(
-            {
-                "timestamp": start_time + pd.Timedelta(hours=hour),
-                "forecast_price": price,
-                "forecast_provider": "demo",
-                "forecast_model": "demo_base",
-            }
-        )
+        for quarter in range(4):
+            rows.append(
+                {
+                    "timestamp": (
+                        start_time
+                        + pd.Timedelta(hours=hour)
+                        + pd.Timedelta(minutes=15 * quarter)
+                    ),
+                    "forecast_price": price,
+                    "forecast_provider": "demo",
+                    "forecast_model": "demo_base_15min",
+                    "market_profile_id": "de_lu_day_ahead",
+                    "market_time_unit_minutes": 15,
+                }
+            )
 
     df = pd.DataFrame(rows)
     df.to_csv(forecast_file, index=False)
@@ -342,7 +355,7 @@ def create_demo_forecast():
         "forecast_file": str(forecast_file),
         "rows": len(df),
         "forecast_provider": "demo",
-        "forecast_model": "demo_base",
+        "forecast_model": "demo_base_15min",
     }
 
 
@@ -363,14 +376,21 @@ def create_demo_high_spread_forecast():
     rows = []
 
     for hour, price in enumerate(prices):
-        rows.append(
-            {
-                "timestamp": start_time + pd.Timedelta(hours=hour),
-                "forecast_price": price,
-                "forecast_provider": "demo_high_spread",
-                "forecast_model": "demo_high_spread",
-            }
-        )
+        for quarter in range(4):
+            rows.append(
+                {
+                    "timestamp": (
+                        start_time
+                        + pd.Timedelta(hours=hour)
+                        + pd.Timedelta(minutes=15 * quarter)
+                    ),
+                    "forecast_price": price,
+                    "forecast_provider": "demo_high_spread",
+                    "forecast_model": "demo_high_spread_15min",
+                    "market_profile_id": "de_lu_day_ahead",
+                    "market_time_unit_minutes": 15,
+                }
+            )
 
     df = pd.DataFrame(rows)
     df.to_csv(forecast_file, index=False)
@@ -381,7 +401,7 @@ def create_demo_high_spread_forecast():
         "forecast_file": str(forecast_file),
         "rows": len(df),
         "forecast_provider": "demo_high_spread",
-        "forecast_model": "demo_high_spread",
+        "forecast_model": "demo_high_spread_15min",
     }
 
 

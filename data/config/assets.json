@@ -1,0 +1,55 @@
+{
+  "assets": [
+    {
+      "asset_id": "default_site",
+      "client_name": "Demo Battery Client",
+      "site_name": "Demo Grid Scale Battery",
+      "country": "Germany",
+      "market": "Day-ahead spot",
+      "market_profile_id": "de_lu_day_ahead",
+      "forecast_file": "data/processed/next_day_price_forecast.csv",
+      "grid_connection": {
+        "connection_capacity_mw": 10.0,
+        "max_import_mw": 10.0,
+        "max_export_mw": 10.0,
+        "flexible_connection_agreement": false,
+        "import_limit_profile": null,
+        "export_limit_profile": null
+      },
+      "regulatory": {
+        "mastr_unit_id": null,
+        "mastr_registered": false,
+        "grid_operator": null,
+        "balancing_responsible_party": null,
+        "metering_concept": null
+      },
+      "battery_config": {
+        "capacity_mwh": 20.0,
+        "initial_soc_mwh": 10.0,
+        "min_soc_mwh": 2.0,
+        "max_charge_power_mw": 10.0,
+        "max_discharge_power_mw": 10.0,
+        "charge_efficiency": 0.95,
+        "discharge_efficiency": 0.95
+      },
+      "strategy_config": {
+        "low_price_threshold": 20.0,
+        "high_price_threshold": 80.0,
+        "timestep_hours": 0.25
+      },
+      "commercial_config": {
+        "trading_fee_eur_per_mwh": 0.2,
+        "market_access_fee_eur_per_mwh": 0.3,
+        "grid_fee_import_eur_per_mwh": 0.0,
+        "grid_fee_export_eur_per_mwh": 0.0,
+        "tax_or_levy_eur_per_mwh": 0.0,
+        "degradation_cost_eur_per_mwh_throughput": 3.0,
+        "connection_cost_eur": 0.0,
+        "construction_cost_contribution_eur_per_mw": 0.0,
+        "ordered_capacity_mw": null,
+        "network_tariff_model": "configurable",
+        "netting_storage_losses_only": false
+      }
+    }
+  ]
+}

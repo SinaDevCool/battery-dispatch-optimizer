@@ -2,6 +2,7 @@ import pandas as pd
 
 from src.features.forecast_quality_features import build_forecast_quality_features
 from src.features.negative_price_features import build_negative_price_features
+from src.markets.market_profile_loader import get_default_market_profile
 
 
 def build_risk_flags(signal_result, forecast_df=None):
@@ -9,6 +10,9 @@ def build_risk_flags(signal_result, forecast_df=None):
     dispatch = signal_result.get("dispatch", [])
 
     flags = []
+    market_profile = get_default_market_profile()
+    expected_intervals = int(market_profile.get("expected_intervals_per_day", 24))
+    market_time_unit_minutes = int(market_profile.get("market_time_unit_minutes", 60))
 
     if not dispatch:
         return [
@@ -41,12 +45,28 @@ def build_risk_flags(signal_result, forecast_df=None):
         if "soc_mwh" in row
     ]
 
-    if len(dispatch) < 24:
+    if len(dispatch) < expected_intervals:
         flags.append(
             {
                 "level": "medium",
                 "type": "short_forecast",
-                "message": f"Forecast has only {len(dispatch)} rows. A full next-day forecast usually has 24 hourly rows.",
+                "message": (
+                    f"Forecast has only {len(dispatch)} rows. "
+                    f"The {market_profile['market_profile_id']} profile expects "
+                    f"{expected_intervals} rows at {market_time_unit_minutes}-minute resolution."
+                ),
+            }
+        )
+
+    if market_time_unit_minutes == 15 and len(dispatch) == 24:
+        flags.append(
+            {
+                "level": "high",
+                "type": "hourly_forecast_used_for_15min_market",
+                "message": (
+                    "The German day-ahead market profile expects 15-minute prices, "
+                    "but this signal appears to use 24 hourly rows."
+                ),
             }
         )
 
@@ -147,12 +167,24 @@ def build_risk_flags(signal_result, forecast_df=None):
             price_column="forecast_price",
         )
 
-        if quality_features.get("valid_row_count", 0) < 24:
+        if quality_features.get("valid_row_count", 0) < expected_intervals:
             flags.append(
                 {
                     "level": "medium",
                     "type": "forecast_quality_short_forecast",
-                    "message": "Forecast quality check confirms fewer than 24 valid forecast rows.",
+                    "message": (
+                        "Forecast quality check confirms fewer than "
+                        f"{expected_intervals} valid forecast rows for the market profile."
+                    ),
+                }
+            )
+
+        if quality_features.get("interval_gap_count", 0) > 0:
+            flags.append(
+                {
+                    "level": "medium",
+                    "type": "forecast_interval_gaps",
+                    "message": "Forecast contains timestamp gaps for the expected market interval.",
                 }
             )
 

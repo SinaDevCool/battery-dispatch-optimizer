@@ -21,7 +21,7 @@ class BatteryConfigRequest(BaseModel):
 class StrategyConfigRequest(BaseModel):
     low_price_threshold: float = 20.0
     high_price_threshold: float = 80.0
-    timestep_hours: float = 1.0
+    timestep_hours: float = 0.25
 
 
 class BatterySignalRequest(BaseModel):

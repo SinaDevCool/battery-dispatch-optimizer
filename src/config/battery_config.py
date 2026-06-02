@@ -12,5 +12,5 @@ DEFAULT_BATTERY_CONFIG = {
 DEFAULT_STRATEGY_CONFIG = {
     "low_price_threshold": 20.0,
     "high_price_threshold": 80.0,
-    "timestep_hours": 1.0,
+    "timestep_hours": 0.25,
 }

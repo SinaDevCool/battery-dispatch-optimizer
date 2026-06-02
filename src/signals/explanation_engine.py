@@ -2,6 +2,7 @@ import pandas as pd
 
 from src.features.forecast_quality_features import build_forecast_quality_features
 from src.features.negative_price_features import build_negative_price_features
+from src.markets.market_profile_loader import get_default_market_profile
 
 
 def format_price(price):
@@ -162,9 +163,15 @@ def explain_battery_signal(signal_result, forecast_df=None):
                 f"The forecast quality check found {valid_rows} valid row(s)."
             )
 
-        if valid_rows is not None and valid_rows < 24:
+        market_profile = get_default_market_profile()
+        expected_intervals = market_profile.get("expected_intervals_per_day", 24)
+
+        if valid_rows is not None and valid_rows < expected_intervals:
             explanation_parts.append(
-                "Because the forecast has fewer than 24 valid rows, this should be treated as a partial-day or demo signal."
+                "Because the forecast has fewer than "
+                f"{expected_intervals} valid rows for "
+                f"{market_profile['market_profile_id']}, this should be treated "
+                "as a partial-day or demo signal."
             )
 
         negative_hours = negative_features.get("negative_price_hours", 0)
