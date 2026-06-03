@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from src.config.paths import FORECAST_FILE
+from src.db.repositories.forecast_repository import save_forecast_snapshot
 from src.forecasts.entsoe_forecast_provider import (
     EntsoeForecastError,
     build_next_day_entsoe_forecast,
@@ -47,6 +48,7 @@ def normalize_forecast_dataframe(forecast_df):
 def save_forecast_dataframe(forecast_df, forecast_file=FORECAST_FILE):
     df = normalize_forecast_dataframe(forecast_df)
     get_storage_client().write_dataframe(forecast_file, df)
+    save_forecast_snapshot(forecast_file, df)
 
     return df
 

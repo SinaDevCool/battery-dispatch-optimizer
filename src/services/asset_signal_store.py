@@ -1,7 +1,11 @@
 from datetime import datetime
 
 from src.config.paths import ASSET_OUTPUTS_DIR, DATABASE_FILE
-from src.db.repositories.signal_repository import save_signal_run
+from src.db.repositories.signal_repository import (
+    get_signal_run,
+    list_signal_runs,
+    save_signal_run,
+)
 from src.storage import get_storage_client
 
 
@@ -57,6 +61,11 @@ def load_asset_latest_signal(asset_id, base_dir=ASSET_OUTPUTS_DIR):
     latest_signal_file = get_asset_latest_signal_file(asset_id, base_dir=base_dir)
 
     if not storage.exists(latest_signal_file):
+        database_signal = load_latest_signal_from_database(asset_id)
+
+        if database_signal is not None:
+            return database_signal
+
         return {
             "status": "not_found",
             "message": f"No latest signal found for asset: {asset_id}",
@@ -71,6 +80,34 @@ def load_asset_latest_signal(asset_id, base_dir=ASSET_OUTPUTS_DIR):
         "asset_id": asset_id,
         "signal_file": str(latest_signal_file),
         "data": signal,
+    }
+
+
+def load_latest_signal_from_database(asset_id):
+    signal_runs = list_signal_runs(asset_id=asset_id, limit=1)
+
+    if not signal_runs:
+        return None
+
+    signal_id = signal_runs[0]["signal_id"]
+    signal_run = get_signal_run(signal_id)
+
+    if signal_run is None:
+        return None
+
+    payload = signal_run["payload"]
+    payload.setdefault("metadata", {})
+    payload["metadata"].setdefault("asset_id", asset_id)
+    payload["metadata"]["signal_id"] = signal_id
+    payload["metadata"]["storage_source"] = "database"
+
+    return {
+        "status": "ok",
+        "asset_id": asset_id,
+        "signal_file": None,
+        "signal_id": signal_id,
+        "storage_source": "database",
+        "data": payload,
     }
 
 

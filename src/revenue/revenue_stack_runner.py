@@ -3,7 +3,11 @@ from datetime import datetime
 
 from src.assets.asset_loader import get_asset
 from src.config.paths import ASSET_OUTPUTS_DIR, REVENUE_STACK_RESULTS_FILE
-from src.db.repositories.revenue_repository import save_revenue_stack_run
+from src.db.repositories.revenue_repository import (
+    get_revenue_stack_run,
+    list_revenue_stack_runs,
+    save_revenue_stack_run,
+)
 from src.markets.products.product_registry import (
     build_asset_product_eligibility_list,
 )
@@ -118,6 +122,11 @@ def load_latest_asset_revenue_stack(asset_id):
     asset_file = ASSET_OUTPUTS_DIR / asset_id / "latest_revenue_stack.json"
 
     if not asset_file.exists():
+        database_result = load_latest_revenue_stack_from_database(asset_id)
+
+        if database_result is not None:
+            return database_result
+
         return {
             "status": "not_found",
             "message": f"No latest revenue stack found for asset: {asset_id}",
@@ -127,3 +136,24 @@ def load_latest_asset_revenue_stack(asset_id):
 
     with open(asset_file, "r", encoding="utf-8") as file:
         return json.load(file)
+
+
+def load_latest_revenue_stack_from_database(asset_id):
+    revenue_stack_runs = list_revenue_stack_runs(asset_id=asset_id, limit=1)
+
+    if not revenue_stack_runs:
+        return None
+
+    revenue_stack_id = revenue_stack_runs[0]["revenue_stack_id"]
+    revenue_stack_run = get_revenue_stack_run(revenue_stack_id)
+
+    if revenue_stack_run is None:
+        return None
+
+    payload = revenue_stack_run["payload"]
+    payload["status"] = payload.get("status", "ok")
+    payload["asset_id"] = asset_id
+    payload["revenue_stack_id"] = revenue_stack_id
+    payload["storage_source"] = "database"
+
+    return payload

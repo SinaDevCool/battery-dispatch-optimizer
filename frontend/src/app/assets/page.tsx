@@ -9,7 +9,7 @@ import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
 import { SectionCard } from "@/components/section-card";
 import { apiGet } from "@/lib/api";
-import type { StorageClassificationResponse } from "@/types/api";
+import type { Asset, StorageClassificationResponse } from "@/types/api";
 
 export default function AssetsPage() {
   const { assets, selectedAssetId } = useAssetContext();
@@ -22,7 +22,7 @@ export default function AssetsPage() {
     queryKey: ["storage-classification", selectedAssetId],
   });
 
-  const rows = assets;
+  const rows = assets.map(formatAssetRow);
 
   return (
     <>
@@ -39,12 +39,20 @@ export default function AssetsPage() {
         <KpiCard
           accent="blue"
           label="Storage class"
-          value={String(classification.data?.storage_classification ?? "-")}
+          value={String(
+            classification.data?.storage_classification ??
+              classification.data?.storage_mode ??
+              "-",
+          )}
         />
         <KpiCard
           accent="amber"
           label="Market participation"
-          value={String(classification.data?.market_participation_mode ?? "-")}
+          value={String(
+            classification.data?.market_participation_mode ??
+              classification.data?.status ??
+              "-",
+          )}
         />
       </div>
 
@@ -56,4 +64,19 @@ export default function AssetsPage() {
       </SectionCard>
     </>
   );
+}
+
+function formatAssetRow(asset: Asset) {
+  return {
+    ...asset,
+    asset_name:
+      asset.asset_name ??
+      asset.site_name ??
+      asset.client_name ??
+      asset.asset_id,
+    capacity_mwh:
+      asset.capacity_mwh ??
+      (asset.battery_config as { capacity_mwh?: number } | undefined)
+        ?.capacity_mwh,
+  };
 }

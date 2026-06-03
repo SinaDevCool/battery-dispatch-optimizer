@@ -9,7 +9,7 @@ import { PageHeading } from "@/components/page-heading";
 import { SectionCard } from "@/components/section-card";
 import { apiGet } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
-import type { HedgingRevenueResponse } from "@/types/api";
+import type { HedgeContract, HedgingRevenueResponse, TableRow } from "@/types/api";
 
 export default function HedgingPage() {
   const { selectedAssetId } = useAssetContext();
@@ -24,6 +24,17 @@ export default function HedgingPage() {
 
   const summary = hedge.data?.summary ?? {};
   const contracts = hedge.data?.contracts ?? [];
+  const bestContract = hedge.data?.best_contract;
+  const contractRows = contracts.map(formatContractRow);
+  const hedgedRevenue =
+    summary.hedged_revenue_eur ??
+    bestContract?.expected_owner_revenue_eur_per_month;
+  const merchantUpside =
+    summary.merchant_upside_eur ??
+    bestContract?.owner_upside_eur_per_month;
+  const residualExposure =
+    summary.residual_exposure_eur ??
+    bestContract?.merchant_revenue_given_away_eur_per_month;
 
   return (
     <>
@@ -35,24 +46,32 @@ export default function HedgingPage() {
 
       <div className="mb-5 grid gap-4 md:grid-cols-4">
         <KpiCard label="Contracts" value={contracts.length} />
-        <KpiCard accent="emerald" label="Hedged revenue" value={formatCurrency(summary.hedged_revenue_eur)} />
-        <KpiCard label="Merchant upside" value={formatCurrency(summary.merchant_upside_eur)} />
-        <KpiCard accent="amber" label="Residual exposure" value={formatCurrency(summary.residual_exposure_eur)} />
+        <KpiCard accent="emerald" label="Best owner revenue" value={formatCurrency(hedgedRevenue)} />
+        <KpiCard label="Owner upside" value={formatCurrency(merchantUpside)} />
+        <KpiCard accent="amber" label="Merchant revenue given away" value={formatCurrency(residualExposure)} />
       </div>
 
       <SectionCard title="Hedge contract options">
         <DataTable
           columns={[
-            "contract_name",
+            "name",
             "contract_type",
-            "floor_eur",
-            "cap_eur",
-            "revenue_share_percent",
-            "hedged_revenue_eur",
+            "floor_revenue_eur_per_month",
+            "upside_share_percent",
+            "expected_owner_revenue_eur_per_month",
+            "downside_protection_eur_per_month",
+            "availability_requirement_percent",
           ]}
-          rows={contracts}
+          rows={contractRows}
         />
       </SectionCard>
     </>
   );
+}
+
+function formatContractRow(contract: HedgeContract): TableRow {
+  return {
+    ...contract,
+    name: contract.name ?? contract.contract_name ?? "-",
+  };
 }

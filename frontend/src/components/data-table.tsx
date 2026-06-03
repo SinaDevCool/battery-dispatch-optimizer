@@ -52,7 +52,35 @@ function formatCell(value: JsonValue | undefined) {
     return value ? "Yes" : "No";
   }
 
+  if (Array.isArray(value)) {
+    if (!value.length) {
+      return "-";
+    }
+
+    return value.map(formatListItem).join("; ");
+  }
+
   if (typeof value === "object") {
+    if ("message" in value && value.message) {
+      return String(value.message);
+    }
+
+    return JSON.stringify(value);
+  }
+
+  return String(value);
+}
+
+function formatListItem(value: JsonValue) {
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+
+  if (typeof value === "object") {
+    if (!Array.isArray(value) && "message" in value && value.message) {
+      return String(value.message);
+    }
+
     return JSON.stringify(value);
   }
 

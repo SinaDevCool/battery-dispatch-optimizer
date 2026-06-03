@@ -1,39 +1,83 @@
 "use client";
 
 import {
-  BarChart3,
   BatteryCharging,
+  BrainCircuit,
   Cable,
+  ClipboardCheck,
   Gauge,
+  Layers3,
   LineChart,
   ReceiptText,
   Scale,
   ShieldCheck,
   SlidersHorizontal,
   Zap,
+  type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { API_BASE_URL } from "@/lib/api";
 import { AssetSelector } from "@/components/asset-selector";
 import { cn } from "@/lib/utils";
 import { StatusPill } from "@/components/status-pill";
+import { useApiBaseUrl } from "@/hooks/use-api-base-url";
 
-const navigation = [
-  { href: "/", icon: Gauge, label: "Overview" },
-  { href: "/assets", icon: BatteryCharging, label: "Assets" },
-  { href: "/forecasts", icon: LineChart, label: "Forecasts" },
-  { href: "/dispatch", icon: Cable, label: "Dispatch" },
-  { href: "/revenue", icon: BarChart3, label: "Revenue Stack" },
-  { href: "/regulation", icon: Scale, label: "Regulation" },
-  { href: "/hedging", icon: ShieldCheck, label: "Hedging" },
-  { href: "/reports", icon: ReceiptText, label: "Reports" },
-  { href: "/settings", icon: SlidersHorizontal, label: "Settings" },
+type NavigationItem = {
+  href: string;
+  icon: LucideIcon;
+  label: string;
+};
+
+type NavigationGroup = {
+  label: string;
+  items: NavigationItem[];
+};
+
+const navigationGroups: NavigationGroup[] = [
+  {
+    label: "Command Center",
+    items: [
+      { href: "/", icon: Gauge, label: "Control Room" },
+      { href: "/intelligence", icon: BrainCircuit, label: "Decision Intelligence" },
+      { href: "/assets", icon: BatteryCharging, label: "Asset Registry" },
+    ],
+  },
+  {
+    label: "AI Forecast Engine",
+    items: [
+      { href: "/forecasts", icon: LineChart, label: "Forecast Trading Desk" },
+    ],
+  },
+  {
+    label: "Multi-Market Optimization",
+    items: [
+      { href: "/dispatch", icon: Cable, label: "Dispatch Optimizer" },
+      { href: "/revenue", icon: Layers3, label: "Revenue Stack" },
+      { href: "/regulation", icon: Scale, label: "Regulation & Eligibility" },
+      { href: "/hedging", icon: ShieldCheck, label: "Hedged Revenue" },
+    ],
+  },
+  {
+    label: "Automated Execution",
+    items: [
+      { href: "/execution", icon: ClipboardCheck, label: "Execution Control" },
+    ],
+  },
+  {
+    label: "Platform",
+    items: [
+      { href: "/reports", icon: ReceiptText, label: "Reports" },
+      { href: "/settings", icon: SlidersHorizontal, label: "Settings" },
+    ],
+  },
 ];
+
+const navigation = navigationGroups.flatMap((group) => group.items);
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const apiBaseUrl = useApiBaseUrl();
 
   return (
     <div className="min-h-screen bg-[#080b10] text-slate-100">
@@ -44,33 +88,46 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <div>
             <div className="text-sm font-semibold text-white">
-              Battery Optimizer
+              Battery Trader AI
             </div>
-            <div className="text-xs text-slate-500">Enterprise control room</div>
+            <div className="text-xs text-slate-500">
+              Autonomous trading OS
+            </div>
           </div>
         </div>
 
-        <nav className="space-y-1">
-          {navigation.map((item) => {
-            const isActive =
-              item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
-            const Icon = item.icon;
+        <nav className="space-y-5">
+          {navigationGroups.map((group) => (
+            <div key={group.label}>
+              <div className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                {group.label}
+              </div>
+              <div className="space-y-1">
+                {group.items.map((item) => {
+                  const isActive =
+                    item.href === "/"
+                      ? pathname === "/"
+                      : pathname.startsWith(item.href);
+                  const Icon = item.icon;
 
-            return (
-              <Link
-                className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-slate-900 hover:text-slate-100",
-                  isActive &&
-                    "border border-sky-400/25 bg-sky-400/10 text-sky-100",
-                )}
-                href={item.href}
-                key={item.href}
-              >
-                <Icon className="h-4 w-4" />
-                {item.label}
-              </Link>
-            );
-          })}
+                  return (
+                    <Link
+                      className={cn(
+                        "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-slate-900 hover:text-slate-100",
+                        isActive &&
+                          "border border-sky-400/25 bg-sky-400/10 text-sky-100",
+                      )}
+                      href={item.href}
+                      key={item.href}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
       </aside>
 
@@ -79,15 +136,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4 px-5 py-4 lg:px-8">
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Battery Dispatch Optimizer
+                Battery Trading Intelligence
               </div>
               <h1 className="mt-1 text-xl font-semibold text-white">
-                Quantitative asset operations
+                Forecast, optimize, and execute
               </h1>
             </div>
 
             <div className="hidden items-center gap-3 md:flex">
-              <StatusPill tone="emerald">API target: {API_BASE_URL}</StatusPill>
+              <StatusPill tone="emerald">API target: {apiBaseUrl}</StatusPill>
               <AssetSelector />
             </div>
           </div>
