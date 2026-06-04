@@ -202,5 +202,140 @@ def initialize_database(db_file=DATABASE_FILE):
 
             CREATE INDEX IF NOT EXISTS idx_execution_proposals_generated_at
                 ON execution_proposals(generated_at);
+
+            CREATE TABLE IF NOT EXISTS execution_paper_trades (
+                paper_trade_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id TEXT NOT NULL,
+                execution_proposal_id INTEGER,
+                generated_at TEXT NOT NULL,
+                status TEXT NOT NULL,
+                mode TEXT,
+                order_count INTEGER,
+                filled_order_count INTEGER,
+                buy_cost_eur REAL,
+                sell_revenue_eur REAL,
+                paper_pnl_eur REAL,
+                expected_pnl_eur REAL,
+                paper_vs_expected_delta_eur REAL,
+                payload_json TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_execution_paper_trades_asset_id
+                ON execution_paper_trades(asset_id);
+
+            CREATE INDEX IF NOT EXISTS idx_execution_paper_trades_generated_at
+                ON execution_paper_trades(generated_at);
+
+            CREATE TABLE IF NOT EXISTS settlement_reconciliation_runs (
+                settlement_reconciliation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id TEXT NOT NULL,
+                generated_at TEXT NOT NULL,
+                execution_proposal_id INTEGER,
+                paper_trade_id INTEGER,
+                forecast_actual_id INTEGER,
+                expected_pnl_eur REAL,
+                paper_pnl_eur REAL,
+                realized_pnl_eur REAL,
+                paper_delta_eur REAL,
+                realized_delta_eur REAL,
+                status TEXT NOT NULL,
+                primary_variance_driver TEXT,
+                payload_json TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_settlement_reconciliation_asset_id
+                ON settlement_reconciliation_runs(asset_id);
+
+            CREATE INDEX IF NOT EXISTS idx_settlement_reconciliation_generated_at
+                ON settlement_reconciliation_runs(generated_at);
+
+            CREATE TABLE IF NOT EXISTS asset_telemetry_snapshots (
+                telemetry_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id TEXT NOT NULL,
+                captured_at TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                status TEXT NOT NULL,
+                availability_status TEXT,
+                soc_mwh REAL,
+                soc_percent REAL,
+                available_charge_power_mw REAL,
+                available_discharge_power_mw REAL,
+                grid_import_limit_mw REAL,
+                grid_export_limit_mw REAL,
+                schedule_deviation_mwh REAL,
+                payload_json TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_asset_telemetry_asset_id
+                ON asset_telemetry_snapshots(asset_id);
+
+            CREATE INDEX IF NOT EXISTS idx_asset_telemetry_captured_at
+                ON asset_telemetry_snapshots(captured_at);
+
+            CREATE TABLE IF NOT EXISTS execution_market_submissions (
+                market_submission_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id TEXT NOT NULL,
+                execution_proposal_id INTEGER,
+                submitted_at TEXT NOT NULL,
+                adapter_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                submitted_bid_count INTEGER,
+                accepted_bid_count INTEGER,
+                rejected_bid_count INTEGER,
+                awarded_bid_count INTEGER,
+                notional_eur REAL,
+                live_submission INTEGER NOT NULL DEFAULT 0,
+                payload_json TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_execution_market_submissions_asset_id
+                ON execution_market_submissions(asset_id);
+
+            CREATE INDEX IF NOT EXISTS idx_execution_market_submissions_submitted_at
+                ON execution_market_submissions(submitted_at);
+
+            CREATE TABLE IF NOT EXISTS execution_approvals (
+                approval_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id TEXT NOT NULL,
+                execution_proposal_id INTEGER,
+                requested_at TEXT NOT NULL,
+                decided_at TEXT,
+                status TEXT NOT NULL,
+                requested_by TEXT,
+                decided_by TEXT,
+                reason TEXT,
+                payload_json TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_execution_approvals_asset_id
+                ON execution_approvals(asset_id);
+
+            CREATE INDEX IF NOT EXISTS idx_execution_approvals_requested_at
+                ON execution_approvals(requested_at);
+
+            CREATE TABLE IF NOT EXISTS automation_policies (
+                automation_policy_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                policy_version TEXT NOT NULL,
+                automation_mode TEXT NOT NULL,
+                max_daily_loss_eur REAL,
+                max_order_power_mw REAL,
+                max_cycles_per_day REAL,
+                min_confidence_score REAL,
+                min_confidence_band TEXT,
+                require_human_approval INTEGER NOT NULL DEFAULT 1,
+                require_paper_trade INTEGER NOT NULL DEFAULT 1,
+                allowed_markets_json TEXT NOT NULL,
+                fallback_mode TEXT,
+                payload_json TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_automation_policies_asset_id
+                ON automation_policies(asset_id);
+
+            CREATE INDEX IF NOT EXISTS idx_automation_policies_updated_at
+                ON automation_policies(updated_at);
             """
         )
+

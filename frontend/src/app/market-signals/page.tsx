@@ -1,0 +1,496 @@
+"use client";
+
+import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
+
+import { ActionButton } from "@/components/action-button";
+import { useAssetContext } from "@/components/asset-provider";
+import { DataTable } from "@/components/data-table";
+import { KpiCard } from "@/components/kpi-card";
+import { PageHeading } from "@/components/page-heading";
+import { SectionCard } from "@/components/section-card";
+import { StatusPill } from "@/components/status-pill";
+import { apiGet } from "@/lib/api";
+import { formatCurrency, formatDateTime, formatNumber } from "@/lib/format";
+import type {
+  AutomationGuardrailsResponse,
+  ExecutionReadinessResponse,
+  ForecastConfidenceResponse,
+  LatestSignalResponse,
+  MultiMarketAllocationCandidate,
+  MultiMarketAllocationResponse,
+  TableRow,
+} from "@/types/api";
+
+export default function MarketSignalsPage() {
+  const { selectedAssetId } = useAssetContext();
+
+  const signal = useQuery({
+    queryFn: () =>
+      apiGet<LatestSignalResponse>(`/assets/${selectedAssetId}/signal/latest`),
+    queryKey: ["market-signals-latest-signal", selectedAssetId],
+  });
+
+  const confidence = useQuery({
+    queryFn: () =>
+      apiGet<ForecastConfidenceResponse>(
+        `/assets/${selectedAssetId}/forecast-confidence`,
+      ),
+    queryKey: ["market-signals-forecast-confidence", selectedAssetId],
+  });
+
+  const guardrails = useQuery({
+    queryFn: () =>
+      apiGet<AutomationGuardrailsResponse>(
+        `/assets/${selectedAssetId}/execution/automation-guardrails`,
+      ),
+    queryKey: ["market-signals-guardrails", selectedAssetId],
+  });
+
+  const readiness = useQuery({
+    queryFn: () =>
+      apiGet<ExecutionReadinessResponse>(
+        `/assets/${selectedAssetId}/execution/readiness`,
+      ),
+    queryKey: ["market-signals-readiness", selectedAssetId],
+  });
+
+  const allocation = useQuery({
+    queryFn: () =>
+      apiGet<MultiMarketAllocationResponse>(
+        `/assets/${selectedAssetId}/execution/multi-market/allocation`,
+      ),
+    queryKey: ["market-signals-market-allocation", selectedAssetId],
+  });
+
+  const signalSummary = signal.data?.data?.summary ?? {};
+  const metadata = signal.data?.data?.metadata ?? {};
+  const dispatchRows = signal.data?.data?.dispatch ?? [];
+  const activeRows = dispatchRows.filter((row) => row.action !== "idle");
+  const primaryMarket = allocation.data?.primary_market;
+  const automationMode = classifyAutomationMode({
+    allocationStatus: allocation.data?.allocation_status,
+    confidenceEligibility: confidence.data?.automation_eligibility,
+    guardrailStatus: guardrails.data?.automation_status,
+    readinessStatus: readiness.data?.readiness_status,
+    signalValue: signalSummary.signal,
+  });
+  const recommendedAction = buildRecommendedAction({
+    automationMode,
+    primaryMarket,
+    signalValue: signalSummary.signal,
+  });
+  const blockers = buildAutomationBlockers({
+    allocation: allocation.data,
+    guardrails: guardrails.data,
+    readiness: readiness.data,
+  });
+
+  const refetchSignals = () =>
+    Promise.all([
+      signal.refetch(),
+      confidence.refetch(),
+      guardrails.refetch(),
+      readiness.refetch(),
+      allocation.refetch(),
+    ]);
+
+  return (
+    <>
+      <PageHeading
+        description="Convert forecast, price, readiness, and guardrail evidence into supervised automated-trading actions."
+        eyebrow="Market intelligence"
+        title="Market signals"
+      />
+
+      <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <KpiCard
+          accent={signalSummary.signal === "ACTION" ? "emerald" : "slate"}
+          helper={String(signalSummary.opportunity_level ?? "No opportunity level")}
+          label="Trading signal"
+          value={String(signalSummary.signal ?? "-")}
+        />
+        <KpiCard
+          accent={automationTone(automationMode)}
+          helper="Derived from confidence, readiness, guardrails, and allocation"
+          label="Automation mode"
+          value={automationMode}
+        />
+        <KpiCard
+          accent={confidenceTone(confidence.data?.confidence_band)}
+          helper={confidence.data?.automation_eligibility ?? "No automation policy"}
+          label="Confidence"
+          value={`${formatNumber(confidence.data?.confidence_score, 1)}/100`}
+        />
+        <KpiCard
+          accent={readiness.data?.readiness_status === "blocked" ? "red" : "blue"}
+          helper={`${readiness.data?.summary?.blocked ?? 0} blocked / ${readiness.data?.summary?.review ?? 0} review`}
+          label="Execution readiness"
+          value={readiness.data?.readiness_status ?? "-"}
+        />
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
+        <SectionCard
+          action={<StatusPill tone={automationTone(automationMode)}>{automationMode}</StatusPill>}
+          title="Automated trading decision"
+        >
+          <div className="grid gap-3 md:grid-cols-2">
+            <AutomationDecisionRow
+              label="Recommended action"
+              tone={automationTone(automationMode)}
+              value={recommendedAction}
+            />
+            <AutomationDecisionRow
+              label="Target market"
+              tone={primaryMarket ? "blue" : "amber"}
+              value={primaryMarket?.market_name ?? "No market route selected"}
+            />
+            <AutomationDecisionRow
+              label="Market allocation"
+              tone={allocationTone(allocation.data?.allocation_status)}
+              value={allocation.data?.allocation_status ?? "-"}
+            />
+            <AutomationDecisionRow
+              label="Forecast provider"
+              tone="slate"
+              value={metadata.forecast_provider ?? metadata.source ?? "-"}
+            />
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <KpiCard
+              accent="emerald"
+              helper="Forecast dispatch economics"
+              label="Expected PnL"
+              value={formatCurrency(signalSummary.total_pnl_eur)}
+            />
+            <KpiCard
+              accent="blue"
+              helper="Intervals with charge/discharge intent"
+              label="Active intervals"
+              value={activeRows.length}
+            />
+            <KpiCard
+              accent={primaryMarket ? "emerald" : "amber"}
+              helper={primaryMarket?.operator_next_action ?? "Market allocation required"}
+              label="Primary route score"
+              value={formatNumber(primaryMarket?.allocation_score, 1)}
+            />
+          </div>
+        </SectionCard>
+
+        <SectionCard title="Next automated workflow step">
+          <div className="space-y-3">
+            <AutomationStepLink
+              href="/forecasts"
+              label="Validate forecast confidence"
+              status={confidence.data?.automation_eligibility ?? "not evaluated"}
+            />
+            <AutomationStepLink
+              href="/execution/market-allocation"
+              label="Confirm market route"
+              status={primaryMarket?.market_name ?? "allocation pending"}
+            />
+            <AutomationStepLink
+              href="/execution/proposals"
+              label="Build bid proposal"
+              status={signalSummary.signal === "ACTION" ? "ready to build" : "wait for action signal"}
+            />
+            <AutomationStepLink
+              href="/execution/risk-approval"
+              label="Apply guardrails and approval"
+              status={guardrails.data?.automation_status ?? "not evaluated"}
+            />
+            <AutomationStepLink
+              href="/execution/simulation"
+              label="Run paper market validation"
+              status={automationMode === "blocked" ? "blocked" : "next validation step"}
+            />
+          </div>
+        </SectionCard>
+      </div>
+
+      <div className="mt-5 grid gap-5 xl:grid-cols-2">
+        <SectionCard
+          action={<StatusPill tone={blockers.length ? "amber" : "emerald"}>{blockers.length}</StatusPill>}
+          title="Automation blockers"
+        >
+          <DataTable columns={["source", "blocker"]} rows={blockers} />
+        </SectionCard>
+
+        <SectionCard
+          action={<StatusPill tone="blue">{activeRows.length} active</StatusPill>}
+          title="Dispatch signal evidence"
+        >
+          <DataTable
+            columns={[
+              "timestamp",
+              "action",
+              "price",
+              "grid_energy_mwh",
+              "battery_energy_mwh",
+              "pnl_eur",
+              "total_pnl_eur",
+            ]}
+            rows={formatDispatchRows(activeRows)}
+          />
+        </SectionCard>
+      </div>
+
+      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
+        <SectionCard title="Market route candidates">
+          <DataTable
+            columns={[
+              "adapter_id",
+              "market_name",
+              "recommendation_status",
+              "allocation_score",
+              "risk_score",
+              "allocated_power_mw",
+              "expected_revenue_eur",
+              "operator_next_action",
+            ]}
+            rows={formatMarketCandidates(allocation.data?.allocation ?? [])}
+          />
+        </SectionCard>
+
+        <SectionCard title="Automation controls">
+          <div className="grid gap-3">
+            <ActionButton
+              endpoint={`/assets/${selectedAssetId}/signal/run-latest`}
+              label="Refresh signal"
+              refetch={refetchSignals}
+              variant="primary"
+            />
+            <ActionButton
+              endpoint={`/assets/${selectedAssetId}/execution/proposal/build`}
+              label="Build proposal"
+              refetch={refetchSignals}
+            />
+            <ActionButton
+              endpoint={`/assets/${selectedAssetId}/execution/paper-trade/run`}
+              label="Run paper trade"
+              refetch={refetchSignals}
+            />
+          </div>
+        </SectionCard>
+      </div>
+    </>
+  );
+}
+
+function classifyAutomationMode({
+  allocationStatus,
+  confidenceEligibility,
+  guardrailStatus,
+  readinessStatus,
+  signalValue,
+}: {
+  allocationStatus?: string;
+  confidenceEligibility?: string;
+  guardrailStatus?: string;
+  readinessStatus?: string;
+  signalValue?: string;
+}) {
+  if (signalValue !== "ACTION") {
+    return "wait_for_signal";
+  }
+
+  if (
+    readinessStatus === "blocked" ||
+    guardrailStatus === "blocked" ||
+    allocationStatus === "blocked"
+  ) {
+    return "blocked";
+  }
+
+  if (confidenceEligibility === "paper_only" || guardrailStatus === "paper_only") {
+    return "paper_only";
+  }
+
+  if (
+    confidenceEligibility === "supervised_live_candidate" &&
+    readinessStatus === "supervised_ready"
+  ) {
+    return "supervised_live_candidate";
+  }
+
+  return "human_approval_required";
+}
+
+function buildRecommendedAction({
+  automationMode,
+  primaryMarket,
+  signalValue,
+}: {
+  automationMode: string;
+  primaryMarket?: MultiMarketAllocationCandidate | null;
+  signalValue?: string;
+}) {
+  if (signalValue !== "ACTION") {
+    return "Wait for a tradable market signal.";
+  }
+
+  if (automationMode === "blocked") {
+    return "Keep automation disabled and clear blockers.";
+  }
+
+  if (automationMode === "paper_only") {
+    return "Run paper trade against the recommended market route.";
+  }
+
+  if (automationMode === "supervised_live_candidate") {
+    return `Prepare supervised execution for ${primaryMarket?.market_name ?? "the selected market"}.`;
+  }
+
+  return "Request operator approval before paper or supervised execution.";
+}
+
+function buildAutomationBlockers({
+  allocation,
+  guardrails,
+  readiness,
+}: {
+  allocation?: MultiMarketAllocationResponse;
+  guardrails?: AutomationGuardrailsResponse;
+  readiness?: ExecutionReadinessResponse;
+}) {
+  const rows: TableRow[] = [];
+
+  for (const check of readiness?.checks ?? []) {
+    if (check.status === "blocked" || check.status === "review") {
+      rows.push({
+        blocker: check.message ?? check.label ?? check.check,
+        source: `readiness:${check.check ?? "check"}`,
+      });
+    }
+  }
+
+  for (const guardrail of guardrails?.guardrails ?? []) {
+    if (guardrail.status === "blocked" || guardrail.status === "review") {
+      rows.push({
+        blocker: guardrail.message ?? guardrail.guardrail,
+        source: `guardrail:${guardrail.guardrail ?? "check"}`,
+      });
+    }
+  }
+
+  for (const market of allocation?.excluded_markets ?? []) {
+    rows.push({
+      blocker: (market.blocking_reasons ?? []).join(" | ") || market.operator_next_action,
+      source: `market:${market.adapter_id ?? "candidate"}`,
+    });
+  }
+
+  return rows;
+}
+
+function formatDispatchRows(rows: TableRow[]) {
+  return rows.map((row) => ({
+    ...row,
+    pnl_eur: formatCurrency(row.pnl_eur),
+    price: formatNumber(row.price, 2),
+    timestamp: formatDateTime(row.timestamp),
+    total_pnl_eur: formatCurrency(row.total_pnl_eur),
+  }));
+}
+
+function formatMarketCandidates(rows: MultiMarketAllocationCandidate[]) {
+  return rows.map((row) => ({
+    ...row,
+    allocated_power_mw: formatNumber(row.allocated_power_mw, 2),
+    allocation_score: formatNumber(row.allocation_score, 1),
+    expected_revenue_eur: formatCurrency(row.expected_revenue_eur),
+    risk_score: formatNumber(row.risk_score, 1),
+  }));
+}
+
+function AutomationDecisionRow({
+  label,
+  tone,
+  value,
+}: {
+  label: string;
+  tone: "amber" | "blue" | "emerald" | "red" | "slate";
+  value: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-lg border border-slate-800 bg-slate-900/45 px-4 py-3">
+      <span className="text-sm text-slate-300">{label}</span>
+      <StatusPill tone={tone}>{value}</StatusPill>
+    </div>
+  );
+}
+
+function AutomationStepLink({
+  href,
+  label,
+  status,
+}: {
+  href: string;
+  label: string;
+  status: React.ReactNode;
+}) {
+  return (
+    <Link
+      className="flex items-center justify-between gap-4 rounded-lg border border-slate-800 bg-slate-900/45 px-4 py-3 transition hover:border-sky-400/40 hover:bg-sky-950/20"
+      href={href}
+    >
+      <span className="text-sm font-medium text-slate-200">{label}</span>
+      <span className="text-xs text-sky-200">{status}</span>
+    </Link>
+  );
+}
+
+function automationTone(value: unknown) {
+  if (value === "supervised_live_candidate") {
+    return "emerald";
+  }
+
+  if (value === "human_approval_required") {
+    return "blue";
+  }
+
+  if (value === "paper_only" || value === "wait_for_signal") {
+    return "amber";
+  }
+
+  if (value === "blocked") {
+    return "red";
+  }
+
+  return "slate";
+}
+
+function confidenceTone(value: unknown) {
+  if (value === "high") {
+    return "emerald";
+  }
+
+  if (value === "medium") {
+    return "blue";
+  }
+
+  if (value === "low") {
+    return "amber";
+  }
+
+  return "slate";
+}
+
+function allocationTone(value: unknown) {
+  if (value === "recommended") {
+    return "emerald";
+  }
+
+  if (value === "operator_review_required" || value === "watchlist") {
+    return "blue";
+  }
+
+  if (value === "blocked") {
+    return "red";
+  }
+
+  return "slate";
+}

@@ -72,6 +72,11 @@ def database_status():
         "business_decisions",
         "workflow_runs",
         "execution_proposals",
+        "execution_paper_trades",
+        "settlement_reconciliation_runs",
+        "asset_telemetry_snapshots",
+        "execution_market_submissions",
+        "execution_approvals",
     ]
 
     with get_connection() as connection:

@@ -1,15 +1,19 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
-import { ActionButton } from "@/components/action-button";
 import { useAssetContext } from "@/components/asset-provider";
-import { BarComparisonChart } from "@/components/charts/bar-comparison-chart";
-import { StrategyRecommendation } from "@/components/cockpit/strategy-recommendation";
-import { DataTable } from "@/components/data-table";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
-import { SectionCard } from "@/components/section-card";
+import {
+  RevenueAllocationPanel,
+  RevenueConstraintsPanel,
+  RevenueEconomicsPanel,
+  RevenueRunControlsPanel,
+  RevenueStackPanel,
+} from "@/components/revenue/revenue-workbench-panels";
+import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { apiGet } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import type {
@@ -24,8 +28,39 @@ import type {
   TableRow,
 } from "@/types/api";
 
+const revenueTabs = [
+  {
+    id: "stack",
+    label: "Market Stack",
+    helper: "Tradable products, revenue ranking, eligibility, and product-level blockers.",
+  },
+  {
+    id: "allocation",
+    label: "Capacity Allocation",
+    helper: "How battery capacity should be assigned across revenue pools.",
+  },
+  {
+    id: "constraints",
+    label: "Constraints",
+    helper: "Missing inputs, blocked products, EEG status, ancillary readiness, and review warnings.",
+  },
+  {
+    id: "economics",
+    label: "Economics",
+    helper: "Owner/investor view of merchant value, hedge protection, and recommendation basis.",
+  },
+  {
+    id: "controls",
+    label: "Run Controls",
+    helper: "Refresh the revenue stack and allocation decision.",
+  },
+] as const;
+
+type RevenueTabId = (typeof revenueTabs)[number]["id"];
+
 export default function RevenuePage() {
   const { selectedAssetId } = useAssetContext();
+  const [activeTab, setActiveTab] = useState<RevenueTabId>("stack");
 
   const stack = useQuery({
     queryFn: () =>
@@ -83,6 +118,14 @@ export default function RevenuePage() {
 
   const rows = normalizeRevenueRows(stack.data);
   const allocationRows = allocation.data?.results ?? [];
+  const eligibleRows = rows.filter((row) => row.eligibility_status === "eligible");
+  const blockedRows = rows.filter(
+    (row) =>
+      row.eligibility_status === "not_eligible" ||
+      row.status === "blocked" ||
+      row.blocking_reasons !== "-",
+  );
+  const warningRows = rows.filter((row) => row.review_warnings !== "-");
   const metadata = signal.data?.data?.metadata ?? {};
   const summary = signal.data?.data?.summary ?? {};
   const hedgeSummary = hedging.data?.summary ?? {};
@@ -96,74 +139,72 @@ export default function RevenuePage() {
   return (
     <>
       <PageHeading
-        description="Model stacked merchant revenue, ancillary options, grid fee assumptions, opportunity conflicts, and portfolio allocation."
+        description="Decide which revenue streams are tradable, how capacity should be allocated, what constraints block value, and how the economics look to owners and investors."
         eyebrow="Commercial optimizer"
         title="Revenue stack"
       />
 
-      <div className="mb-6 flex flex-wrap gap-3">
-        <ActionButton
-          endpoint={`/assets/${selectedAssetId}/revenue-stack/run`}
-          label="Run revenue stack"
-          refetch={() => stack.refetch()}
-          variant="primary"
-        />
-        <ActionButton
-          endpoint={`/assets/${selectedAssetId}/revenue-stack/allocate`}
-          label="Run revenue allocation"
-          refetch={() => allocation.refetch()}
-        />
-      </div>
-
       <div className="mb-5 grid gap-4 md:grid-cols-4">
         <KpiCard accent="emerald" label="Modelled revenue" value={formatCurrency(totalRevenue)} />
-        <KpiCard label="Revenue products" value={stack.data?.product_count ?? rows.length} />
+        <KpiCard label="Eligible products" value={`${eligibleRows.length}/${stack.data?.product_count ?? rows.length}`} />
         <KpiCard label="Allocation status" value={allocation.data?.status ?? "-"} />
         <KpiCard accent="blue" label="Asset" value={selectedAssetId} />
       </div>
 
-      <div className="mb-5">
-        <StrategyRecommendation
+      <WorkspaceTabs
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        tabs={revenueTabs}
+      />
+
+      {activeTab === "stack" ? (
+        <RevenueStackPanel
+          ancillary={ancillary.data}
+          blockedRows={blockedRows}
+          eligibleRows={eligibleRows}
+          rows={rows}
+          warningRows={warningRows}
+        />
+      ) : null}
+
+      {activeTab === "allocation" ? (
+        <RevenueAllocationPanel
+          allocationRows={allocationRows}
+          metadata={metadata}
+          signalSummary={summary}
+        />
+      ) : null}
+
+      {activeTab === "constraints" ? (
+        <RevenueConstraintsPanel
+          ancillary={ancillary.data}
+          blockedRows={blockedRows}
+          eeg={eeg.data}
+          warningRows={warningRows}
+        />
+      ) : null}
+
+      {activeTab === "economics" ? (
+        <RevenueEconomicsPanel
           allocationRows={allocationRows}
           ancillary={ancillary.data}
           businessDecision={businessDecision.data?.decision}
           eeg={eeg.data}
-          hedgingSummary={hedgeSummary}
+          hedgeSummary={hedgeSummary}
           metadata={metadata}
           revenueRows={rows}
-          summary={summary}
+          signalSummary={summary}
+          totalRevenue={totalRevenue}
         />
-      </div>
+      ) : null}
 
-      <div className="grid gap-5 xl:grid-cols-2">
-        <SectionCard title="Revenue product results">
-          <DataTable
-            columns={[
-              "product_id",
-              "estimated_revenue_eur",
-              "eligibility_status",
-              "status",
-              "missing_inputs",
-              "blocking_reasons",
-            ]}
-            rows={rows}
-          />
-          {rows.length ? (
-            <div className="mt-5">
-              <BarComparisonChart data={rows} xKey="product_id" yKey="estimated_revenue_eur" />
-            </div>
-          ) : null}
-        </SectionCard>
-
-        <SectionCard
-          title="Revenue allocation"
-        >
-          <DataTable
-            columns={["market", "allocated_capacity_mw", "expected_revenue_eur", "risk_note"]}
-            rows={allocationRows}
-          />
-        </SectionCard>
-      </div>
+      {activeTab === "controls" ? (
+        <RevenueRunControlsPanel
+          refetchAllocation={() => allocation.refetch()}
+          refetchStack={() => stack.refetch()}
+          selectedAssetId={selectedAssetId}
+        />
+      ) : null}
     </>
   );
 }

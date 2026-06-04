@@ -163,6 +163,20 @@ export type ForecastActualResponse = ApiEnvelope<{
   run?: JsonObject;
 }>;
 
+export type ForecastConfidenceResponse = ApiEnvelope<{
+  asset_id?: string;
+  automation_eligibility?: string;
+  confidence_band?: string;
+  confidence_score?: number;
+  evidence?: TableRow[];
+  reason?: string;
+  risk_policy?: JsonObject & {
+    price_buffer_eur_per_mwh?: number;
+    volume_multiplier?: number;
+  };
+  run_count?: number;
+}>;
+
 export type RevenueStackResult = TableRow & {
   availability_hours?: number;
   blocking_reasons?: JsonValue[];
@@ -425,14 +439,41 @@ export type WorkflowRunHistoryResponse = ApiEnvelope<{
 }>;
 
 export type ExecutionOrder = TableRow & {
+  approval_status?: string;
+  automation_eligibility?: string;
+  bid_id?: string;
+  bid_status?: string;
+  bid_type?: string;
+  confidence_reason?: string;
+  delivery_end?: string;
+  delivery_start?: string;
   delivery_time?: string;
+  energy_mwh?: number;
+  lifecycle_status?: string;
+  limit_price_eur_mwh?: number;
   market?: string;
+  market_product_id?: string;
   order_id?: string;
   price_limit_eur_mwh?: number;
+  risk_status?: string;
+  risk_adjusted_limit_price_eur_mwh?: number;
+  risk_adjusted_volume_mw?: number;
+  risk_adjusted_volume_mwh?: number;
+  forecast_confidence_band?: string;
+  forecast_confidence_score?: number;
   side?: string;
   source_action?: string;
   status?: string;
+  submission_status?: string;
+  volume_mw?: number;
   volume_mwh?: number;
+};
+
+export type ExecutionLifecycleStep = TableRow & {
+  label?: string;
+  owner?: string;
+  status?: string;
+  step?: string;
 };
 
 export type ExecutionRiskCheck = TableRow & {
@@ -452,7 +493,10 @@ export type ExecutionProposal = JsonObject & {
   execution_proposal_id?: number;
   forecast_model?: string;
   forecast_provider?: string;
+  forecast_confidence?: ForecastConfidenceResponse;
   generated_at?: string;
+  bid_lifecycle?: ExecutionLifecycleStep[];
+  bids?: ExecutionOrder[];
   market?: string;
   market_submission_enabled?: boolean;
   orders?: ExecutionOrder[];
@@ -479,6 +523,513 @@ export type ExecutionProposalResponse = ApiEnvelope<{
 export type ExecutionProposalHistoryResponse = ApiEnvelope<{
   asset_id?: string;
   proposals?: TableRow[];
+}>;
+
+export type ExecutionPaperFill = TableRow & {
+  bid_id?: string;
+  delivery_end?: string;
+  delivery_start?: string;
+  delivery_time?: string;
+  fill_price_eur_mwh?: number;
+  filled_volume_mwh?: number;
+  limit_price_eur_mwh?: number;
+  market?: string;
+  market_product_id?: string;
+  notional_eur?: number;
+  order_id?: string;
+  paper_fill_id?: string;
+  requested_volume_mwh?: number;
+  side?: string;
+  status?: string;
+};
+
+export type ExecutionPaperTrade = TableRow & {
+  adapter_id?: string;
+  asset_id?: string;
+  audit?: TableRow[];
+  bid_lifecycle?: ExecutionLifecycleStep[];
+  bids?: ExecutionOrder[];
+  execution_proposal_id?: number;
+  fills?: ExecutionPaperFill[];
+  generated_at?: string;
+  lifecycle_status?: string;
+  mode?: string;
+  paper_trade_id?: number;
+  proposal_generated_at?: string;
+  status?: string;
+  summary?: TableRow & {
+    buy_cost_eur?: number;
+    expected_pnl_eur?: number;
+    filled_order_count?: number;
+    order_count?: number;
+    paper_pnl_eur?: number;
+    paper_vs_expected_delta_eur?: number;
+    sell_revenue_eur?: number;
+  };
+};
+
+export type ExecutionPaperTradeResponse = ApiEnvelope<{
+  asset_id?: string;
+  paper_trade?: ExecutionPaperTrade | null;
+}>;
+
+export type ExecutionPaperTradeHistoryResponse = ApiEnvelope<{
+  asset_id?: string;
+  paper_trades?: TableRow[];
+}>;
+
+export type SettlementSummary = JsonObject & {
+  expected_pnl_eur?: number;
+  paper_delta_eur?: number | null;
+  paper_pnl_eur?: number | null;
+  realized_delta_eur?: number | null;
+  realized_pnl_eur?: number | null;
+};
+
+export type SettlementReconciliation = JsonObject & {
+  asset_id?: string;
+  evidence_status?: JsonObject;
+  generated_at?: string;
+  primary_variance_driver?: string;
+  recommended_actions?: string[];
+  settlement_reconciliation_id?: number;
+  status?: string;
+  summary?: SettlementSummary;
+  variance_drivers?: TableRow[];
+};
+
+export type SettlementResponse = ApiEnvelope<{
+  asset_id?: string;
+  settlement?: SettlementReconciliation | null;
+}>;
+
+export type SettlementHistoryResponse = ApiEnvelope<{
+  asset_id?: string;
+  settlements?: TableRow[];
+}>;
+
+export type AutomationGuardrail = TableRow & {
+  context?: JsonObject;
+  guardrail?: string;
+  message?: string;
+  status?: string;
+};
+
+export type AutomationGuardrailsResponse = ApiEnvelope<{
+  asset_id?: string;
+  automation_status?: string;
+  evidence?: JsonObject;
+  guardrails?: AutomationGuardrail[];
+  policy_evaluation?: AutomationPolicyEvaluation;
+  recommended_actions?: string[];
+  summary?: JsonObject & {
+    blocked?: number;
+    passed?: number;
+    review?: number;
+    total?: number;
+  };
+}>;
+
+export type AutomationPolicyMarketRole = TableRow & {
+  adapter_id?: string;
+  automation_scope?: string;
+  role?: string;
+};
+
+export type AutomationPolicy = JsonObject & {
+  allowed_markets?: string[];
+  approval_policy?: JsonObject & {
+    auto_approve_below_power_mw?: number;
+    four_eyes_required_above_power_mw?: number;
+    require_human_approval?: boolean;
+  };
+  asset_id?: string;
+  automation_mode?: string;
+  automation_policy_id?: number;
+  confidence_policy?: JsonObject & {
+    low_confidence_action?: string;
+    medium_confidence_action?: string;
+    min_confidence_band?: string;
+    min_confidence_score?: number;
+  };
+  fallback_policy?: JsonObject & {
+    mode?: string;
+    on_adapter_unavailable?: string;
+    on_missing_forecast?: string;
+    on_missing_telemetry?: string;
+  };
+  market_roles?: AutomationPolicyMarketRole[];
+  policy_version?: string;
+  risk_limits?: JsonObject & {
+    max_cycles_per_day?: number;
+    max_daily_loss_eur?: number;
+    max_open_notional_eur?: number;
+    max_order_power_mw?: number;
+  };
+  simulation_policy?: JsonObject & {
+    max_paper_vs_expected_delta_eur?: number;
+    require_paper_trade?: boolean;
+  };
+  updated_at?: string;
+};
+
+export type AutomationPolicyCheck = TableRow & {
+  check?: string;
+  context?: JsonObject;
+  message?: string;
+  status?: string;
+};
+
+export type AutomationPolicyEvaluation = JsonObject & {
+  asset_id?: string;
+  checks?: AutomationPolicyCheck[];
+  policy?: AutomationPolicy;
+  policy_decision?: string;
+  policy_source?: string;
+  recommended_actions?: string[];
+  summary?: JsonObject & {
+    blocked?: number;
+    passed?: number;
+    review?: number;
+    total?: number;
+  };
+};
+
+export type AutomationPolicyResponse = ApiEnvelope<{
+  asset_id?: string;
+  policy?: AutomationPolicy;
+  source?: string;
+}>;
+
+export type AutomationPolicyEvaluationResponse = ApiEnvelope<{
+  asset_id?: string;
+  checks?: AutomationPolicyCheck[];
+  policy?: AutomationPolicy;
+  policy_decision?: string;
+  policy_source?: string;
+  recommended_actions?: string[];
+  summary?: JsonObject & {
+    blocked?: number;
+    passed?: number;
+    review?: number;
+    total?: number;
+  };
+}>;
+
+export type AutomationPolicyHistoryResponse = ApiEnvelope<{
+  asset_id?: string;
+  policies?: TableRow[];
+}>;
+
+export type ExecutionReadinessCheck = TableRow & {
+  check?: string;
+  evidence?: JsonObject;
+  label?: string;
+  message?: string;
+  status?: string;
+};
+
+export type MarketAdapterStatus = TableRow & {
+  adapter_id?: string;
+  adapter_name?: string;
+  bidding_zone?: string;
+  connection_status?: string;
+  country?: string;
+  credential_status?: string;
+  environment?: string;
+  live_submission?: boolean;
+  market_segment?: string;
+  next_connection_action?: string;
+  product_family?: string;
+  supported_granularity?: string[];
+  supported_products?: string[];
+  venue?: string;
+};
+
+export type MarketAdapterRegistryResponse = ApiEnvelope<{
+  adapters?: MarketAdapterStatus[];
+  country?: string;
+}>;
+
+export type MarketConnectorReadiness = MarketAdapterStatus & {
+  credential_keys?: string[];
+  missing_controls?: string[];
+  missing_credentials?: string[];
+  next_integration_action?: string;
+  paper_supported?: boolean;
+  preview_available?: boolean;
+  priority?: number;
+  production_readiness_tier?: string;
+  readiness_score?: number;
+};
+
+export type MarketConnectorReadinessResponse = ApiEnvelope<{
+  connector_status?: string;
+  connectors?: MarketConnectorReadiness[];
+  country?: string;
+  generated_at?: string;
+  recommended_actions?: string[];
+  summary?: JsonObject & {
+    average_readiness_score?: number;
+    connector_count?: number;
+    credentials_required_count?: number;
+    live_submission_count?: number;
+    preview_ready_count?: number;
+    production_ready_count?: number;
+  };
+}>;
+
+export type AssetMarketAdapterStatusResponse = ApiEnvelope<{
+  adapters?: MarketAdapterStatus[];
+  asset_id?: string;
+  bidding_zone?: string;
+  connected_adapter_count?: number;
+  country?: string;
+  live_submission_enabled?: boolean;
+  market_adapter_status?: string;
+  next_connection_action?: string;
+  planned_adapter_count?: number;
+  primary_adapter?: MarketAdapterStatus | null;
+}>;
+
+export type EpexDayAheadPreview = JsonObject & {
+  adapter_id?: string;
+  adapter_name?: string;
+  audit?: TableRow[];
+  bidding_zone?: string;
+  environment?: string;
+  gate_closure?: string;
+  generated_at?: string;
+  live_submission?: boolean;
+  market_segment?: string;
+  orders?: TableRow[];
+  status?: string;
+  summary?: JsonObject;
+  validation?: JsonObject & {
+    checks?: TableRow[];
+    status?: string;
+  };
+  venue?: string;
+};
+
+export type EpexDayAheadPreviewResponse = ApiEnvelope<{
+  asset_id?: string;
+  preview?: EpexDayAheadPreview | null;
+}>;
+
+export type EpexIntradayAuctionPreviewResponse = ApiEnvelope<{
+  asset_id?: string;
+  preview?: EpexDayAheadPreview | null;
+}>;
+
+export type EpexIntradayContinuousPreviewResponse = ApiEnvelope<{
+  asset_id?: string;
+  preview?: EpexDayAheadPreview | null;
+}>;
+
+export type RegelleistungFcrPreview = JsonObject & {
+  adapter_id?: string;
+  adapter_name?: string;
+  audit?: TableRow[];
+  bids?: TableRow[];
+  bidding_zone?: string;
+  capability?: JsonObject;
+  environment?: string;
+  generated_at?: string;
+  live_submission?: boolean;
+  market_segment?: string;
+  product?: string;
+  status?: string;
+  summary?: JsonObject;
+  validation?: JsonObject & {
+    checks?: TableRow[];
+    status?: string;
+  };
+  venue?: string;
+};
+
+export type RegelleistungFcrPreviewResponse = ApiEnvelope<{
+  asset_id?: string;
+  preview?: RegelleistungFcrPreview | null;
+}>;
+
+export type RegelleistungAfrrPreviewResponse = ApiEnvelope<{
+  asset_id?: string;
+  preview?: RegelleistungFcrPreview | null;
+}>;
+
+export type RegelleistungMfrrPreviewResponse = ApiEnvelope<{
+  asset_id?: string;
+  preview?: RegelleistungFcrPreview | null;
+}>;
+
+export type MultiMarketAllocationCandidate = TableRow & {
+  adapter_connection_status?: string;
+  adapter_credential_status?: string;
+  adapter_id?: string;
+  allocated_energy_mwh?: number;
+  allocated_power_mw?: number;
+  allocation_score?: number;
+  blocking_reasons?: string[];
+  commercial_product_id?: string;
+  expected_revenue_eur?: number;
+  execution_role?: string;
+  live_submission?: boolean;
+  market_name?: string;
+  market_segment?: string;
+  operator_next_action?: string;
+  preview_status?: string;
+  preview_validation_status?: string;
+  recommendation_status?: string;
+  risk_score?: number;
+  venue?: string;
+};
+
+export type MultiMarketAllocationResponse = ApiEnvelope<{
+  allocation?: MultiMarketAllocationCandidate[];
+  allocation_status?: string;
+  asset_id?: string;
+  evidence?: JsonObject;
+  excluded_markets?: MultiMarketAllocationCandidate[];
+  generated_at?: string;
+  primary_market?: MultiMarketAllocationCandidate | null;
+  recommended_actions?: string[];
+  secondary_market?: MultiMarketAllocationCandidate | null;
+  summary?: JsonObject & {
+    approval_status?: string;
+    candidate_market_count?: number;
+    eligible_market_count?: number;
+    excluded_market_count?: number;
+    forecast_confidence_band?: string;
+    forecast_confidence_score?: number;
+    readiness_score?: number;
+    readiness_status?: string;
+    total_allocated_power_mw?: number;
+    total_expected_revenue_eur?: number;
+  };
+}>;
+
+export type TradingOrchestratorStage = JsonObject & {
+  action?: string;
+  message?: string;
+  owner?: string;
+  status?: string;
+};
+
+export type TradingOrchestratorNextAction = JsonObject & {
+  action?: string;
+  label?: string;
+  message?: string;
+  owner?: string;
+  target_adapter_id?: string;
+  target_market?: string;
+};
+
+export type TradingOrchestratorResponse = ApiEnvelope<{
+  asset_id?: string;
+  audit?: TableRow[];
+  blockers?: TableRow[];
+  evidence?: JsonObject;
+  executed_actions?: TableRow[];
+  generated_at?: string;
+  next_action?: TradingOrchestratorNextAction;
+  orchestrator_status?: string;
+  stage?: TradingOrchestratorStage;
+  workflow?: TableRow[];
+}>;
+
+export type ExecutionReadinessResponse = ApiEnvelope<{
+  asset_id?: string;
+  automation_status?: string;
+  checks?: ExecutionReadinessCheck[];
+  evidence?: JsonObject;
+  market_adapters?: MarketAdapterStatus[];
+  market_adapter_status?: string;
+  readiness_score?: number;
+  readiness_status?: string;
+  recommended_actions?: string[];
+  summary?: JsonObject & {
+    blocked?: number;
+    passed?: number;
+    review?: number;
+    total?: number;
+  };
+}>;
+
+export type MarketSubmission = JsonObject & {
+  adapter_id?: string;
+  asset_id?: string;
+  bids?: TableRow[];
+  execution_proposal_id?: number;
+  lifecycle?: TableRow[];
+  live_submission?: boolean;
+  market_submission_id?: number;
+  status?: string;
+  submitted_at?: string;
+  summary?: JsonObject & {
+    accepted_bid_count?: number;
+    awarded_bid_count?: number;
+    notional_eur?: number;
+    rejected_bid_count?: number;
+    submitted_bid_count?: number;
+  };
+};
+
+export type MarketSubmissionResponse = ApiEnvelope<{
+  asset_id?: string;
+  submission?: MarketSubmission | null;
+}>;
+
+export type MarketSubmissionHistoryResponse = ApiEnvelope<{
+  asset_id?: string;
+  submissions?: TableRow[];
+}>;
+
+export type ExecutionApproval = JsonObject & {
+  approval_id?: number;
+  asset_id?: string;
+  decided_at?: string | null;
+  decided_by?: string | null;
+  execution_proposal_id?: number;
+  reason?: string;
+  requested_at?: string;
+  requested_by?: string;
+  status?: string;
+};
+
+export type ExecutionApprovalResponse = ApiEnvelope<{
+  approval?: ExecutionApproval | null;
+  asset_id?: string;
+}>;
+
+export type ExecutionApprovalHistoryResponse = ApiEnvelope<{
+  approvals?: TableRow[];
+  asset_id?: string;
+}>;
+
+export type AssetTelemetry = JsonObject & {
+  asset_id?: string;
+  availability_status?: string;
+  available_charge_power_mw?: number;
+  available_discharge_power_mw?: number;
+  captured_at?: string;
+  curtailment_active?: boolean;
+  ems_status?: string;
+  grid_export_limit_mw?: number;
+  grid_import_limit_mw?: number;
+  inverter_status?: string;
+  maintenance_active?: boolean;
+  provider?: string;
+  schedule_deviation_mwh?: number;
+  soc_mwh?: number;
+  soc_percent?: number;
+  status?: string;
+  telemetry_id?: number;
+};
+
+export type AssetTelemetryResponse = ApiEnvelope<{
+  asset_id?: string;
+  telemetry?: AssetTelemetry | null;
 }>;
 
 export type ForecastPerformanceRun = TableRow & {
@@ -536,3 +1087,4 @@ export type MonthlyReportListResponse = ApiEnvelope<{
 export type ClientConfigResponse = ApiEnvelope<{
   config?: JsonObject;
 }>;
+

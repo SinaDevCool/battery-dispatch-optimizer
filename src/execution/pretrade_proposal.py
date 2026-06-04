@@ -8,6 +8,9 @@ from src.db.repositories.execution_repository import (
 )
 from src.db.repositories.signal_repository import list_signal_runs
 from src.db.repositories.workflow_repository import get_latest_workflow_run
+from src.backtesting.forecast_actual.forecast_confidence import (
+    build_forecast_confidence,
+)
 from src.services.asset_signal_store import load_asset_latest_signal
 
 
@@ -26,9 +29,11 @@ def build_execution_proposal(asset_id):
     metadata = signal_data.get("metadata", {})
     signal_run = get_latest_signal_run(asset_id)
     workflow_run = get_latest_workflow_run(asset_id)
+    forecast_confidence = build_forecast_confidence(asset_id)
     orders = build_orders(
         dispatch_rows=dispatch_rows,
         market=asset.market or "DE-LU day-ahead",
+        forecast_confidence=forecast_confidence,
     )
     risk_checks = build_risk_checks(
         asset=asset,
@@ -69,8 +74,16 @@ def build_execution_proposal(asset_id):
         "target_date": metadata.get("target_date"),
         "forecast_provider": metadata.get("forecast_provider") or metadata.get("source"),
         "forecast_model": metadata.get("forecast_model"),
+        "forecast_confidence": forecast_confidence,
         "market": asset.market or "DE-LU day-ahead",
         "orders": orders,
+        "bids": orders,
+        "bid_lifecycle": build_bid_lifecycle(
+            status=status,
+            approval_status=approval_status,
+            market_submission_enabled=False,
+            paper_trade_status="not_run",
+        ),
         "risk_checks": risk_checks,
         "automation_blockers": automation_blockers,
         "blockers": hard_blockers,
@@ -122,8 +135,16 @@ def execution_proposal_history(asset_id, limit=25):
     }
 
 
-def build_orders(dispatch_rows, market):
+def build_orders(dispatch_rows, market, forecast_confidence=None):
     orders = []
+    confidence = forecast_confidence or {}
+    risk_policy = confidence.get("risk_policy", {})
+    volume_multiplier = numeric(risk_policy.get("volume_multiplier")) or 1.0
+    price_buffer = numeric(risk_policy.get("price_buffer_eur_per_mwh"))
+    confidence_score = numeric(confidence.get("confidence_score"))
+    confidence_band = confidence.get("confidence_band", "unknown")
+    automation_eligibility = confidence.get("automation_eligibility", "paper_only")
+    confidence_reason = confidence.get("reason", "Forecast confidence was not scored.")
 
     for index, row in enumerate(dispatch_rows):
         action = row.get("action")
@@ -140,21 +161,130 @@ def build_orders(dispatch_rows, market):
         if volume_mwh <= 0:
             continue
 
+        bid_id = f"bid-{index + 1:03d}"
+        order_id = f"draft-{index + 1:03d}"
+        limit_price = round(numeric(row.get("price")), 2)
+        risk_adjusted_volume_mwh = round(volume_mwh * volume_multiplier, 4)
+        risk_adjusted_volume_mw = round((volume_mwh / 0.25) * volume_multiplier, 4)
+        risk_adjusted_limit_price = risk_adjusted_price(
+            side=side,
+            limit_price=limit_price,
+            price_buffer=price_buffer,
+        )
+
         orders.append(
             {
-                "order_id": f"draft-{index + 1:03d}",
+                "bid_id": bid_id,
+                "order_id": order_id,
                 "delivery_time": row.get("timestamp"),
+                "delivery_start": row.get("timestamp"),
+                "delivery_end": row.get("timestamp"),
                 "market": market,
+                "market_product_id": infer_market_product_id(market),
+                "bid_type": "limit",
                 "side": side,
+                "volume_mw": round(volume_mwh / 0.25, 4),
                 "volume_mwh": round(volume_mwh, 4),
-                "price_limit_eur_mwh": round(numeric(row.get("price")), 2),
+                "energy_mwh": round(volume_mwh, 4),
+                "limit_price_eur_mwh": limit_price,
+                "price_limit_eur_mwh": limit_price,
+                "forecast_confidence_score": round(confidence_score, 1),
+                "forecast_confidence_band": confidence_band,
+                "risk_adjusted_volume_mw": risk_adjusted_volume_mw,
+                "risk_adjusted_volume_mwh": risk_adjusted_volume_mwh,
+                "risk_adjusted_limit_price_eur_mwh": risk_adjusted_limit_price,
+                "automation_eligibility": automation_eligibility,
+                "confidence_reason": confidence_reason,
                 "source_action": action,
                 "source_dispatch_index": index,
                 "status": "draft",
+                "bid_status": "draft",
+                "lifecycle_status": "draft",
+                "approval_status": "requires_approval",
+                "submission_status": "not_submitted",
+                "risk_status": confidence_risk_status(confidence_band),
             }
         )
 
     return orders
+
+
+def build_bid_lifecycle(
+    status,
+    approval_status,
+    market_submission_enabled,
+    paper_trade_status,
+):
+    risk_status = "blocked" if status == "blocked" else "risk_checked"
+    approval_step = (
+        "blocked"
+        if approval_status == "blocked"
+        else "approval_required"
+    )
+    live_submission_status = (
+        "enabled"
+        if market_submission_enabled
+        else "disabled"
+    )
+
+    return [
+        {
+            "step": "draft_bids",
+            "label": "Draft bids",
+            "status": "complete",
+            "owner": "execution_engine",
+        },
+        {
+            "step": "risk_check",
+            "label": "Risk check",
+            "status": risk_status,
+            "owner": "risk_engine",
+        },
+        {
+            "step": "approval",
+            "label": "Human approval",
+            "status": approval_step,
+            "owner": "operator",
+        },
+        {
+            "step": "paper_submission",
+            "label": "Paper submission",
+            "status": paper_trade_status,
+            "owner": "paper_adapter",
+        },
+        {
+            "step": "live_submission",
+            "label": "Live submission",
+            "status": live_submission_status,
+            "owner": "market_adapter",
+        },
+    ]
+
+
+def infer_market_product_id(market):
+    market_name = str(market or "").lower()
+
+    if "intraday" in market_name:
+        return "intraday_arbitrage"
+
+    return "day_ahead_arbitrage"
+
+
+def risk_adjusted_price(side, limit_price, price_buffer):
+    if side == "buy":
+        return round(limit_price - price_buffer, 2)
+
+    return round(limit_price + price_buffer, 2)
+
+
+def confidence_risk_status(confidence_band):
+    if confidence_band == "high":
+        return "passed"
+
+    if confidence_band == "medium":
+        return "review"
+
+    return "restricted"
 
 
 def build_risk_checks(asset, orders, summary, dispatch_rows):

@@ -5,6 +5,9 @@ from src.backtesting.forecast_actual.forecast_actual_runner import (
     load_latest_forecast_actual_result,
     run_forecast_actual_backtest,
 )
+from src.backtesting.forecast_actual.forecast_confidence import (
+    build_forecast_confidence,
+)
 from src.backtesting.forecast_actual.forecast_performance_repository import (
     get_forecast_performance_run,
     list_forecast_performance_runs,
@@ -71,6 +74,11 @@ def asset_forecast_performance(asset_id: str, limit: int = 50):
         "run_count": len(runs),
         "runs": runs,
     }
+
+
+@router.get("/assets/{asset_id}/forecast-confidence")
+def asset_forecast_confidence(asset_id: str, limit: int = 10):
+    return build_forecast_confidence(asset_id=asset_id, limit=limit)
 
 
 @router.get("/assets/{asset_id}/forecast-performance/{forecast_actual_id}")

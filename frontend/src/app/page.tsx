@@ -1,42 +1,97 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import Link from "next/link";
+import { useState } from "react";
 
 import { ActionButton } from "@/components/action-button";
 import { useAssetContext } from "@/components/asset-provider";
 import { DispatchChart } from "@/components/charts/dispatch-chart";
 import { CommandCenterHeader } from "@/components/cockpit/command-center-header";
+import {
+  EngineCard,
+  EnterpriseMaturityPanel,
+  EvidenceList,
+  StatusRow,
+} from "@/components/cockpit/control-room-panels";
 import { DecisionSummary } from "@/components/cockpit/decision-summary";
 import { RevenueStackOverview } from "@/components/cockpit/revenue-stack-overview";
 import { RiskCompliancePanel } from "@/components/cockpit/risk-compliance-panel";
 import { StrategyRecommendation } from "@/components/cockpit/strategy-recommendation";
 import { TradingReadinessPanel } from "@/components/cockpit/trading-readiness-panel";
 import { DataCompletenessPanel } from "@/components/data-completeness-panel";
-import { DataTable } from "@/components/data-table";
 import { ErrorState } from "@/components/error-state";
 import { KpiCard } from "@/components/kpi-card";
+import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
+import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { apiGet } from "@/lib/api";
 import { formatCurrency, formatNumber } from "@/lib/format";
 import type {
   AncillaryEligibilityResponse,
+  AssetMarketAdapterStatusResponse,
   AssetCockpitResponse,
+  AssetTelemetryResponse,
+  AutomationGuardrailsResponse,
   BusinessDecisionResponse,
   DataCompletenessResponse,
   DatabaseStatusResponse,
   EegComplianceResponse,
+  ExecutionApprovalResponse,
+  ExecutionProposalResponse,
+  ExecutionReadinessResponse,
   HealthResponse,
   HedgingRevenueResponse,
   LatestSignalResponse,
   RevenueStackResponse,
+  SettlementResponse,
   StorageClassificationResponse,
   WorkflowRunResponse,
 } from "@/types/api";
 
+const controlRoomTabs = [
+  {
+    id: "trading",
+    label: "Trading Status",
+    helper: "Latest signal, engine state, and current trade recommendation.",
+  },
+  {
+    id: "readiness",
+    label: "Portfolio Readiness",
+    helper: "Data completeness, maturity, regulation, and automation blockers.",
+  },
+  {
+    id: "commercial",
+    label: "Commercial Decision",
+    helper: "Revenue stack, hedging, allocation logic, and business value.",
+  },
+  {
+    id: "execution",
+    label: "Execution Readiness",
+    helper: "Approval, telemetry, guardrails, settlement, and audit linkage.",
+  },
+  {
+    id: "actions",
+    label: "Next Actions",
+    helper: "The shortest list of operator actions that move the asset forward.",
+  },
+] as const;
+
+type ControlRoomTabId = (typeof controlRoomTabs)[number]["id"];
+
 export default function OverviewPage() {
   const { selectedAsset, selectedAssetId } = useAssetContext();
+  const { persona } = usePersona();
+  const [activeTabByPersona, setActiveTabByPersona] = useState<
+    Partial<Record<string, ControlRoomTabId>>
+  >({});
+  const activeTab =
+    activeTabByPersona[persona.id] ?? persona.defaultControlRoomTab;
+  const setActiveTab = (tab: ControlRoomTabId) =>
+    setActiveTabByPersona((current) => ({
+      ...current,
+      [persona.id]: tab,
+    }));
 
   const health = useQuery({
     queryFn: () => apiGet<HealthResponse>("/health"),
@@ -124,6 +179,60 @@ export default function OverviewPage() {
     queryKey: ["overview-data-completeness", selectedAssetId],
   });
 
+  const executionProposal = useQuery({
+    queryFn: () =>
+      apiGet<ExecutionProposalResponse>(
+        `/assets/${selectedAssetId}/execution/proposal/latest`,
+      ),
+    queryKey: ["overview-execution-proposal", selectedAssetId],
+  });
+
+  const approval = useQuery({
+    queryFn: () =>
+      apiGet<ExecutionApprovalResponse>(
+        `/assets/${selectedAssetId}/execution/approval/latest`,
+      ),
+    queryKey: ["overview-execution-approval", selectedAssetId],
+  });
+
+  const guardrails = useQuery({
+    queryFn: () =>
+      apiGet<AutomationGuardrailsResponse>(
+        `/assets/${selectedAssetId}/execution/automation-guardrails`,
+      ),
+    queryKey: ["overview-automation-guardrails", selectedAssetId],
+  });
+
+  const telemetry = useQuery({
+    queryFn: () =>
+      apiGet<AssetTelemetryResponse>(
+        `/assets/${selectedAssetId}/telemetry/latest`,
+      ),
+    queryKey: ["overview-telemetry", selectedAssetId],
+  });
+
+  const settlement = useQuery({
+    queryFn: () =>
+      apiGet<SettlementResponse>(`/assets/${selectedAssetId}/settlement/latest`),
+    queryKey: ["overview-settlement", selectedAssetId],
+  });
+
+  const readiness = useQuery({
+    queryFn: () =>
+      apiGet<ExecutionReadinessResponse>(
+        `/assets/${selectedAssetId}/execution/readiness`,
+      ),
+    queryKey: ["overview-execution-readiness", selectedAssetId],
+  });
+
+  const marketAdapterStatus = useQuery({
+    queryFn: () =>
+      apiGet<AssetMarketAdapterStatusResponse>(
+        `/assets/${selectedAssetId}/execution/market-adapter/status`,
+      ),
+    queryKey: ["overview-market-adapter-status", selectedAssetId],
+  });
+
   const cockpitData = cockpit.data?.cockpit;
   const signalPayload = cockpitData?.latest_signal ?? signal.data;
   const revenuePayload = cockpitData?.revenue_stack ?? revenue.data;
@@ -173,6 +282,13 @@ export default function OverviewPage() {
       businessDecision.refetch(),
       workflowRun.refetch(),
       completeness.refetch(),
+      executionProposal.refetch(),
+      approval.refetch(),
+      guardrails.refetch(),
+      telemetry.refetch(),
+      settlement.refetch(),
+      readiness.refetch(),
+      marketAdapterStatus.refetch(),
     ]);
 
   return (
@@ -192,78 +308,10 @@ export default function OverviewPage() {
         </div>
       ) : null}
 
-      <div className="mb-6 flex flex-wrap gap-3">
-        <ActionButton
-          endpoint={`/demo/portfolio/run?asset_id=${selectedAssetId}`}
-          label="Populate full demo evidence"
-          refetch={refetchCockpit}
-          variant="primary"
-        />
-        <ActionButton
-          endpoint={`/assets/${selectedAssetId}/workflow-runs/run`}
-          label="Run audited workflow"
-          refetch={refetchCockpit}
-          variant="secondary"
-        />
-      </div>
-
-      <div className="mb-6 grid gap-4 xl:grid-cols-3">
-        <EngineCard
-          href="/forecasts"
-          label="AI Forecast Engine"
-          status={displayValue(
-            metadata.forecast_model ?? metadata.forecast_provider,
-            "Forecast source pending",
-          )}
-          title="Forecast trading desk"
-          value={displayValue(
-            metadata.forecast_provider ?? metadata.source,
-            "No active forecast",
-          )}
-          bullets={[
-            "Day-ahead forecast comparison",
-            "Forecast quality and provider ranking",
-            "Actual-vs-forecast PnL evidence",
-          ]}
-        />
-        <EngineCard
-          href="/revenue"
-          label="Multi-Market Optimization"
-          status={`${activeDispatchRows.length} active dispatch interval(s)`}
-          title="Revenue and constraint optimizer"
-          value={formatCurrency(totalRevenue)}
-          bullets={[
-            "Day-ahead dispatch economics",
-            "Grid fee, degradation, and regulation checks",
-            "Merchant, ancillary, and hedged revenue view",
-          ]}
-        />
-        <EngineCard
-          href="/execution"
-          label="Automated Execution Engine"
-          status={displayValue(
-            businessDecisionPayload?.decision?.recommendation_status ??
-              workflowRunPayload?.workflow_run?.status,
-            "Execution evidence pending",
-          )}
-          title="Guardrailed trading control"
-          value={displayValue(
-            businessDecisionPayload?.decision?.readiness ??
-              businessDecisionPayload?.decision?.recommendation,
-            "Advisory mode",
-          )}
-          bullets={[
-            "Draft orders and human approval",
-            "Paper trading before live submission",
-            "Risk gates before automated trading",
-          ]}
-        />
-      </div>
-
       <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           accent={summary.signal === "ACTION" ? "emerald" : "slate"}
-          label="Latest signal"
+          label="Trade signal"
           value={String(summary.signal ?? "-")}
           helper={String(summary.opportunity_level ?? "No opportunity level")}
         />
@@ -280,167 +328,127 @@ export default function OverviewPage() {
           helper={`${revenueRows.length} market product(s) assessed`}
         />
         <KpiCard
-          accent={eeg.data?.eeg_eligible ? "emerald" : "amber"}
-          label="Regulatory readiness"
-          value={eeg.data?.eeg_eligible ? "Eligible" : eeg.data?.status ?? "-"}
-          helper={classification.data?.storage_classification ?? "Storage class pending"}
+          accent={readiness.data?.readiness_status === "blocked" ? "red" : "blue"}
+          label="Execution readiness"
+          value={readiness.data?.readiness_status ?? "not evaluated"}
+          helper={`${readiness.data?.summary?.blocked ?? 0} blocked / ${readiness.data?.summary?.review ?? 0} review`}
         />
       </div>
 
-      <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard
-          accent="blue"
-          label="Database signal runs"
-          value={databaseStatus.data?.table_counts?.signal_runs ?? 0}
-          helper="Persisted optimization evidence"
-        />
-        <KpiCard
-          accent="blue"
-          label="Database revenue runs"
-          value={databaseStatus.data?.table_counts?.revenue_stack_runs ?? 0}
-          helper="Persisted revenue stack evidence"
-        />
-        <KpiCard
-          accent="blue"
-          label="Business decisions"
-          value={databaseStatus.data?.table_counts?.business_decisions ?? 0}
-          helper="Backend recommendation records"
-        />
-        <KpiCard
-          accent="blue"
-          label="Workflow runs"
-          value={databaseStatus.data?.table_counts?.workflow_runs ?? 0}
-          helper="Linked audit records"
-        />
-      </div>
-
-      {enterpriseMaturity ? (
-        <div className="mb-6">
-          <SectionCard
-            action={
-              <StatusPill tone={maturityTone(enterpriseMaturity.score)}>
-                {enterpriseMaturity.display_level ?? "Maturity pending"}
-              </StatusPill>
-            }
-            title="Enterprise maturity and competitive edge"
-          >
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <KpiCard
-                accent={maturityTone(enterpriseMaturity.score)}
-                helper="Enterprise-grade operating readiness"
-                label="Maturity score"
-                value={`${formatNumber(enterpriseMaturity.score, 1)}/100`}
-              />
-              <KpiCard
-                accent="emerald"
-                helper="Linked backend proof points"
-                label="Bankability evidence"
-                value={enterpriseMaturity.bankability_evidence_count ?? 0}
-              />
-              <KpiCard
-                accent={enterpriseMaturity.automation_readiness === "blocked" ? "amber" : "blue"}
-                helper="Market API, telemetry, approval, and guardrails"
-                label="Automation readiness"
-                value={enterpriseMaturity.automation_readiness ?? "-"}
-              />
-              <KpiCard
-                accent="emerald"
-                helper="Evidence-led differentiation score"
-                label="Competitive differentiation"
-                value={`${formatNumber(enterpriseMaturity.differentiation_score, 1)}/100`}
-              />
-            </div>
-
-            <div className="mt-4 grid gap-4 xl:grid-cols-3">
-              <EvidenceList
-                items={enterpriseMaturity.strengths}
-                title="What is already defensible"
-                tone="emerald"
-              />
-              <EvidenceList
-                items={enterpriseMaturity.gaps}
-                title="What still blocks premium positioning"
-                tone="amber"
-              />
-              <EvidenceList
-                items={enterpriseMaturity.next_moat_actions}
-                title="Next moat-building actions"
-                tone="blue"
-              />
-            </div>
-
-            {enterpriseMaturity.competitor_positioning ? (
-              <div className="mt-4 rounded-lg border border-sky-500/25 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
-                {enterpriseMaturity.competitor_positioning}
-              </div>
-            ) : null}
-          </SectionCard>
-        </div>
-      ) : null}
-
-      <div className="mb-6">
-        <SectionCard
-          action={
-            <StatusPill tone={workflowRunPayload?.workflow_run ? "emerald" : "amber"}>
-              {workflowRunPayload?.workflow_run ? "Audit linked" : "Audit pending"}
-            </StatusPill>
-          }
-          title="Decision audit trail"
-        >
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <KpiCard
-              accent="blue"
-              label="Workflow run"
-              value={workflowRunPayload?.workflow_run?.workflow_run_id ?? "-"}
-              helper={workflowRunPayload?.workflow_run?.status ?? "No audit run yet"}
+      <div className="mb-6 grid gap-5 xl:grid-cols-[minmax(360px,0.65fr)_minmax(0,1fr)]">
+        <SectionCard title="Role view">
+          <div className="space-y-3">
+            <StatusRow
+              label="Persona"
+              tone="blue"
+              value={persona.label}
             />
-            <KpiCard
-              accent="blue"
-              label="Forecast snapshot"
-              value={workflowRunPayload?.workflow_run?.forecast_snapshot_id ?? "-"}
-              helper={workflowRunPayload?.workflow_run?.forecast_provider ?? "-"}
+            <StatusRow
+              label="Workspace focus"
+              tone="emerald"
+              value={persona.header}
             />
-            <KpiCard
-              accent="emerald"
-              label="Linked signal"
-              value={workflowRunPayload?.workflow_run?.signal_id ?? "-"}
-              helper={workflowRunPayload?.workflow_run?.target_date ?? "-"}
-            />
-            <KpiCard
-              accent="emerald"
-              label="Linked decision"
-              value={workflowRunPayload?.workflow_run?.decision_id ?? "-"}
-              helper={
-                workflowRunPayload?.workflow_run?.recommendation_status ??
-                "Decision pending"
-              }
-            />
-          </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <KpiCard
-              accent="blue"
-              label="Revenue stack run"
-              value={workflowRunPayload?.workflow_run?.revenue_stack_id ?? "-"}
-              helper="Commercial stack evidence"
-            />
-            <KpiCard
-              accent="emerald"
-              label="Audited PnL"
-              value={formatCurrency(workflowRunPayload?.workflow_run?.expected_pnl_eur)}
-              helper="Stored business decision result"
-            />
-            <KpiCard
-              accent="blue"
-              label="Optimizer"
-              value={workflowRunPayload?.workflow_run?.optimizer_engine ?? "-"}
-              helper={workflowRunPayload?.workflow_run?.completed_at ?? "-"}
+            <StatusRow
+              label="Default cockpit"
+              tone="slate"
+              value={persona.defaultControlRoomTab.replaceAll("_", " ")}
             />
           </div>
         </SectionCard>
+        <SectionCard
+          action={<StatusPill tone="blue">{persona.label}</StatusPill>}
+          title="Role priorities"
+        >
+          <EvidenceList items={persona.priorityActions} tone="blue" />
+        </SectionCard>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(420px,0.85fr)]">
+      <WorkspaceTabs
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        tabs={controlRoomTabs}
+      />
+
+      {activeTab === "trading" ? (
         <div className="space-y-5">
+          <div className="grid gap-4 xl:grid-cols-3">
+            <EngineCard
+              href="/forecasts"
+              label="Market Intelligence"
+              status={displayValue(
+                metadata.forecast_model ?? metadata.forecast_provider,
+                "Forecast source pending",
+              )}
+              title="Forecast workbench"
+              value={displayValue(
+                metadata.forecast_provider ?? metadata.source,
+                "No active forecast",
+              )}
+            />
+            <EngineCard
+              href="/revenue"
+              label="Commercial Optimization"
+              status={`${activeDispatchRows.length} active dispatch interval(s)`}
+              title="Revenue stack"
+              value={formatCurrency(totalRevenue)}
+            />
+            <EngineCard
+              href="/execution"
+              label="Trading Operations"
+              status={displayValue(
+                approval.data?.approval?.status ??
+                  executionProposal.data?.proposal?.approval_status,
+                "Approval evidence pending",
+              )}
+              title="Execution control"
+              value={displayValue(
+                readiness.data?.readiness_status ?? guardrails.data?.automation_status,
+                "Advisory mode",
+              )}
+            />
+          </div>
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
+            <DecisionSummary metadata={metadata} summary={summary} />
+            <SectionCard
+              action={
+                <StatusPill tone={activeDispatchRows.length ? "emerald" : "slate"}>
+                  {activeDispatchRows.length} active intervals
+                </StatusPill>
+              }
+              title="Optimization timeline"
+            >
+              {dispatch.length ? (
+                <DispatchChart rows={dispatch} />
+              ) : (
+                <ErrorState message="No dispatch schedule is available yet. Run optimization to generate a signal." />
+              )}
+            </SectionCard>
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === "readiness" ? (
+        <div className="space-y-5">
+          {enterpriseMaturity ? (
+            <EnterpriseMaturityPanel enterpriseMaturity={enterpriseMaturity} />
+          ) : null}
+          <div className="grid gap-5 xl:grid-cols-2">
+            <DataCompletenessPanel
+              data={completenessPayload}
+              title="Decision evidence completeness"
+            />
+            <RiskCompliancePanel
+              ancillary={ancillary.data}
+              classification={classification.data}
+              eeg={eeg.data}
+              signal={signalPayload}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === "commercial" ? (
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(380px,0.8fr)]">
           <StrategyRecommendation
             ancillary={ancillary.data}
             businessDecision={businessDecisionPayload?.decision}
@@ -450,123 +458,137 @@ export default function OverviewPage() {
             revenueRows={revenueRows}
             summary={summary}
           />
+          <RevenueStackOverview hedgingSummary={hedgeSummary} rows={revenueRows} />
+        </div>
+      ) : null}
 
-          <DecisionSummary metadata={metadata} summary={summary} />
+      {activeTab === "execution" ? (
+        <div className="space-y-5">
+          <div className="grid gap-5 xl:grid-cols-2">
+            <SectionCard title="Execution readiness">
+              <div className="space-y-3">
+                <StatusRow
+                  label="Germany market adapters"
+                  tone={marketAdapterStatus.data?.live_submission_enabled ? "emerald" : "blue"}
+                  value={marketAdapterStatus.data?.market_adapter_status ?? "not evaluated"}
+                />
+                <StatusRow
+                  label="Proposal"
+                  tone={executionProposal.data?.proposal ? "emerald" : "amber"}
+                  value={executionProposal.data?.proposal?.status ?? "missing"}
+                />
+                <StatusRow
+                  label="Operator approval"
+                  tone={approvalTone(approval.data?.approval?.status)}
+                  value={approval.data?.approval?.status ?? "missing"}
+                />
+                <StatusRow
+                  label="Telemetry"
+                  tone={telemetry.data?.telemetry ? "emerald" : "amber"}
+                  value={telemetry.data?.telemetry?.availability_status ?? "missing"}
+                />
+                <StatusRow
+                  label="Settlement"
+                  tone={settlement.data?.settlement ? "emerald" : "slate"}
+                  value={settlement.data?.settlement?.status ?? "not reconciled"}
+                />
+              </div>
+            </SectionCard>
+            <TradingReadinessPanel readiness={readiness.data} />
+          </div>
 
           <SectionCard
             action={
-              <StatusPill tone={activeDispatchRows.length ? "emerald" : "slate"}>
-                {activeDispatchRows.length} active intervals
+              <StatusPill tone={workflowRunPayload?.workflow_run ? "emerald" : "amber"}>
+                {workflowRunPayload?.workflow_run ? "Audit linked" : "Audit pending"}
               </StatusPill>
             }
-            title="Optimization timeline"
+            title="Decision audit trail"
           >
-            {dispatch.length ? (
-              <DispatchChart rows={dispatch} />
-            ) : (
-              <ErrorState message="No dispatch schedule is available yet. Run optimization to generate a signal." />
-            )}
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <KpiCard
+                accent="blue"
+                label="Workflow run"
+                value={workflowRunPayload?.workflow_run?.workflow_run_id ?? "-"}
+                helper={workflowRunPayload?.workflow_run?.status ?? "No audit run yet"}
+              />
+              <KpiCard
+                accent="blue"
+                label="Forecast snapshot"
+                value={workflowRunPayload?.workflow_run?.forecast_snapshot_id ?? "-"}
+                helper={workflowRunPayload?.workflow_run?.forecast_provider ?? "-"}
+              />
+              <KpiCard
+                accent="emerald"
+                label="Linked signal"
+                value={workflowRunPayload?.workflow_run?.signal_id ?? "-"}
+                helper={workflowRunPayload?.workflow_run?.target_date ?? "-"}
+              />
+              <KpiCard
+                accent="emerald"
+                label="Linked decision"
+                value={workflowRunPayload?.workflow_run?.decision_id ?? "-"}
+                helper={
+                  workflowRunPayload?.workflow_run?.recommendation_status ??
+                  "Decision pending"
+                }
+              />
+            </div>
           </SectionCard>
-
-          <DataCompletenessPanel
-            data={completenessPayload}
-            title="Decision evidence completeness"
-          />
         </div>
+      ) : null}
 
-        <div className="space-y-5">
-          <RiskCompliancePanel
-            ancillary={ancillary.data}
-            classification={classification.data}
-            eeg={eeg.data}
-            signal={signalPayload}
-          />
-          <TradingReadinessPanel />
+      {activeTab === "actions" ? (
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <SectionCard title="Operator actions">
+            <div className="grid gap-3 md:grid-cols-2">
+              <ActionButton
+                endpoint={`/demo/portfolio/run?asset_id=${selectedAssetId}`}
+                label="Populate demo evidence"
+                refetch={refetchCockpit}
+                variant="primary"
+              />
+              <ActionButton
+                endpoint={`/assets/${selectedAssetId}/workflow-runs/run`}
+                label="Run audited workflow"
+                refetch={refetchCockpit}
+                variant="secondary"
+              />
+            </div>
+          </SectionCard>
+          <SectionCard
+            action={<StatusPill tone="blue">Priority queue</StatusPill>}
+            title="Next actions"
+          >
+            <EvidenceList
+              items={
+                enterpriseMaturity?.next_moat_actions ??
+                businessDecisionPayload?.decision?.recommended_actions ??
+                [
+                  "Run audited workflow to refresh decision evidence.",
+                  "Open Forecasts to validate trading confidence.",
+                  "Open Execution to request approval before demo submission.",
+                ]
+              }
+              tone="blue"
+            />
+          </SectionCard>
         </div>
-      </div>
-
-      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(420px,0.9fr)_minmax(0,1.1fr)]">
-        <RevenueStackOverview
-          hedgingSummary={hedgeSummary}
-          rows={revenueRows}
-        />
-
-        <SectionCard
-          action={<StatusPill tone="blue">Audit preview</StatusPill>}
-          title="Dispatch actions"
-        >
-          <DataTable
-            columns={[
-              "timestamp",
-              "price",
-              "action",
-              "soc_mwh",
-              "pnl_eur",
-              "total_pnl_eur",
-            ]}
-            rows={(activeDispatchRows.length ? activeDispatchRows : dispatch).slice(
-              0,
-              12,
-            )}
-          />
-        </SectionCard>
-      </div>
+      ) : null}
     </>
   );
 }
 
-function EngineCard({
-  bullets,
-  href,
-  label,
-  status,
-  title,
-  value,
-}: {
-  bullets: string[];
-  href: string;
-  label: string;
-  status: string;
-  title: string;
-  value: string;
-}) {
-  return (
-    <Link
-      className="group rounded-lg border border-sky-500/20 bg-slate-950/60 p-5 transition hover:border-sky-400/50 hover:bg-sky-950/20"
-      href={href}
-    >
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-300">
-            {label}
-          </div>
-          <h2 className="mt-2 text-lg font-semibold text-white">{title}</h2>
-        </div>
-        <StatusPill tone="blue">Open</StatusPill>
-      </div>
-      <div className="mb-4 rounded-md border border-slate-800 bg-slate-900/50 px-3 py-2">
-        <div className="text-xs text-slate-500">Current state</div>
-        <div className="mt-1 text-base font-semibold text-slate-100">{value}</div>
-        <div className="mt-1 text-xs text-slate-400">{status}</div>
-      </div>
-      <ul className="space-y-2 text-sm text-slate-300">
-        {bullets.map((bullet) => (
-          <li className="flex gap-2" key={bullet}>
-            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-300" />
-            <span>{bullet}</span>
-          </li>
-        ))}
-      </ul>
-    </Link>
-  );
-}
-
-function maturityTone(score?: number) {
-  if ((score ?? 0) >= 80) {
+function approvalTone(value?: string) {
+  if (value === "approved") {
     return "emerald";
   }
 
-  if ((score ?? 0) >= 55) {
+  if (value === "rejected") {
+    return "red";
+  }
+
+  if (value === "requested") {
     return "blue";
   }
 
@@ -587,41 +609,4 @@ function displayValue(value: unknown, fallback: string) {
   }
 
   return fallback;
-}
-
-function EvidenceList({
-  items,
-  title,
-  tone,
-}: {
-  items?: string[];
-  title: string;
-  tone: "amber" | "blue" | "emerald";
-}) {
-  const borderByTone = {
-    amber: "border-amber-500/30 bg-amber-500/5",
-    blue: "border-sky-500/30 bg-sky-500/5",
-    emerald: "border-emerald-500/30 bg-emerald-500/5",
-  };
-
-  return (
-    <div className={`rounded-lg border p-4 ${borderByTone[tone]}`}>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-slate-100">{title}</h3>
-        <StatusPill tone={tone}>{items?.length ?? 0}</StatusPill>
-      </div>
-      {items?.length ? (
-        <ul className="space-y-2 text-sm leading-6 text-slate-300">
-          {items.map((item) => (
-            <li key={item} className="flex gap-2">
-              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-300" />
-              <span>{item}</span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="text-sm text-slate-400">No evidence recorded yet.</p>
-      )}
-    </div>
-  );
 }

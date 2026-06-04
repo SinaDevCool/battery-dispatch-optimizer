@@ -1,33 +1,104 @@
 "use client";
 
-import {
-  Activity,
-  LockKeyhole,
-  RadioTower,
-  Send,
-  ShieldCheck,
-  UserCheck,
-} from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { ActionButton } from "@/components/action-button";
 import { useAssetContext } from "@/components/asset-provider";
 import { DataTable } from "@/components/data-table";
 import { ErrorState } from "@/components/error-state";
+import {
+  ExecutionAuditPanel,
+  ExecutionOverviewPanel,
+  ExecutionRiskApprovalPanel,
+  ExecutionSettlementPanel,
+  ExecutionSimulationPanel,
+} from "@/components/execution/execution-workspace-panels";
+import { MarketAllocationPanel } from "@/components/execution/market-allocation-panel";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
 import { SectionCard } from "@/components/section-card";
-import { StatusPill } from "@/components/status-pill";
+import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { apiGet } from "@/lib/api";
 import { formatCurrency, formatDateTime, formatNumber } from "@/lib/format";
 import type {
+  AutomationGuardrailsResponse,
+  AssetTelemetryResponse,
+  AssetMarketAdapterStatusResponse,
+  ExecutionApprovalResponse,
+  ExecutionPaperTradeHistoryResponse,
+  ExecutionPaperTradeResponse,
   ExecutionProposalHistoryResponse,
   ExecutionProposalResponse,
+  ExecutionReadinessResponse,
+  EpexDayAheadPreviewResponse,
+  EpexIntradayAuctionPreviewResponse,
+  EpexIntradayContinuousPreviewResponse,
+  ForecastConfidenceResponse,
   LatestSignalResponse,
+  MarketSubmissionResponse,
+  MultiMarketAllocationResponse,
+  RegelleistungAfrrPreviewResponse,
+  RegelleistungFcrPreviewResponse,
+  RegelleistungMfrrPreviewResponse,
+  SettlementResponse,
 } from "@/types/api";
 
-export default function ExecutionPage() {
+const executionTabs = [
+  {
+    id: "overview",
+    label: "Overview",
+    helper: "Live trading readiness, operator actions, and current execution state.",
+  },
+  {
+    id: "allocation",
+    label: "Market Allocation",
+    helper: "Ranked German market routes, capacity allocation, and excluded-market reasons.",
+  },
+  {
+    id: "proposals",
+    label: "Proposals",
+    helper: "Pre-trade bid packets, position limits, and proposal history.",
+  },
+  {
+    id: "risk",
+    label: "Risk & Approval",
+    helper: "Guardrails, forecast confidence, approval policy, and blockers.",
+  },
+  {
+    id: "simulation",
+    label: "Paper Market",
+    helper: "Paper fills, paper PnL, and demo market submission status.",
+  },
+  {
+    id: "settlement",
+    label: "Settlement",
+    helper: "Reconciliation, variance drivers, and realized economics.",
+  },
+  {
+    id: "audit",
+    label: "Audit",
+    helper: "Backend checks, lifecycle steps, and execution event trail.",
+  },
+] as const;
+
+export type ExecutionTabId = (typeof executionTabs)[number]["id"];
+
+export default function ExecutionPage({
+  description = "Operate supervised battery trading from proposal creation through approval, paper market validation, submission evidence, and settlement reconciliation.",
+  eyebrow = "Trading control plane",
+  initialTab = "overview",
+  showTabs = true,
+  title = "Execution",
+}: {
+  description?: string;
+  eyebrow?: string;
+  initialTab?: ExecutionTabId;
+  showTabs?: boolean;
+  title?: string;
+} = {}) {
   const { selectedAsset, selectedAssetId } = useAssetContext();
+  const [activeTab, setActiveTab] = useState<ExecutionTabId>(initialTab);
 
   const latestProposal = useQuery({
     queryFn: () =>
@@ -45,15 +116,152 @@ export default function ExecutionPage() {
     queryKey: ["execution-proposal-history", selectedAssetId],
   });
 
+  const latestPaperTrade = useQuery({
+    queryFn: () =>
+      apiGet<ExecutionPaperTradeResponse>(
+        `/assets/${selectedAssetId}/execution/paper-trade/latest`,
+      ),
+    queryKey: ["execution-paper-trade-latest", selectedAssetId],
+  });
+
+  const paperTradeHistory = useQuery({
+    queryFn: () =>
+      apiGet<ExecutionPaperTradeHistoryResponse>(
+        `/assets/${selectedAssetId}/execution/paper-trades?limit=10`,
+      ),
+    queryKey: ["execution-paper-trade-history", selectedAssetId],
+  });
+
   const signal = useQuery({
     queryFn: () =>
       apiGet<LatestSignalResponse>(`/assets/${selectedAssetId}/signal/latest`),
     queryKey: ["execution-signal-latest", selectedAssetId],
   });
 
+  const settlement = useQuery({
+    queryFn: () =>
+      apiGet<SettlementResponse>(
+        `/assets/${selectedAssetId}/settlement/latest`,
+      ),
+    queryKey: ["execution-settlement-latest", selectedAssetId],
+  });
+
+  const forecastConfidence = useQuery({
+    queryFn: () =>
+      apiGet<ForecastConfidenceResponse>(
+        `/assets/${selectedAssetId}/forecast-confidence`,
+      ),
+    queryKey: ["execution-forecast-confidence", selectedAssetId],
+  });
+
+  const automationGuardrails = useQuery({
+    queryFn: () =>
+      apiGet<AutomationGuardrailsResponse>(
+        `/assets/${selectedAssetId}/execution/automation-guardrails`,
+      ),
+    queryKey: ["execution-automation-guardrails", selectedAssetId],
+  });
+
+  const telemetry = useQuery({
+    queryFn: () =>
+      apiGet<AssetTelemetryResponse>(
+        `/assets/${selectedAssetId}/telemetry/latest`,
+      ),
+    queryKey: ["execution-telemetry-latest", selectedAssetId],
+  });
+
+  const marketSubmission = useQuery({
+    queryFn: () =>
+      apiGet<MarketSubmissionResponse>(
+        `/assets/${selectedAssetId}/execution/submissions/latest`,
+      ),
+    queryKey: ["execution-market-submission-latest", selectedAssetId],
+  });
+
+  const approval = useQuery({
+    queryFn: () =>
+      apiGet<ExecutionApprovalResponse>(
+        `/assets/${selectedAssetId}/execution/approval/latest`,
+      ),
+    queryKey: ["execution-approval-latest", selectedAssetId],
+  });
+
+  const readiness = useQuery({
+    queryFn: () =>
+      apiGet<ExecutionReadinessResponse>(
+        `/assets/${selectedAssetId}/execution/readiness`,
+      ),
+    queryKey: ["execution-readiness", selectedAssetId],
+  });
+
+  const marketAdapterStatus = useQuery({
+    queryFn: () =>
+      apiGet<AssetMarketAdapterStatusResponse>(
+        `/assets/${selectedAssetId}/execution/market-adapter/status`,
+      ),
+    queryKey: ["execution-market-adapter-status", selectedAssetId],
+  });
+
+  const multiMarketAllocation = useQuery({
+    queryFn: () =>
+      apiGet<MultiMarketAllocationResponse>(
+        `/assets/${selectedAssetId}/execution/multi-market/allocation`,
+      ),
+    queryKey: ["execution-multi-market-allocation", selectedAssetId],
+  });
+
+  const epexDayAheadPreview = useQuery({
+    queryFn: () =>
+      apiGet<EpexDayAheadPreviewResponse>(
+        `/assets/${selectedAssetId}/execution/epex/day-ahead/preview`,
+      ),
+    queryKey: ["execution-epex-day-ahead-preview", selectedAssetId],
+  });
+
+  const epexIntradayAuctionPreview = useQuery({
+    queryFn: () =>
+      apiGet<EpexIntradayAuctionPreviewResponse>(
+        `/assets/${selectedAssetId}/execution/epex/intraday-auction/preview`,
+      ),
+    queryKey: ["execution-epex-intraday-auction-preview", selectedAssetId],
+  });
+
+  const epexIntradayContinuousPreview = useQuery({
+    queryFn: () =>
+      apiGet<EpexIntradayContinuousPreviewResponse>(
+        `/assets/${selectedAssetId}/execution/epex/intraday-continuous/preview`,
+      ),
+    queryKey: ["execution-epex-intraday-continuous-preview", selectedAssetId],
+  });
+
+  const regelleistungFcrPreview = useQuery({
+    queryFn: () =>
+      apiGet<RegelleistungFcrPreviewResponse>(
+        `/assets/${selectedAssetId}/execution/regelleistung/fcr/preview`,
+      ),
+    queryKey: ["execution-regelleistung-fcr-preview", selectedAssetId],
+  });
+
+  const regelleistungAfrrPreview = useQuery({
+    queryFn: () =>
+      apiGet<RegelleistungAfrrPreviewResponse>(
+        `/assets/${selectedAssetId}/execution/regelleistung/afrr/preview`,
+      ),
+    queryKey: ["execution-regelleistung-afrr-preview", selectedAssetId],
+  });
+
+  const regelleistungMfrrPreview = useQuery({
+    queryFn: () =>
+      apiGet<RegelleistungMfrrPreviewResponse>(
+        `/assets/${selectedAssetId}/execution/regelleistung/mfrr/preview`,
+      ),
+    queryKey: ["execution-regelleistung-mfrr-preview", selectedAssetId],
+  });
+
   const proposal = latestProposal.data?.proposal;
   const signalSummary = signal.data?.data?.summary ?? {};
   const orders = proposal?.orders ?? [];
+  const bids = proposal?.bids ?? orders;
   const riskChecks = proposal?.risk_checks ?? [];
   const auditRows = proposal?.audit ?? [];
   const automationBlockers = proposal?.automation_blockers ?? [];
@@ -64,26 +272,53 @@ export default function ExecutionPage() {
   );
   const profitPerMwDay =
     summary.profit_per_mw_day ?? signalSummary.profit_per_mw_day;
+  const paperTrade = latestPaperTrade.data?.paper_trade;
+  const paperTradeSummary = paperTrade?.summary ?? {};
+  const paperTradeFills = paperTrade?.fills ?? [];
+  const lifecycleRows = paperTrade?.bid_lifecycle ?? proposal?.bid_lifecycle ?? [];
+  const settlementData = settlement.data?.settlement;
+  const settlementSummary = settlementData?.summary ?? {};
+  const varianceDrivers = settlementData?.variance_drivers ?? [];
+  const confidence = proposal?.forecast_confidence ?? forecastConfidence.data;
+  const automationStatus = automationGuardrails.data?.automation_status;
+  const guardrailSummary = automationGuardrails.data?.summary ?? {};
+  const guardrails = automationGuardrails.data?.guardrails ?? [];
+  const telemetryData = telemetry.data?.telemetry;
+  const submission = marketSubmission.data?.submission;
+  const submissionSummary = submission?.summary ?? {};
+  const approvalData = approval.data?.approval;
+  const marketAllocation = multiMarketAllocation.data;
 
   const refetchExecution = () =>
-    Promise.all([latestProposal.refetch(), proposalHistory.refetch()]);
+    Promise.all([
+      latestProposal.refetch(),
+      proposalHistory.refetch(),
+      latestPaperTrade.refetch(),
+      paperTradeHistory.refetch(),
+      settlement.refetch(),
+      forecastConfidence.refetch(),
+      automationGuardrails.refetch(),
+      telemetry.refetch(),
+      marketSubmission.refetch(),
+      approval.refetch(),
+      readiness.refetch(),
+      marketAdapterStatus.refetch(),
+      multiMarketAllocation.refetch(),
+      epexDayAheadPreview.refetch(),
+      epexIntradayAuctionPreview.refetch(),
+      epexIntradayContinuousPreview.refetch(),
+      regelleistungFcrPreview.refetch(),
+      regelleistungAfrrPreview.refetch(),
+      regelleistungMfrrPreview.refetch(),
+    ]);
 
   return (
     <>
       <PageHeading
-        description="Build backend-controlled pre-trade proposal packets from the latest dispatch signal, workflow audit record, risk checks, approval state, and future market adapter requirements."
-        eyebrow="Trading control plane"
-        title="Execution"
+        description={description}
+        eyebrow={eyebrow}
+        title={title}
       />
-
-      <div className="mb-6 flex flex-wrap gap-3">
-        <ActionButton
-          endpoint={`/assets/${selectedAssetId}/execution/proposal/build`}
-          label="Build pre-trade proposal"
-          refetch={refetchExecution}
-          variant="primary"
-        />
-      </div>
 
       {latestProposal.data?.status === "not_found" ? (
         <div className="mb-6">
@@ -91,7 +326,7 @@ export default function ExecutionPage() {
         </div>
       ) : null}
 
-      <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <KpiCard
           accent={proposal?.status === "draft" ? "emerald" : "amber"}
           label="Proposal status"
@@ -104,9 +339,9 @@ export default function ExecutionPage() {
           }
         />
         <KpiCard
-          accent={orders.length ? "blue" : "slate"}
-          label="Draft orders"
-          value={orders.length}
+          accent={bids.length ? "blue" : "slate"}
+          label="Draft bids"
+          value={bids.length}
           helper="Generated by backend pre-trade engine"
         />
         <KpiCard
@@ -121,98 +356,94 @@ export default function ExecutionPage() {
           value={selectedAsset?.asset_name ?? selectedAsset?.site_name ?? selectedAssetId}
           helper={proposal?.market ?? selectedAsset?.market ?? "DE-LU day-ahead"}
         />
+        <KpiCard
+          accent={paperTrade ? "emerald" : "slate"}
+          label="Paper PnL"
+          value={paperTrade ? formatCurrency(paperTradeSummary.paper_pnl_eur) : "-"}
+          helper={
+            paperTrade
+              ? `${paperTradeSummary.filled_order_count ?? 0} simulated fill(s)`
+              : "Run paper trade after a proposal"
+          }
+        />
+        <KpiCard
+          accent={automationTone(automationStatus)}
+          label="Automation"
+          value={automationStatus ?? "-"}
+          helper={`${guardrailSummary.blocked ?? 0} blocked / ${guardrailSummary.review ?? 0} review`}
+        />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(380px,0.85fr)]">
+      {showTabs ? (
+        <WorkspaceTabs
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          tabs={executionTabs}
+        />
+      ) : null}
+
+      {activeTab === "overview" ? (
+        <ExecutionOverviewPanel
+          approvalData={approvalData}
+          automationStatus={automationStatus}
+          bids={bids}
+          epexDayAheadPreview={epexDayAheadPreview.data?.preview}
+          epexIntradayAuctionPreview={epexIntradayAuctionPreview.data?.preview}
+          epexIntradayContinuousPreview={epexIntradayContinuousPreview.data?.preview}
+          hardBlockers={hardBlockers}
+          marketAdapterStatus={marketAdapterStatus.data}
+          paperTrade={paperTrade}
+          proposal={proposal}
+          readiness={readiness.data}
+          refetchExecution={refetchExecution}
+          regelleistungAfrrPreview={regelleistungAfrrPreview.data?.preview}
+          regelleistungFcrPreview={regelleistungFcrPreview.data?.preview}
+          regelleistungMfrrPreview={regelleistungMfrrPreview.data?.preview}
+          selectedAssetId={selectedAssetId}
+          submission={submission}
+          telemetryData={telemetryData}
+        />
+      ) : null}
+
+      {activeTab === "allocation" ? (
+        <MarketAllocationPanel
+          allocation={marketAllocation}
+          refetchExecution={refetchExecution}
+          selectedAssetId={selectedAssetId}
+        />
+      ) : null}
+
+      {activeTab === "proposals" ? (
         <div className="space-y-5">
           <SectionCard
-            action={<StatusPill tone="amber">Market submission disabled</StatusPill>}
-            title="Backend proposed market orders"
+            action={
+              <ActionButton
+                endpoint={`/assets/${selectedAssetId}/execution/proposal/build`}
+                label="Build pre-trade proposal"
+                refetch={refetchExecution}
+                variant="primary"
+              />
+            }
+            title="Backend proposed market bids"
           >
             <DataTable
               columns={[
-                "order_id",
-                "delivery_time",
-                "market",
+                "bid_id",
+                "market_product_id",
                 "side",
-                "volume_mwh",
-                "price_limit_eur_mwh",
-                "status",
-              ]}
-              rows={orders}
-            />
-          </SectionCard>
-
-          <SectionCard title="Approval workflow">
-            <div className="grid gap-3 md:grid-cols-4">
-              <WorkflowStep
-                icon={<Activity className="h-4 w-4" />}
-                label="Signal linked"
-                status={proposal?.signal_id ? "complete" : "pending"}
-              />
-              <WorkflowStep
-                icon={<ShieldCheck className="h-4 w-4" />}
-                label="Risk checks"
-                status={hardBlockers.length ? "blocked" : orders.length ? "complete" : "pending"}
-              />
-              <WorkflowStep
-                icon={<UserCheck className="h-4 w-4" />}
-                label="Human approval"
-                status={proposal?.approval_status === "requires_approval" ? "required" : "pending"}
-              />
-              <WorkflowStep
-                icon={<Send className="h-4 w-4" />}
-                label="Market submission"
-                status="disabled"
-              />
-            </div>
-          </SectionCard>
-
-          <SectionCard title="Proposal history">
-            <DataTable
-              columns={[
-                "execution_proposal_id",
-                "generated_at",
-                "status",
+                "volume_mw",
+                "energy_mwh",
+                "limit_price_eur_mwh",
+                "risk_adjusted_volume_mw",
+                "risk_adjusted_limit_price_eur_mwh",
+                "forecast_confidence_score",
+                "automation_eligibility",
                 "approval_status",
-                "signal_id",
-                "workflow_run_id",
-                "order_count",
-                "expected_pnl_eur",
+                "submission_status",
+                "lifecycle_status",
               ]}
-              rows={formatProposalHistory(proposalHistory.data?.proposals ?? [])}
+              rows={bids}
             />
-          </SectionCard>
-        </div>
-
-        <div className="space-y-5">
-          <SectionCard title="Execution readiness">
-            <div className="space-y-3">
-              <ReadinessRow
-                icon={<RadioTower className="h-4 w-4" />}
-                label="Market API connection"
-                tone="amber"
-                value="Not connected"
-              />
-              <ReadinessRow
-                icon={<Activity className="h-4 w-4" />}
-                label="Asset telemetry"
-                tone="amber"
-                value="Not connected"
-              />
-              <ReadinessRow
-                icon={<UserCheck className="h-4 w-4" />}
-                label="Approval mode"
-                tone="blue"
-                value={proposal?.approval_status ?? "Not built"}
-              />
-              <ReadinessRow
-                icon={<LockKeyhole className="h-4 w-4" />}
-                label="Audit logging"
-                tone={proposal?.execution_proposal_id ? "emerald" : "slate"}
-                value={proposal?.execution_proposal_id ? "Proposal persisted" : "Pending"}
-              />
-            </div>
           </SectionCard>
 
           <SectionCard title="Position limits">
@@ -248,47 +479,67 @@ export default function ExecutionPage() {
               ]}
             />
           </SectionCard>
-
-          <SectionCard
-            action={<StatusPill tone={hardBlockers.length ? "red" : "blue"}>{hardBlockers.length}</StatusPill>}
-            title="Hard blockers"
-          >
+          <SectionCard title="Proposal history">
             <DataTable
-              columns={["blocker"]}
-              rows={hardBlockers.map((blocker) => ({ blocker }))}
-            />
-          </SectionCard>
-
-          <SectionCard
-            action={<StatusPill tone="amber">{automationBlockers.length}</StatusPill>}
-            title="Automation blockers"
-          >
-            <DataTable
-              columns={["blocker"]}
-              rows={automationBlockers.map((blocker) => ({ blocker }))}
+              columns={[
+                "execution_proposal_id",
+                "generated_at",
+                "status",
+                "approval_status",
+                "signal_id",
+                "workflow_run_id",
+                "order_count",
+                "expected_pnl_eur",
+              ]}
+              rows={formatProposalHistory(proposalHistory.data?.proposals ?? [])}
             />
           </SectionCard>
         </div>
-      </div>
+      ) : null}
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-2">
-        <SectionCard title="Backend risk checks">
-          <DataTable
-            columns={["check", "status", "message", "context"]}
-            rows={riskChecks}
-          />
-        </SectionCard>
+      {activeTab === "risk" ? (
+        <ExecutionRiskApprovalPanel
+          approvalData={approvalData}
+          automationBlockers={automationBlockers}
+          automationStatus={automationStatus}
+          confidence={confidence}
+          guardrailSummary={guardrailSummary}
+          guardrails={guardrails}
+          hardBlockers={hardBlockers}
+          refetchExecution={refetchExecution}
+          selectedAssetId={selectedAssetId}
+        />
+      ) : null}
 
-        <SectionCard
-          action={<StatusPill tone="blue">Pre-trade audit</StatusPill>}
-          title="Execution audit trail"
-        >
-          <DataTable
-            columns={["event", "actor", "status", "note"]}
-            rows={auditRows}
-          />
-        </SectionCard>
-      </div>
+      {activeTab === "simulation" ? (
+        <ExecutionSimulationPanel
+          paperFills={formatPaperFills(paperTradeFills)}
+          paperHistoryRows={formatPaperTradeHistory(paperTradeHistory.data?.paper_trades ?? [])}
+          paperTradeRunCount={paperTradeHistory.data?.paper_trades?.length ?? 0}
+          refetchExecution={refetchExecution}
+          selectedAssetId={selectedAssetId}
+          submission={submission}
+          submissionSummary={submissionSummary}
+        />
+      ) : null}
+
+      {activeTab === "settlement" ? (
+        <ExecutionSettlementPanel
+          refetchExecution={refetchExecution}
+          selectedAssetId={selectedAssetId}
+          settlementSummary={settlementSummary}
+          varianceDrivers={varianceDrivers}
+        />
+      ) : null}
+
+      {activeTab === "audit" ? (
+        <ExecutionAuditPanel
+          auditRows={auditRows}
+          lifecycleRows={lifecycleRows}
+          riskChecks={riskChecks}
+          telemetryData={telemetryData}
+        />
+      ) : null}
     </>
   );
 }
@@ -300,54 +551,43 @@ function formatProposalHistory(rows: NonNullable<ExecutionProposalHistoryRespons
   }));
 }
 
-function WorkflowStep({
-  icon,
-  label,
-  status,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  status: "blocked" | "complete" | "disabled" | "pending" | "required";
-}) {
-  const toneByStatus = {
-    blocked: "red",
-    complete: "emerald",
-    disabled: "amber",
-    pending: "slate",
-    required: "blue",
-  } as const;
-
-  return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-4">
-      <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
-        <span className="text-sky-300">{icon}</span>
-        {label}
-      </div>
-      <div className="mt-4">
-        <StatusPill tone={toneByStatus[status]}>{status}</StatusPill>
-      </div>
-    </div>
-  );
+function formatPaperTradeHistory(rows: NonNullable<ExecutionPaperTradeHistoryResponse["paper_trades"]>) {
+  return rows.map((row) => ({
+    ...row,
+    generated_at: formatDateTime(row.generated_at),
+    paper_pnl_eur: formatCurrency(row.paper_pnl_eur),
+    paper_vs_expected_delta_eur: formatCurrency(row.paper_vs_expected_delta_eur),
+  }));
 }
 
-function ReadinessRow({
-  icon,
-  label,
-  tone,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  tone: "amber" | "blue" | "emerald" | "red" | "slate";
-  value: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 rounded-lg border border-slate-800 bg-slate-900/45 px-4 py-3">
-      <div className="flex min-w-0 items-center gap-3">
-        <span className="text-slate-400">{icon}</span>
-        <span className="text-sm text-slate-300">{label}</span>
-      </div>
-      <StatusPill tone={tone}>{value}</StatusPill>
-    </div>
-  );
+function formatPaperFills(
+  rows: NonNullable<NonNullable<ExecutionPaperTradeResponse["paper_trade"]>["fills"]>,
+) {
+  return rows.map((row) => ({
+    ...row,
+    delivery_time: formatDateTime(row.delivery_time),
+    fill_price_eur_mwh: formatNumber(row.fill_price_eur_mwh, 2),
+    filled_volume_mwh: formatNumber(row.filled_volume_mwh, 4),
+    notional_eur: formatCurrency(row.notional_eur),
+  }));
+}
+
+function automationTone(value: unknown) {
+  if (value === "supervised_live_candidate") {
+    return "emerald";
+  }
+
+  if (value === "human_approval_required") {
+    return "blue";
+  }
+
+  if (value === "paper_only") {
+    return "amber";
+  }
+
+  if (value === "blocked") {
+    return "red";
+  }
+
+  return "slate";
 }

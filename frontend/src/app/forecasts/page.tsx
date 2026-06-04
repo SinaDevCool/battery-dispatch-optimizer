@@ -2,18 +2,22 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
-import { ActionButton } from "@/components/action-button";
 import { useAssetContext } from "@/components/asset-provider";
-import { BarComparisonChart } from "@/components/charts/bar-comparison-chart";
-import { DataTable } from "@/components/data-table";
 import { ErrorState } from "@/components/error-state";
+import {
+  ForecastConfidencePanel,
+  ForecastDataQualityPanel,
+  ForecastMarketPanel,
+  ForecastPerformancePanel,
+  ForecastRunControlsPanel,
+} from "@/components/forecasts/forecast-workbench-panels";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
-import { SectionCard } from "@/components/section-card";
-import { StatusPill } from "@/components/status-pill";
+import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { apiGet } from "@/lib/api";
-import { formatCurrency, formatDateTime, formatNumber } from "@/lib/format";
+import { formatCurrency, formatNumber } from "@/lib/format";
 import type {
   ActualPriceStatusResponse,
   ForecastActualResponse,
@@ -24,11 +28,41 @@ import type {
   ForecastProfitabilityResult,
   ForecastStatusResponse,
   LatestSignalResponse,
-  TableRow,
 } from "@/types/api";
+
+const forecastTabs = [
+  {
+    id: "market",
+    label: "Market View",
+    helper: "Latest source, price data coverage, provider ranking, and dispatch signal context.",
+  },
+  {
+    id: "performance",
+    label: "Model Performance",
+    helper: "Forecast-vs-actual error, revenue leakage, and backtest history.",
+  },
+  {
+    id: "confidence",
+    label: "Trading Confidence",
+    helper: "Commercial source selection, trust score, and fallback warnings.",
+  },
+  {
+    id: "data",
+    label: "Data Quality",
+    helper: "Forecast file health, actual-price readiness, and raw preview records.",
+  },
+  {
+    id: "controls",
+    label: "Run Controls",
+    helper: "Refresh market data, compare providers, and rerun forecast validation.",
+  },
+] as const;
+
+type ForecastTabId = (typeof forecastTabs)[number]["id"];
 
 export default function ForecastsPage() {
   const { selectedAssetId } = useAssetContext();
+  const [activeTab, setActiveTab] = useState<ForecastTabId>("market");
 
   const status = useQuery({
     queryFn: () => apiGet<ForecastStatusResponse>("/forecast/status"),
@@ -111,34 +145,10 @@ export default function ForecastsPage() {
   return (
     <>
       <PageHeading
-        description="Measure which forecast source creates the most battery value, how forecast error changes realized economics, and whether the latest signal is using a trusted data source."
+        description="Operate the forecast workbench that ranks market data sources, validates model error against actual prices, and decides whether a signal is reliable enough to trade."
         eyebrow="Forecast intelligence"
         title="Forecasts"
       />
-
-      <div className="mb-6 flex flex-wrap gap-3">
-        <ActionButton
-          endpoint="/data/update-entsoe"
-          label="Update ENTSO-E forecast"
-          refetch={refetchForecasts}
-          variant="primary"
-        />
-        <ActionButton
-          endpoint="/forecasts/compare-profitability"
-          label="Compare forecast profitability"
-          refetch={refetchForecasts}
-        />
-        <ActionButton
-          endpoint="/data/update-actual-prices"
-          label="Update actual prices"
-          refetch={refetchForecasts}
-        />
-        <ActionButton
-          endpoint={`/backtesting/forecast-actual/run?asset_id=${selectedAssetId}`}
-          label="Run forecast-vs-actual"
-          refetch={refetchForecasts}
-        />
-      </div>
 
       {currentSignalUsesFallback ? (
         <div className="mb-6">
@@ -185,132 +195,51 @@ export default function ForecastsPage() {
         />
       </div>
 
-      <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard
-          label="Current signal source"
-          value={currentProvider ?? "-"}
-          helper={signalMetadata.forecast_model ?? "No signal metadata"}
-          accent={currentSignalUsesFallback ? "amber" : "blue"}
-        />
-        <KpiCard
-          label="Actual prices"
-          value={String(actualPrices.data?.status ?? "-")}
-          helper={actualPrices.data?.last_timestamp ?? "No actual price file"}
-        />
-        <KpiCard
-          label="Predicted PnL"
-          value={formatCurrency(latestPerformance?.predicted_pnl_eur)}
-          helper="From forecast-based dispatch"
-          accent="blue"
-        />
-        <KpiCard
-          label="Realized PnL"
-          value={formatCurrency(latestPerformance?.realized_pnl_eur)}
-          helper="From actual price replay"
-          accent="emerald"
-        />
-      </div>
+      <WorkspaceTabs
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        tabs={forecastTabs}
+      />
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(420px,0.8fr)]">
-        <SectionCard
-          action={<StatusPill tone="blue">{providerLeaderboard.length} source(s)</StatusPill>}
-          title="Forecast provider leaderboard"
-        >
-          <DataTable
-            columns={[
-              "forecast_provider",
-              "total_pnl_eur",
-              "profit_per_mw_day",
-              "mae_eur_per_mwh",
-              "revenue_delta_eur",
-              "trust_score",
-              "status",
-            ]}
-            rows={providerLeaderboard}
-          />
-          {providerLeaderboard.length ? (
-            <div className="mt-5">
-              <BarComparisonChart
-                data={providerLeaderboard}
-                xKey="forecast_provider"
-                yKey="total_pnl_eur"
-              />
-            </div>
-          ) : null}
-        </SectionCard>
+      {activeTab === "market" ? (
+        <ForecastMarketPanel
+          actualPrices={actualPrices.data}
+          currentProvider={currentProvider}
+          currentSignalUsesFallback={currentSignalUsesFallback}
+          providerLeaderboard={providerLeaderboard}
+          signalMetadata={signalMetadata}
+        />
+      ) : null}
 
-        <SectionCard title="Commercial forecast decision">
-          <div className="space-y-3">
-            <DecisionRow
-              label="Use for dispatch"
-              tone={recommendedProvider ? "emerald" : "amber"}
-              value={recommendedProvider?.forecast_provider ?? "Run comparison"}
-            />
-            <DecisionRow
-              label="Current signal source"
-              tone={currentSignalUsesFallback ? "amber" : "blue"}
-              value={currentProvider ?? "-"}
-            />
-            <DecisionRow
-              label="Trust basis"
-              tone={latestPerformance ? "blue" : "amber"}
-              value={
-                latestPerformance
-                  ? "Actual-price backtest available"
-                  : "No actual-price backtest yet"
-              }
-            />
-            <DecisionRow
-              label="Business warning"
-              tone={currentSignalUsesFallback ? "amber" : "emerald"}
-              value={
-                currentSignalUsesFallback
-                  ? "Fallback forecast used"
-                  : "No fallback warning"
-              }
-            />
-          </div>
-        </SectionCard>
-      </div>
+      {activeTab === "performance" ? (
+        <ForecastPerformancePanel
+          latestPerformance={latestPerformance}
+          performanceRows={performanceRows}
+        />
+      ) : null}
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-2">
-        <SectionCard title="Forecast performance history">
-          <DataTable
-            columns={[
-              "target_date",
-              "forecast_provider",
-              "mae_eur_per_mwh",
-              "rmse_eur_per_mwh",
-              "bias_eur_per_mwh",
-              "predicted_pnl_eur",
-              "realized_pnl_eur",
-              "revenue_delta_eur",
-            ]}
-            rows={formatPerformanceRows(performanceRows)}
-          />
-          {performanceRows.length ? (
-            <div className="mt-5">
-              <BarComparisonChart
-                data={performanceRows}
-                xKey="target_date"
-                yKey="revenue_delta_eur"
-              />
-            </div>
-          ) : null}
-        </SectionCard>
+      {activeTab === "confidence" ? (
+        <ForecastConfidencePanel
+          currentSignalUsesFallback={currentSignalUsesFallback}
+          latestPerformance={latestPerformance}
+          providerLeaderboard={providerLeaderboard}
+          recommendedProvider={recommendedProvider}
+        />
+      ) : null}
 
-        <SectionCard title="Forecast preview">
-          <DataTable
-            columns={[
-              "timestamp",
-              "forecast_price",
-              "forecast_provider",
-              "forecast_model",
-            ]}
-            rows={preview.data?.preview ?? []}
-          />
-        </SectionCard>
-      </div>
+      {activeTab === "data" ? (
+        <ForecastDataQualityPanel
+          preview={preview.data}
+          status={status.data}
+        />
+      ) : null}
+
+      {activeTab === "controls" ? (
+        <ForecastRunControlsPanel
+          refetchForecasts={refetchForecasts}
+          selectedAssetId={selectedAssetId}
+        />
+      ) : null}
     </>
   );
 }
@@ -407,28 +336,4 @@ function calculateTrustScore(
   }
 
   return Math.max(0, Math.min(100, Math.round(score)));
-}
-
-function formatPerformanceRows(rows: ForecastPerformanceRun[]): TableRow[] {
-  return rows.map((row) => ({
-    ...row,
-    generated_at: formatDateTime(row.generated_at),
-  }));
-}
-
-function DecisionRow({
-  label,
-  tone,
-  value,
-}: {
-  label: string;
-  tone: "amber" | "blue" | "emerald" | "red" | "slate";
-  value: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 rounded-lg border border-slate-800 bg-slate-900/45 px-4 py-3">
-      <span className="text-sm text-slate-300">{label}</span>
-      <StatusPill tone={tone}>{value}</StatusPill>
-    </div>
-  );
 }

@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 
 import { AppShell } from "@/components/app-shell";
 import { AssetProvider } from "@/components/asset-provider";
+import { PersonaProvider } from "@/components/persona-provider";
 import { QueryProvider } from "@/components/query-provider";
 
 import "./globals.css";
@@ -35,7 +36,9 @@ export default function RootLayout({
       <body className="min-h-full">
         <QueryProvider>
           <AssetProvider>
-            <AppShell>{children}</AppShell>
+            <PersonaProvider>
+              <AppShell>{children}</AppShell>
+            </PersonaProvider>
           </AssetProvider>
         </QueryProvider>
       </body>
