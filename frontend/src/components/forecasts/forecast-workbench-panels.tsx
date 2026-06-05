@@ -65,6 +65,8 @@ export function ForecastPerformancePanel({
   latestPerformance?: ForecastPerformanceRun;
   performanceRows: ForecastPerformanceRun[];
 }) {
+  const latestRows = performanceRows.slice(0, 8);
+
   return (
     <div className="space-y-5">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -105,7 +107,7 @@ export function ForecastPerformancePanel({
             "realized_pnl_eur",
             "revenue_delta_eur",
           ]}
-          rows={performanceRows}
+          rows={latestRows}
         />
         {performanceRows.length ? (
           <div className="mt-5">
@@ -170,6 +172,8 @@ export function ForecastDataQualityPanel({
   preview?: ForecastPreviewResponse;
   status?: ForecastStatusResponse;
 }) {
+  const previewRows = (preview?.preview ?? []).slice(0, 16);
+
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(340px,0.7fr)_minmax(0,1.3fr)]">
       <SectionCard title="Data quality evidence">
@@ -189,7 +193,7 @@ export function ForecastDataQualityPanel({
             "forecast_provider",
             "forecast_model",
           ]}
-          rows={preview?.preview ?? []}
+          rows={previewRows}
         />
       </SectionCard>
     </div>
@@ -237,6 +241,8 @@ function ForecastProviderLeaderboard({
 }: {
   providerLeaderboard: TableRow[];
 }) {
+  const leaderboardRows = providerLeaderboard.slice(0, 5);
+
   return (
     <SectionCard
       action={<StatusPill tone="blue">{providerLeaderboard.length} source(s)</StatusPill>}
@@ -252,7 +258,7 @@ function ForecastProviderLeaderboard({
           "trust_score",
           "status",
         ]}
-        rows={providerLeaderboard}
+        rows={leaderboardRows}
       />
       {providerLeaderboard.length ? (
         <div className="mt-5">

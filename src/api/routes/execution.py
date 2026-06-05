@@ -9,6 +9,7 @@ from src.execution.approval_workflow import (
     request_execution_approval,
 )
 from src.execution.automation_guardrails import latest_automation_guardrails
+from src.execution.automation_control import automation_control_status
 from src.execution.automation_policy import (
     automation_policy_history,
     create_default_automation_policy,
@@ -48,9 +49,15 @@ from src.execution.paper_trading import (
     latest_execution_paper_trade,
     run_execution_paper_trade,
 )
+from src.execution.remediation_runner import run_next_remediation
+from src.execution.strategy_intent import build_strategy_intent
 from src.execution.trading_orchestrator import (
     run_trading_orchestrator,
     trading_orchestrator_status,
+)
+from src.db.repositories.execution_repository import (
+    get_latest_automation_event,
+    list_automation_events,
 )
 
 
@@ -368,6 +375,131 @@ def latest_asset_execution_paper_trade(asset_id: str):
 )
 def asset_execution_paper_trades(asset_id: str, limit: int = 25):
     return execution_paper_trade_history(asset_id=asset_id, limit=limit)
+
+
+@router.get(
+    "/assets/{asset_id}/execution/automation-control/status",
+    response_model=ApiResponse,
+)
+def asset_execution_automation_control_status(asset_id: str):
+    try:
+        return automation_control_status(asset_id)
+    except ValueError as error:
+        return {
+            "status": "not_found",
+            "asset_id": asset_id,
+            "message": str(error),
+        }
+    except Exception as error:
+        return {
+            "status": "error",
+            "asset_id": asset_id,
+            "message": f"Could not evaluate automation control status: {error}",
+        }
+
+
+@router.get(
+    "/assets/{asset_id}/execution/strategy-intent",
+    response_model=ApiResponse,
+)
+def asset_execution_strategy_intent(asset_id: str):
+    try:
+        return build_strategy_intent(asset_id)
+    except ValueError as error:
+        return {
+            "status": "not_found",
+            "asset_id": asset_id,
+            "message": str(error),
+        }
+    except Exception as error:
+        return {
+            "status": "error",
+            "asset_id": asset_id,
+            "message": f"Could not build automated trading strategy intent: {error}",
+        }
+
+
+@router.post(
+    "/assets/{asset_id}/execution/remediation/run-next",
+    response_model=ApiResponse,
+)
+def run_asset_execution_remediation(asset_id: str):
+    try:
+        return run_next_remediation(asset_id)
+    except ValueError as error:
+        return {
+            "status": "invalid",
+            "asset_id": asset_id,
+            "message": str(error),
+        }
+    except FileNotFoundError as error:
+        return {
+            "status": "not_found",
+            "asset_id": asset_id,
+            "message": str(error),
+        }
+    except PermissionError as error:
+        return {
+            "status": "blocked",
+            "asset_id": asset_id,
+            "message": str(error),
+        }
+    except Exception as error:
+        return {
+            "status": "error",
+            "asset_id": asset_id,
+            "message": f"Could not run automated remediation: {error}",
+        }
+
+
+@router.get(
+    "/assets/{asset_id}/execution/automation-events/latest",
+    response_model=ApiResponse,
+)
+def latest_asset_automation_event(asset_id: str):
+    try:
+        latest = get_latest_automation_event(asset_id)
+    except Exception as error:
+        return {
+            "status": "error",
+            "asset_id": asset_id,
+            "message": f"Could not load latest automation event: {error}",
+            "event": None,
+        }
+
+    if latest is None:
+        return {
+            "status": "not_found",
+            "asset_id": asset_id,
+            "message": f"No automation event found for asset: {asset_id}",
+            "event": None,
+        }
+
+    return {
+        "status": "ok",
+        "asset_id": asset_id,
+        "event": latest["payload"],
+    }
+
+
+@router.get(
+    "/assets/{asset_id}/execution/automation-events",
+    response_model=ApiResponse,
+)
+def asset_automation_events(asset_id: str, limit: int = 25):
+    try:
+        return {
+            "status": "ok",
+            "asset_id": asset_id,
+            "events": list_automation_events(asset_id=asset_id, limit=limit),
+        }
+    except Exception as error:
+        return {
+            "status": "error",
+            "asset_id": asset_id,
+            "message": f"Could not load automation events: {error}",
+            "events": [],
+        }
 
 
 @router.get(

@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAssetContext } from "@/components/asset-provider";
 import { DataCompletenessPanel } from "@/components/data-completeness-panel";
 import { DataTable } from "@/components/data-table";
+import { DecisionBrief } from "@/components/decision-brief";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
 import { SectionCard } from "@/components/section-card";
@@ -39,6 +40,9 @@ export default function SettingsPage() {
   const commercialConfig = objectValue(clientConfig.commercial_config);
   const assetBatteryConfig = objectValue(selectedAsset?.battery_config);
   const assetRegulatoryConfig = objectValue(selectedAsset?.regulatory_config);
+  const evidenceChecks = completeness.data?.checks ?? [];
+  const missingEvidence = evidenceChecks.filter((check) => check.status !== "complete");
+  const automationMode = selectedAsset?.auto_trading_enabled ? "Enabled" : "Disabled";
 
   return (
     <>
@@ -46,6 +50,35 @@ export default function SettingsPage() {
         description="Configuration is shown read-only until role-based permissions, approval workflow, and audit logging are added. These sections translate backend config into product-level operating assumptions."
         eyebrow="Configuration"
         title="Settings"
+      />
+
+      <DecisionBrief
+        blockers={[
+          selectedAsset?.forecast_file ? null : "Forecast file is missing.",
+          selectedAsset?.approval_mode ? null : "Approval mode is not configured.",
+          missingEvidence.length ? `${missingEvidence.length} configuration evidence gap(s) remain.` : null,
+        ].filter(Boolean) as string[]}
+        className="mb-6"
+        decision={
+          <>
+            {missingEvidence.length ? "Configuration review required" : "Configuration ready"}
+            <span className="text-slate-500"> / </span>
+            {automationMode}
+          </>
+        }
+        evidence={[
+          `Asset: ${displayValue(selectedAsset?.asset_name ?? selectedAssetId)}.`,
+          `Market profile: ${displayValue(selectedAsset?.market_profile_id ?? clientConfig.market_profile_id)}.`,
+          `Capacity: ${formatNumber(assetBatteryConfig.capacity_mwh ?? batteryConfig.capacity_mwh, 2)} MWh.`,
+        ]}
+        eyebrow="Configuration automation gate"
+        nextAction={
+          missingEvidence.length
+            ? "Complete missing configuration evidence before raising automation mode."
+            : "Use these assumptions as the asset-level configuration source for automated trading."
+        }
+        title="Can this asset be automated from config?"
+        tone={missingEvidence.length ? "amber" : "emerald"}
       />
 
       <div className="mb-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -71,7 +104,7 @@ export default function SettingsPage() {
           accent="amber"
           label="Config status"
           value={config.data?.status ?? "-"}
-          helper="Read-only product configuration"
+          helper={`Auto trading: ${automationMode}`}
         />
       </div>
 

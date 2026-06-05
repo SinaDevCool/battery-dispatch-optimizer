@@ -102,7 +102,7 @@ export function MarketAdapterPanel({
           "live_submission",
           "next_connection_action",
         ]}
-        rows={adapters}
+        rows={adapters.slice(0, 8)}
       />
     </SectionCard>
   );
@@ -150,12 +150,12 @@ export function EpexDayAheadPreviewPanel({
           "time_in_force",
           "live_submission",
         ]}
-        rows={preview?.orders ?? []}
+        rows={(preview?.orders ?? []).slice(0, 10)}
       />
       <div className="mt-4">
         <DataTable
           columns={["check", "status", "message"]}
-          rows={preview?.validation?.checks ?? []}
+          rows={(preview?.validation?.checks ?? []).slice(0, 6)}
         />
       </div>
     </SectionCard>
@@ -204,12 +204,12 @@ export function EpexIntradayAuctionPreviewPanel({
           "time_in_force",
           "live_submission",
         ]}
-        rows={preview?.orders ?? []}
+        rows={(preview?.orders ?? []).slice(0, 10)}
       />
       <div className="mt-4">
         <DataTable
           columns={["check", "status", "message"]}
-          rows={preview?.validation?.checks ?? []}
+          rows={(preview?.validation?.checks ?? []).slice(0, 6)}
         />
       </div>
     </SectionCard>
@@ -262,12 +262,12 @@ export function EpexIntradayContinuousPreviewPanel({
           "cancel_replace_policy",
           "live_submission",
         ]}
-        rows={preview?.orders ?? []}
+        rows={(preview?.orders ?? []).slice(0, 10)}
       />
       <div className="mt-4">
         <DataTable
           columns={["check", "status", "message"]}
-          rows={preview?.validation?.checks ?? []}
+          rows={(preview?.validation?.checks ?? []).slice(0, 6)}
         />
       </div>
     </SectionCard>
@@ -316,12 +316,12 @@ export function RegelleistungFcrPreviewPanel({
           "telemetry_provider",
           "live_submission",
         ]}
-        rows={preview?.bids ?? []}
+        rows={(preview?.bids ?? []).slice(0, 10)}
       />
       <div className="mt-4">
         <DataTable
           columns={["check", "status", "message", "context"]}
-          rows={preview?.validation?.checks ?? []}
+          rows={(preview?.validation?.checks ?? []).slice(0, 6)}
         />
       </div>
     </SectionCard>
@@ -372,12 +372,12 @@ export function RegelleistungAfrrPreviewPanel({
           "live_submission",
           "status",
         ]}
-        rows={preview?.bids ?? []}
+        rows={(preview?.bids ?? []).slice(0, 10)}
       />
       <div className="mt-4">
         <DataTable
           columns={["check", "status", "message", "context"]}
-          rows={preview?.validation?.checks ?? []}
+          rows={(preview?.validation?.checks ?? []).slice(0, 6)}
         />
       </div>
     </SectionCard>
@@ -429,12 +429,12 @@ export function RegelleistungMfrrPreviewPanel({
           "live_submission",
           "status",
         ]}
-        rows={preview?.bids ?? []}
+        rows={(preview?.bids ?? []).slice(0, 10)}
       />
       <div className="mt-4">
         <DataTable
           columns={["check", "status", "message", "context"]}
-          rows={preview?.validation?.checks ?? []}
+          rows={(preview?.validation?.checks ?? []).slice(0, 6)}
         />
       </div>
     </SectionCard>

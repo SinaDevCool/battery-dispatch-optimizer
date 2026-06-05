@@ -9,9 +9,11 @@ from src.backtesting.forecast_actual.forecast_confidence import (
     build_forecast_confidence,
 )
 from src.execution.approval_workflow import request_execution_approval
+from src.execution.automation_control import automation_control_status
 from src.execution.automation_guardrails import latest_automation_guardrails
 from src.execution.automation_policy import evaluate_automation_policy
 from src.execution.execution_readiness import build_execution_readiness
+from src.execution.market_submission import run_demo_market_submission
 from src.execution.multi_market_allocator import build_multi_market_allocation
 from src.execution.paper_trading import run_execution_paper_trade
 from src.execution.pretrade_proposal import build_execution_proposal
@@ -20,14 +22,21 @@ from src.services.asset_signal_store import load_asset_latest_signal
 
 def trading_orchestrator_status(asset_id):
     context = build_orchestration_context(asset_id)
+    automation_control = automation_control_status(asset_id)
     stage = classify_stage(context)
-    next_action = build_next_action(stage=stage, context=context)
+    next_action = build_control_next_action(
+        automation_control=automation_control,
+        context=context,
+        fallback_stage=stage,
+    )
 
     return {
         "status": "ok",
         "asset_id": asset_id,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "orchestrator_status": stage["status"],
+        "automation_mode": automation_control.get("automation_mode"),
+        "automation_control": automation_control,
         "stage": stage,
         "next_action": next_action,
         "workflow": build_workflow_steps(context=context, stage=stage),
@@ -38,58 +47,110 @@ def trading_orchestrator_status(asset_id):
 
 
 def run_trading_orchestrator(asset_id):
-    before = build_orchestration_context(asset_id)
-    stage = classify_stage(before)
-    executed_actions = []
-
-    if stage["action"] == "build_proposal":
-        proposal = build_execution_proposal(asset_id)
-        executed_actions.append(
-            {
-                "action": "build_proposal",
-                "status": "complete",
-                "message": "Execution proposal built from latest signal.",
-                "record_id": proposal.get("execution_proposal_id"),
-            }
-        )
-    elif stage["action"] == "run_paper_trade":
-        paper_trade = run_execution_paper_trade(asset_id)
-        executed_actions.append(
-            {
-                "action": "run_paper_trade",
-                "status": "complete",
-                "message": "Paper market validation completed.",
-                "record_id": paper_trade.get("paper_trade_id"),
-            }
-        )
-    elif stage["action"] == "request_approval":
-        approval = request_execution_approval(
+    before = automation_control_status(asset_id)
+    next_action = before.get("next_automation_action", {})
+    executed_actions = [
+        execute_automation_action(
+            action=next_action.get("action"),
             asset_id=asset_id,
-            requested_by="trading_orchestrator",
-            reason="Automation policy requires operator approval before supervised execution.",
+            automation_control=before,
         )
-        executed_actions.append(
-            {
-                "action": "request_approval",
-                "status": "complete",
-                "message": "Operator approval request created.",
-                "record_id": approval.get("approval_id"),
-            }
-        )
-    else:
-        executed_actions.append(
-            {
-                "action": stage["action"],
-                "status": "no_op",
-                "message": stage["message"],
-            }
-        )
+    ]
 
     after = trading_orchestrator_status(asset_id)
     after["executed_actions"] = executed_actions
+    after["automation_control_before"] = before
     after["message"] = executed_actions[0]["message"] if executed_actions else None
 
     return after
+
+
+def execute_automation_action(action, asset_id, automation_control):
+    if action == "build_proposal":
+        proposal = build_execution_proposal(asset_id)
+        return executed_action(
+            action=action,
+            status="complete",
+            message="Automated bid proposal built from the latest ACTION signal.",
+            record_id=proposal.get("execution_proposal_id"),
+        )
+
+    if action == "run_paper_trade":
+        paper_trade = run_execution_paper_trade(asset_id)
+        return executed_action(
+            action=action,
+            status="complete",
+            message="Automatic paper trading validation completed.",
+            record_id=paper_trade.get("paper_trade_id"),
+        )
+
+    if action == "wait_for_supervised_gate":
+        human_gate = automation_control.get("human_gate", {})
+        if human_gate.get("status") == "required":
+            approval = request_execution_approval(
+                asset_id=asset_id,
+                requested_by="automation_orchestrator",
+                reason="Automation control requires the human gate before supervised or live automated trading.",
+            )
+            return executed_action(
+                action="request_human_gate",
+                status="complete",
+                message="Human gate request created for the latest automated trading proposal.",
+                record_id=approval.get("approval_id"),
+            )
+
+        return executed_action(
+            action=action,
+            status="waiting",
+            message="Human gate is already pending or not cleared; no automated market action was taken.",
+            record_id=human_gate.get("approval_id"),
+        )
+
+    if action == "submit_with_limits":
+        submission = run_demo_market_submission(asset_id)
+        return executed_action(
+            action=action,
+            status="complete",
+            message="Bids submitted through the configured limited automation submission path.",
+            record_id=submission.get("market_submission_id"),
+        )
+
+    if action in ["clear_blockers", "clear_review_items"]:
+        return executed_action(
+            action=action,
+            status="blocked",
+            message=automation_control_blocker_message(automation_control),
+        )
+
+    return executed_action(
+        action=action or "monitor_and_reoptimize",
+        status="no_op",
+        message=(
+            (automation_control.get("next_automation_action") or {}).get("message")
+            or "Automation control did not require a state-changing action."
+        ),
+    )
+
+
+def executed_action(action, status, message, record_id=None):
+    return {
+        "action": action,
+        "status": status,
+        "message": message,
+        "record_id": record_id,
+    }
+
+
+def automation_control_blocker_message(automation_control):
+    blockers = automation_control.get("blockers", [])
+    if not blockers:
+        return "Automation control reported a blocker state without a detailed blocker row."
+
+    first = blockers[0]
+    return (
+        f"Automation remains blocked by {first.get('source')}: "
+        f"{first.get('message')}"
+    )
 
 
 def build_orchestration_context(asset_id):
@@ -219,6 +280,25 @@ def build_next_action(stage, context):
         "label": humanize_action(stage["action"]),
         "message": stage["message"],
         "owner": stage["owner"],
+        "target_market": primary_market.get("market_name"),
+        "target_adapter_id": primary_market.get("adapter_id"),
+    }
+
+
+def build_control_next_action(automation_control, context, fallback_stage):
+    control_action = automation_control.get("next_automation_action") or {}
+    primary_market = automation_control.get("primary_market") or {}
+
+    if not control_action:
+        return build_next_action(stage=fallback_stage, context=context)
+
+    return {
+        "action": control_action.get("action"),
+        "label": control_action.get("label") or humanize_action(
+            control_action.get("action")
+        ),
+        "message": control_action.get("message"),
+        "owner": control_action.get("owner"),
         "target_market": primary_market.get("market_name"),
         "target_adapter_id": primary_market.get("adapter_id"),
     }

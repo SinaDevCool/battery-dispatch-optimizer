@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAssetContext } from "@/components/asset-provider";
 import { DataCompletenessPanel } from "@/components/data-completeness-panel";
 import { DataTable } from "@/components/data-table";
+import { DecisionBrief } from "@/components/decision-brief";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
 import { SectionCard } from "@/components/section-card";
@@ -42,6 +43,11 @@ export default function ReportsPage() {
 
   const reportName = String(latest.data?.report_name ?? "-");
   const reportUrl = `${apiBaseUrl}/reports/monthly/latest/view`;
+  const reportDecision = buildReportDecision({
+    completeness: completeness.data,
+    reportStatus: latest.data?.status,
+    reportName,
+  });
 
   return (
     <>
@@ -49,6 +55,17 @@ export default function ReportsPage() {
         description="Management reporting should be backed by forecast, dispatch, revenue, regulatory, and execution evidence. This first web view links the current HTML report and shows whether the selected asset has enough evidence for a client-facing report."
         eyebrow="Management reporting"
         title="Reports"
+      />
+
+      <DecisionBrief
+        blockers={reportDecision.blockers}
+        className="mb-6"
+        decision={reportDecision.decision}
+        evidence={reportDecision.evidence}
+        eyebrow="Client reporting decision"
+        nextAction={reportDecision.nextAction}
+        title="Is this report defensible for a client?"
+        tone={reportDecision.tone}
       />
 
       <div className="mb-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -120,4 +137,38 @@ export default function ReportsPage() {
       </SectionCard>
     </>
   );
+}
+
+function buildReportDecision({
+  completeness,
+  reportName,
+  reportStatus,
+}: {
+  completeness?: DataCompletenessResponse;
+  reportName: string;
+  reportStatus?: string;
+}) {
+  const blockers = [
+    reportStatus !== "ok" ? "No current monthly report is available." : null,
+    Number(completeness?.missing_count ?? 0) > 0
+      ? `${completeness?.missing_count} evidence gap(s) remain before client delivery.`
+      : null,
+  ].filter(Boolean) as string[];
+
+  return {
+    blockers,
+    decision: blockers.length
+      ? "Keep this report in draft until evidence gaps are cleared."
+      : "Report evidence is ready for client-facing delivery.",
+    evidence: [
+      `Report ${reportName}`,
+      `Evidence score ${completeness?.score ?? "-"} / 100`,
+      `${completeness?.complete_count ?? 0} complete evidence check(s)`,
+      `${completeness?.missing_count ?? 0} open evidence gap(s)`,
+    ],
+    nextAction:
+      blockers[0] ??
+      "Deliver the report and use the archive as the asset audit trail.",
+    tone: blockers.length ? "amber" as const : "emerald" as const,
+  };
 }

@@ -29,7 +29,7 @@ export function KpiCard({
       <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-400">
         {label}
       </div>
-      <div className="mt-3 text-2xl font-semibold leading-tight text-slate-50">
+      <div className="mt-3 break-words text-2xl font-semibold leading-tight text-slate-50">
         {value}
       </div>
       {helper ? (

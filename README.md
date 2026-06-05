@@ -1,14 +1,16 @@
-# Battery Dispatch Optimizer
+# Battery Trader AI
 
-A Python-based backend and dashboard for grid-scale battery dispatch, forecast-driven arbitrage, asset-level signal generation, Germany market assumptions, and revenue-stack analysis.
+An enterprise battery trading platform for grid-scale storage: forecast, optimize, route, paper-trade, gate, submit, reconcile, and audit automated trading decisions.
 
 ## What This Project Does
 
-This project takes electricity price forecasts and converts them into battery charge/discharge recommendations.
+This project takes electricity price forecasts, market rules, asset telemetry, commercial assumptions, and execution evidence and turns them into an automated battery trading workflow.
 
-It tracks battery state of charge, applies grid and battery constraints, calculates expected PnL, validates dispatch outputs, compares forecast sources, runs scenarios and stress tests, and exposes the results through a FastAPI backend and Streamlit dashboard.
+It tracks battery state of charge, applies grid and battery constraints, calculates expected PnL, validates dispatch outputs, compares forecast sources, ranks tradable market routes, builds bid packages, runs paper trading, manages human and automation gates, reconciles settlement, and exposes the results through a FastAPI backend and a Next.js product frontend.
 
-The backend is moving toward a commercial battery optimization product, with support for:
+The product direction is an automated trading platform in the spirit of enterprise battery optimizers such as Entrix or Fluence, with a stronger emphasis on explainable automation, auditable business evidence, and persona-specific workflows.
+
+The backend supports:
 
 - asset-level battery configuration
 - Germany DE-LU market profile assumptions
@@ -18,10 +20,17 @@ The backend is moving toward a commercial battery optimization product, with sup
 - regulatory assumption checks
 - market product eligibility
 - revenue stack estimates
+- multi-market route allocation
+- automation control and mode gating
+- bid proposal generation
+- paper trading and simulated submission
+- settlement reconciliation
+- connector and persistence readiness checks
+- decision evidence for frontend personas
 
 ## Current Product Scope
 
-The current implementation focuses on Germany first.
+The current implementation focuses on Germany first, especially DE-LU day-ahead arbitrage with emerging EPEX intraday and regelleistung ancillary-service readiness.
 
 The main supported market profile is:
 
@@ -38,6 +47,8 @@ DE_LU bidding zone
 ```
 
 The project currently estimates real day-ahead arbitrage revenue and provides assumption-required placeholders for intraday, reserve capacity, and imbalance products.
+
+The automated trading workflow is intentionally gated. Live automation is not treated as a button-click shortcut; it must pass forecast trust, market eligibility, connector readiness, risk policy, paper trading, human gate policy, settlement evidence, and audit checks.
 
 ## Features
 
@@ -68,9 +79,64 @@ The project currently estimates real day-ahead arbitrage revenue and provides as
 - Germany market product catalog
 - Asset product eligibility checks
 - Revenue stack estimates
+- Forecast trust and model performance views
+- EPEX and ancillary market route readiness
+- Multi-market allocation and route ranking
+- Automated strategy intent
+- Bid proposal engine
+- Paper trading validation
+- Automation mode ladder
+- Risk and human-gate controls
+- Settlement evidence and variance feedback
+- Audit evidence and event trail
+- Persona-specific frontend navigation
 - Monthly HTML reports
 - FastAPI backend
 - Streamlit dashboard
+- Next.js enterprise frontend
+
+## Product Frontend
+
+The customer-facing frontend is organized around the automated trading workflow rather than backend modules.
+
+Primary navigation groups:
+
+| Group | Purpose |
+|---|---|
+| Portfolio | Control room, asset registry, decision evidence, revenue assurance, and reports |
+| Market Intelligence | Forecast trust, market prices, market signals, market rules, and model performance |
+| Optimization | Trading schedule, revenue stack, scenario lab, hedging, and market eligibility |
+| Automated Trading | Automation control, trading orchestrator, and Mission Control subpages |
+| Risk & Compliance | Automation gates, regulatory compliance, settlement evidence, audit evidence, reports, and settings |
+
+Mission Control is the trading-desk workspace for automated execution. It is split into focused child pages:
+
+| Page | Route | Main user question |
+|---|---|---|
+| Control | `/execution` | What should the automation engine do next? |
+| Market Allocation | `/execution/market-allocation` | Where should automation trade now? |
+| Bid Proposals | `/execution/proposals` | Can the automated bid package advance? |
+| Paper Trading | `/execution/simulation` | Did the paper run validate the package? |
+| Market Access & Data | `/execution/market-connectors` | Can automation reach EPEX, ancillary services, telemetry, and settlement systems? |
+| Settlement Feedback | `/execution/settlement` | Did expected, paper, and realized economics reconcile? |
+| Audit Trail | `/execution/audit` | Is there enough evidence to defend the automated decision? |
+
+Standalone Mission Control child pages avoid repeating the full cockpit summary. Each page opens on the task-specific decision, blockers, evidence, and next action so operators, automation managers, and risk teams do not have to scan raw backend tables first.
+
+## Personas
+
+The frontend supports a small set of practical client personas. They do not change the backend truth; they change navigation emphasis and page language so each stakeholder sees the value they care about.
+
+| Persona | Use |
+|---|---|
+| Full platform | Default cross-functional view for product demos and internal QA |
+| Asset owner | Revenue, bankability, downside protection, reporting, and settlement evidence |
+| Trading desk | Signals, market routes, automated bid proposals, paper trading, and execution feedback |
+| Automation control | Automation modes, remediation queue, connector readiness, and orchestration |
+| Risk & compliance | Human gates, regulatory readiness, settlement evidence, audit trail, and reports |
+| Executive | Portfolio-level value, readiness, revenue assurance, and exceptions |
+
+Hidden/internal personas can still be kept for implementation detail, but the visible selector should stay concise so the product feels enterprise-grade rather than experimental.
 
 ## Project Structure
 
@@ -271,6 +337,43 @@ NEXT_PUBLIC_API_BASE_URL=https://your-backend-app.azurewebsites.net
 
 Streamlit is still useful as an internal prototype dashboard, but the Next.js
 frontend is the recommended path for a customer-facing product.
+
+Production build:
+
+```bash
+cd frontend
+npm run lint
+npm run build
+```
+
+The expected frontend routes include:
+
+```text
+/
+/assets
+/dispatch
+/execution
+/execution/audit
+/execution/automation-policies
+/execution/market-allocation
+/execution/market-connectors
+/execution/orchestrator
+/execution/proposals
+/execution/risk-approval
+/execution/settlement
+/execution/simulation
+/forecasts
+/hedging
+/intelligence
+/market-prices
+/market-rules
+/market-signals
+/regulation
+/reports
+/revenue
+/scenarios
+/settings
+```
 
 ## Azure App Service Deployment
 
@@ -536,6 +639,30 @@ curl.exe http://127.0.0.1:8000/assets/default_site/revenue-stack/latest
 | GET | `/assets/{asset_id}/regulatory/germany` | Asset regulatory assumptions |
 | POST | `/assets/{asset_id}/revenue-stack/run` | Run asset revenue stack |
 | GET | `/assets/{asset_id}/revenue-stack/latest` | Load latest asset revenue stack |
+| GET | `/assets/{asset_id}/execution/automation-control/status` | Load automation mode, permissions, blockers, and next action |
+| POST | `/assets/{asset_id}/execution/remediation/run-next` | Run the next automated remediation item |
+| POST | `/assets/{asset_id}/execution/orchestrator/run` | Run the next automated trading action |
+| GET | `/assets/{asset_id}/execution/strategy-intent` | Load automated strategy intent and target markets |
+| GET | `/assets/{asset_id}/execution/multi-market/allocation` | Rank EPEX and ancillary market routes |
+| GET | `/assets/{asset_id}/execution/proposal/latest` | Load latest automated bid proposal |
+| POST | `/assets/{asset_id}/execution/proposal/build` | Build a pre-trade bid proposal |
+| GET | `/assets/{asset_id}/execution/proposals` | List proposal history |
+| POST | `/assets/{asset_id}/execution/paper-trade/run` | Run automatic paper trading validation |
+| GET | `/assets/{asset_id}/execution/paper-trade/latest` | Load latest paper trade |
+| GET | `/assets/{asset_id}/execution/paper-trades` | List paper-trade history |
+| POST | `/assets/{asset_id}/execution/demo-submit` | Simulate market submission |
+| GET | `/assets/{asset_id}/execution/submissions/latest` | Load latest simulated or submitted market package |
+| GET | `/assets/{asset_id}/execution/approval/latest` | Load latest human-gate decision |
+| POST | `/assets/{asset_id}/execution/approval/request` | Request human approval |
+| POST | `/assets/{asset_id}/execution/approval/approve` | Approve the human gate |
+| POST | `/assets/{asset_id}/execution/approval/reject` | Reject the human gate |
+| GET | `/assets/{asset_id}/execution/readiness` | Load execution readiness evidence |
+| GET | `/assets/{asset_id}/execution/automation-guardrails` | Load automation guardrail status |
+| GET | `/assets/{asset_id}/execution/automation-events` | List automation event history |
+| GET | `/assets/{asset_id}/settlement/latest` | Load latest settlement reconciliation |
+| POST | `/assets/{asset_id}/settlement/reconcile` | Reconcile expected, paper, and realized economics |
+| GET | `/execution/market-connectors/readiness` | Load market connector readiness |
+| GET | `/system/persistence-readiness` | Load database persistence readiness |
 | GET | `/client/config` | Load client config |
 | POST | `/client/config` | Save client config |
 | GET | `/client/presets` | List client presets |
@@ -615,7 +742,7 @@ curl.exe -X POST "http://127.0.0.1:8000/assets/default_site/revenue-stack/run?op
 
 ## Daily Workflow
 
-The daily workflow:
+The older daily analytics workflow:
 
 1. Tries to fetch ENTSO-E forecast data.
 2. Falls back to the saved local forecast if ENTSO-E is unavailable.
@@ -626,6 +753,19 @@ The daily workflow:
 7. Saves asset-specific signal output.
 8. Runs scenarios.
 9. Saves scenario results.
+
+The automated trading workflow extends this into:
+
+1. Validate forecast and price evidence.
+2. Generate an asset-level signal.
+3. Evaluate market eligibility and connector readiness.
+4. Rank EPEX and ancillary market routes.
+5. Build a bid proposal.
+6. Apply risk, forecast-confidence, and human-gate policies.
+7. Run paper trading.
+8. Simulate or submit market orders only when automation mode allows it.
+9. Reconcile settlement.
+10. Feed variance, blockers, and audit evidence back into the next run.
 
 ## Run Scripts
 
@@ -723,7 +863,7 @@ This project is intended for analysis, prototyping, and product development.
 
 It is not a financial trading recommendation.
 
-The backend is becoming a stronger commercial battery optimization platform, but several areas are still placeholders or simplified:
+The backend is becoming a stronger commercial battery optimization and automated trading platform, but several areas are still placeholders or simplified:
 
 - intraday market execution
 - FCR/aFRR/mFRR auction and activation modeling
@@ -731,7 +871,7 @@ The backend is becoming a stronger commercial battery optimization platform, but
 - forecast-vs-actual backtesting
 - advanced degradation modeling
 - multi-market co-optimization
-- database persistence
+- production-grade market connector credentials
 - authentication and deployment hardening
 
 ## Planned Extensions
@@ -741,9 +881,12 @@ The backend is becoming a stronger commercial battery optimization platform, but
 - Forecast accuracy tracking
 - Forecast-vs-actual backtesting
 - Multi-market optimization
+- Automated EPEX and ancillary bid lifecycle integration
+- Live EMS telemetry and dispatch confirmation
+- Production settlement import
+- Stronger portfolio-level automated trading policies
 - More detailed German grid fee treatment
 - Portfolio-level revenue stack
 - Database-backed history
-- Production frontend replacing Streamlit
 - User authentication
 - Deployment configuration

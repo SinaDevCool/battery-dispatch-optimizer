@@ -80,15 +80,19 @@ export function MarketAllocationPanel({
             "recommendation_status",
             "allocation_score",
             "risk_score",
+            "connector_family",
+            "connector_readiness_tier",
+            "automation_blocking_level",
             "allocated_power_mw",
             "allocated_energy_mwh",
             "expected_revenue_eur",
             "preview_status",
             "preview_validation_status",
             "adapter_connection_status",
+            "missing_credentials",
             "operator_next_action",
           ]}
-          rows={formatMarketAllocationRows(rows)}
+          rows={formatMarketAllocationRows(rows).slice(0, 8)}
         />
       </SectionCard>
 
@@ -102,10 +106,13 @@ export function MarketAllocationPanel({
               "adapter_id",
               "market_name",
               "commercial_product_id",
+              "connector_readiness_tier",
+              "automation_blocking_level",
               "blocking_reasons",
+              "missing_connector_controls",
               "operator_next_action",
             ]}
-            rows={formatExcludedMarketRows(excludedRows)}
+            rows={formatExcludedMarketRows(excludedRows).slice(0, 6)}
           />
         </SectionCard>
 
@@ -115,7 +122,7 @@ export function MarketAllocationPanel({
         >
           <DataTable
             columns={["action"]}
-            rows={actions.map((action) => ({ action }))}
+            rows={actions.slice(0, 6).map((action) => ({ action }))}
           />
         </SectionCard>
       </div>
@@ -174,7 +181,11 @@ function formatMarketAllocationRows(
     allocated_energy_mwh: formatNumber(row.allocated_energy_mwh, 2),
     allocated_power_mw: formatNumber(row.allocated_power_mw, 2),
     allocation_score: formatNumber(row.allocation_score, 1),
+    connector_readiness_score: formatNumber(row.connector_readiness_score, 1),
+    data_dependencies: row.data_dependencies?.join(" | ") ?? "-",
     expected_revenue_eur: formatCurrency(row.expected_revenue_eur),
+    missing_connector_controls: row.missing_connector_controls?.join(" | ") ?? "-",
+    missing_credentials: row.missing_credentials?.join(" | ") ?? "-",
     risk_score: formatNumber(row.risk_score, 1),
   }));
 }
@@ -185,6 +196,8 @@ function formatExcludedMarketRows(
   return rows.map((row) => ({
     ...row,
     blocking_reasons: (row.blocking_reasons ?? []).join(" | "),
+    missing_connector_controls: row.missing_connector_controls?.join(" | ") ?? "-",
+    missing_credentials: row.missing_credentials?.join(" | ") ?? "-",
   }));
 }
 

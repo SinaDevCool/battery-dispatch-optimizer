@@ -721,6 +721,199 @@ export type AutomationPolicyHistoryResponse = ApiEnvelope<{
   policies?: TableRow[];
 }>;
 
+export type AutomationControlStatusResponse = ApiEnvelope<{
+  allowed_markets?: string[];
+  asset_id?: string;
+  automation_mode?: string;
+  automation_mode_rank?: number;
+  automation_status?: string;
+  blockers?: TableRow[];
+  confidence_policy?: JsonObject;
+  connector_status?: string;
+  evidence?: JsonObject & {
+    allocation_summary?: JsonObject;
+    approval_id?: number;
+    automation_policy_id?: number;
+    automation_policy_source?: string;
+    execution_proposal_id?: number;
+    guardrail_summary?: JsonObject;
+    live_submission_enabled?: boolean;
+    market_submission_id?: number;
+    paper_trade_id?: number;
+    readiness_summary?: JsonObject;
+  };
+  freshness_gates?: AutomationFreshnessGate[];
+  generated_at?: string;
+  human_gate?: JsonObject & {
+    approval_id?: number;
+    approval_status?: string;
+    auto_approve_below_power_mw?: number;
+    execution_proposal_id?: number;
+    four_eyes_required_above_power_mw?: number;
+    required?: boolean;
+    status?: string;
+  };
+  live_trading_allowed?: boolean;
+  mode_escalation?: AutomationModeEscalation;
+  next_automation_action?: JsonObject & {
+    action?: string;
+    label?: string;
+    message?: string;
+    owner?: string;
+  };
+  paper_trading_allowed?: boolean;
+  persistence_readiness?: PersistenceReadinessResponse;
+  policy_decision?: string;
+  primary_market?: MultiMarketAllocationCandidate | null;
+  readiness_score?: number;
+  readiness_status?: string;
+  remediation_queue?: AutomationRemediationItem[];
+  risk_limits?: JsonObject;
+  secondary_market?: MultiMarketAllocationCandidate | null;
+  supervised_trading_allowed?: boolean;
+}>;
+
+export type PersistenceReadinessCheck = TableRow & {
+  check?: string;
+  evidence?: JsonObject;
+  label?: string;
+  message?: string;
+  status?: string;
+};
+
+export type PersistenceReadinessResponse = ApiEnvelope<{
+  automation_blocking_level?: string | null;
+  checks?: PersistenceReadinessCheck[];
+  database_file?: string;
+  generated_at?: string;
+  persistence_status?: string;
+  recommended_actions?: string[];
+  summary?: JsonObject & {
+    blocked?: number;
+    missing_tables?: string[];
+    passed?: number;
+    review?: number;
+    total?: number;
+  };
+}>;
+
+export type AutomationModeRequirement = TableRow & {
+  check?: string;
+  context?: JsonObject;
+  label?: string;
+  message?: string;
+  status?: string;
+};
+
+export type AutomationModeLadderStep = TableRow & {
+  description?: string;
+  label?: string;
+  mode?: string;
+  status?: string;
+};
+
+export type AutomationModeEscalation = JsonObject & {
+  can_escalate?: boolean;
+  current_mode?: string;
+  current_mode_rank?: number;
+  escalation_blockers?: AutomationModeRequirement[];
+  ladder?: AutomationModeLadderStep[];
+  next_eligible_mode?: string | null;
+  required_evidence?: AutomationModeRequirement[];
+  target_mode?: string | null;
+};
+
+export type AutomationFreshnessGate = TableRow & {
+  age_minutes?: number | null;
+  blocks_mode?: string;
+  freshness_status?: "fresh" | "missing" | "stale" | string;
+  gate_id?: string;
+  label?: string;
+  last_seen_at?: string | null;
+  max_age_minutes?: number;
+  required_action?: string;
+};
+
+export type AutomationRemediationItem = TableRow & {
+  auto_resolvable?: boolean;
+  blocker_id?: string;
+  category?: string;
+  evidence_link?: string;
+  message?: string;
+  required_action?: string;
+  resolution_endpoint?: string | null;
+  severity?: string;
+  source?: string;
+};
+
+export type StrategyIntentConfidence = JsonObject & {
+  automation_eligible?: boolean;
+  band?: string;
+  score?: number;
+};
+
+export type StrategyIntentMarket = TableRow & {
+  adapter_id?: string;
+  allocated_power_mw?: number;
+  expected_revenue_eur?: number;
+  market_name?: string;
+  market_segment?: string;
+  rank?: number;
+  role?: string;
+  status?: string;
+};
+
+export type StrategyIntentAction = JsonObject & {
+  action?: string;
+  label?: string;
+  message?: string;
+  owner?: string;
+};
+
+export type StrategyIntentResponse = ApiEnvelope<{
+  asset_id?: string;
+  blocking_evidence?: TableRow[];
+  confidence?: StrategyIntentConfidence;
+  dispatch_bias?: string;
+  evidence?: JsonObject;
+  generated_at?: string;
+  market_intent?: JsonObject & {
+    primary_adapter_id?: string;
+    primary_market?: string;
+    secondary_adapter_id?: string;
+    secondary_market?: string;
+    stacking_intent?: string;
+  };
+  recommended_next_action?: StrategyIntentAction;
+  strategy_mode?: string;
+  target_markets?: StrategyIntentMarket[];
+  why?: string[];
+}>;
+
+export type AutomationEvent = TableRow & {
+  action?: string;
+  asset_id?: string;
+  automation_event_id?: number;
+  automation_mode_after?: string;
+  automation_mode_before?: string;
+  created_at?: string;
+  error_type?: string | null;
+  event_type?: string;
+  status?: string;
+  strategy_mode_after?: string;
+  strategy_mode_before?: string;
+};
+
+export type AutomationEventHistoryResponse = ApiEnvelope<{
+  asset_id?: string;
+  events?: AutomationEvent[];
+}>;
+
+export type AutomationEventResponse = ApiEnvelope<{
+  asset_id?: string;
+  event?: JsonObject | null;
+}>;
+
 export type ExecutionReadinessCheck = TableRow & {
   check?: string;
   evidence?: JsonObject;
@@ -752,7 +945,10 @@ export type MarketAdapterRegistryResponse = ApiEnvelope<{
 }>;
 
 export type MarketConnectorReadiness = MarketAdapterStatus & {
+  automation_blocking_level?: string;
   credential_keys?: string[];
+  family?: string;
+  integration_type?: string;
   missing_controls?: string[];
   missing_credentials?: string[];
   next_integration_action?: string;
@@ -768,14 +964,20 @@ export type MarketConnectorReadinessResponse = ApiEnvelope<{
   connectors?: MarketConnectorReadiness[];
   country?: string;
   generated_at?: string;
+  integrations?: MarketConnectorReadiness[];
   recommended_actions?: string[];
   summary?: JsonObject & {
+    ancillary_count?: number;
     average_readiness_score?: number;
     connector_count?: number;
     credentials_required_count?: number;
+    data_feed_count?: number;
+    epex_count?: number;
+    live_auto_blocking_count?: number;
     live_submission_count?: number;
     preview_ready_count?: number;
     production_ready_count?: number;
+    supervised_auto_blocking_count?: number;
   };
 }>;
 
@@ -870,13 +1072,20 @@ export type MultiMarketAllocationCandidate = TableRow & {
   allocated_energy_mwh?: number;
   allocated_power_mw?: number;
   allocation_score?: number;
+  automation_blocking_level?: string;
   blocking_reasons?: string[];
   commercial_product_id?: string;
+  connector_family?: string;
+  connector_readiness_score?: number;
+  connector_readiness_tier?: string;
+  data_dependencies?: string[];
   expected_revenue_eur?: number;
   execution_role?: string;
   live_submission?: boolean;
   market_name?: string;
   market_segment?: string;
+  missing_connector_controls?: string[];
+  missing_credentials?: string[];
   operator_next_action?: string;
   preview_status?: string;
   preview_validation_status?: string;

@@ -1,4 +1,5 @@
 import json
+import sqlite3
 
 from src.config.paths import DATABASE_FILE
 from src.db.database import get_connection, initialize_database
@@ -525,3 +526,111 @@ def list_automation_policies(asset_id, limit=25, db_file=DATABASE_FILE):
         policies.append(policy)
 
     return policies
+
+
+def save_automation_event(event, db_file=DATABASE_FILE):
+    initialize_database(db_file=db_file)
+
+    before = event.get("before", {})
+    after = event.get("after", {})
+    action_result = event.get("action_result", {})
+
+    with get_connection(db_file=db_file) as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO automation_events (
+                asset_id,
+                created_at,
+                event_type,
+                action,
+                status,
+                automation_mode_before,
+                automation_mode_after,
+                strategy_mode_before,
+                strategy_mode_after,
+                error_type,
+                payload_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event["asset_id"],
+                event["created_at"],
+                event["event_type"],
+                event.get("action") or action_result.get("action"),
+                event["status"],
+                before.get("automation_mode"),
+                after.get("automation_mode"),
+                before.get("strategy_mode"),
+                after.get("strategy_mode"),
+                event.get("error_type") or action_result.get("error_type"),
+                json.dumps(event, default=str),
+            ),
+        )
+
+    return cursor.lastrowid
+
+
+def get_latest_automation_event(asset_id, db_file=DATABASE_FILE):
+    initialize_database(db_file=db_file)
+
+    with get_connection(db_file=db_file) as connection:
+        try:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM automation_events
+                WHERE asset_id = ?
+                ORDER BY automation_event_id DESC
+                LIMIT 1
+                """,
+                (asset_id,),
+            ).fetchone()
+        except sqlite3.OperationalError as error:
+            if "no such table" in str(error).lower():
+                return None
+
+            raise
+
+    if row is None:
+        return None
+
+    result = row_to_dict(row)
+    result["payload"] = json.loads(result.pop("payload_json"))
+
+    return result
+
+
+def list_automation_events(asset_id, limit=25, db_file=DATABASE_FILE):
+    initialize_database(db_file=db_file)
+
+    with get_connection(db_file=db_file) as connection:
+        try:
+            rows = connection.execute(
+                """
+                SELECT
+                    automation_event_id,
+                    asset_id,
+                    created_at,
+                    event_type,
+                    action,
+                    status,
+                    automation_mode_before,
+                    automation_mode_after,
+                    strategy_mode_before,
+                    strategy_mode_after,
+                    error_type
+                FROM automation_events
+                WHERE asset_id = ?
+                ORDER BY automation_event_id DESC
+                LIMIT ?
+                """,
+                (asset_id, limit),
+            ).fetchall()
+        except sqlite3.OperationalError as error:
+            if "no such table" in str(error).lower():
+                return []
+
+            raise
+
+    return [row_to_dict(row) for row in rows]

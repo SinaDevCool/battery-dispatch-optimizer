@@ -14,6 +14,7 @@ from src.execution.epex_intraday_continuous_preview import (
 )
 from src.execution.execution_readiness import build_execution_readiness
 from src.execution.market_adapters.registry import get_asset_market_adapter_status
+from src.execution.market_connector_readiness import market_connector_readiness
 from src.execution.regelleistung_afrr_preview import latest_regelleistung_afrr_preview
 from src.execution.regelleistung_fcr_preview import latest_regelleistung_fcr_preview
 from src.execution.regelleistung_mfrr_preview import latest_regelleistung_mfrr_preview
@@ -88,12 +89,17 @@ def build_multi_market_allocation(asset_id, refresh_revenue_stack=False):
     )
     readiness = build_execution_readiness(asset_id)
     adapter_status = get_asset_market_adapter_status(asset_id)
+    connector_readiness = market_connector_readiness(country="Germany")
     forecast_confidence = build_forecast_confidence(asset_id)
     approval = latest_execution_approval(asset_id)
 
     adapters_by_id = {
         adapter.get("adapter_id"): adapter
         for adapter in adapter_status.get("adapters", [])
+    }
+    connector_by_id = {
+        connector.get("adapter_id"): connector
+        for connector in connector_readiness.get("integrations", [])
     }
     allocation_by_product = {
         row.get("product_id"): row
@@ -112,6 +118,7 @@ def build_multi_market_allocation(asset_id, refresh_revenue_stack=False):
             commercial_allocation=allocation_by_product.get(
                 market["commercial_product_id"]
             ),
+            connector=connector_by_id.get(market["adapter_id"], {}),
             excluded_commercial_product=excluded_by_product.get(
                 market["commercial_product_id"]
             ),
@@ -186,6 +193,7 @@ def build_multi_market_allocation(asset_id, refresh_revenue_stack=False):
             excluded=excluded,
             readiness=readiness,
             adapter_status=adapter_status,
+            connector_readiness=connector_readiness,
             forecast_confidence=forecast_confidence,
         ),
         "evidence": {
@@ -197,6 +205,10 @@ def build_multi_market_allocation(asset_id, refresh_revenue_stack=False):
             "market_adapter_status": adapter_status.get(
                 "market_adapter_status"
             ),
+            "connector_readiness_status": connector_readiness.get(
+                "connector_status"
+            ),
+            "connector_readiness_summary": connector_readiness.get("summary", {}),
             "readiness_evidence": readiness.get("evidence", {}),
             "forecast_confidence_status": forecast_confidence.get("status"),
         },
@@ -220,6 +232,7 @@ def build_market_candidate(
     market,
     adapter,
     commercial_allocation,
+    connector,
     excluded_commercial_product,
     readiness,
     forecast_confidence,
@@ -250,6 +263,9 @@ def build_market_candidate(
     if adapter.get("connection_status") not in ["available", "preview_available"]:
         blocking_reasons.append("Market adapter is not available for preview or submission.")
 
+    connector_blocking_reasons = connector_blockers_for_market(connector)
+    blocking_reasons.extend(connector_blocking_reasons)
+
     readiness_status = readiness.get("readiness_status")
     if readiness_status == "blocked":
         blocking_reasons.append("Execution readiness is blocked.")
@@ -270,6 +286,7 @@ def build_market_candidate(
         forecast_confidence=forecast_confidence,
         validation=validation,
         adapter=adapter,
+        connector=connector,
         approval=approval,
         blocking_reasons=blocking_reasons,
     )
@@ -301,7 +318,17 @@ def build_market_candidate(
         "preview_validation_status": validation.get("status"),
         "adapter_connection_status": adapter.get("connection_status"),
         "adapter_credential_status": adapter.get("credential_status"),
+        "automation_blocking_level": connector.get("automation_blocking_level"),
+        "connector_family": connector.get("family"),
+        "connector_readiness_score": connector.get("readiness_score"),
+        "connector_readiness_tier": connector.get("production_readiness_tier"),
+        "data_dependencies": market_data_dependencies(
+            connector.get("family"),
+            market["adapter_id"],
+        ),
         "live_submission": bool(adapter.get("live_submission")),
+        "missing_connector_controls": connector.get("missing_controls", []),
+        "missing_credentials": connector.get("missing_credentials", []),
         "operator_next_action": operator_next_action(
             recommendation_status=recommendation_status,
             market_name=market["market_name"],
@@ -351,6 +378,7 @@ def score_market_candidate(
     forecast_confidence,
     validation,
     adapter,
+    connector,
     approval,
     blocking_reasons,
 ):
@@ -371,6 +399,7 @@ def score_market_candidate(
         if adapter.get("connection_status") == "preview_available"
         else 0.0
     )
+    connector_component = numeric(connector.get("readiness_score")) * 0.18
     approval_component = 7.0 if extract_approval_status(approval) == "approved" else 3.0
 
     return round(
@@ -382,6 +411,7 @@ def score_market_candidate(
             + confidence_component
             + validation_component
             + adapter_component
+            + connector_component
             + approval_component,
         ),
         1,
@@ -450,6 +480,7 @@ def build_recommended_actions(
     excluded,
     readiness,
     adapter_status,
+    connector_readiness,
     forecast_confidence,
 ):
     actions = []
@@ -478,12 +509,75 @@ def build_recommended_actions(
             or "Connect live market credentials before enabling submission."
         )
 
+    connector_summary = connector_readiness.get("summary", {})
+    if connector_summary.get("live_auto_blocking_count"):
+        actions.append(
+            "Resolve live automation connector blockers before enabling limited live trading."
+        )
+
     if excluded:
         actions.append(
             "Review excluded markets before promising multi-market optimization externally."
         )
 
     return dedupe(actions)
+
+
+def connector_blockers_for_market(connector):
+    blockers = []
+    tier = connector.get("production_readiness_tier")
+    blocking_level = connector.get("automation_blocking_level")
+    missing_credentials = connector.get("missing_credentials", [])
+    missing_controls = connector.get("missing_controls", [])
+
+    if not connector:
+        return ["No connector readiness evidence exists for this market route."]
+
+    if tier in ["integration_required", "credentials_required"]:
+        blockers.append(
+            f"Connector readiness is {tier}; blocks {blocking_level or 'automation'}."
+        )
+
+    if missing_credentials:
+        blockers.append(
+            f"Missing connector credentials: {', '.join(missing_credentials)}."
+        )
+
+    hard_controls = [
+        control
+        for control in missing_controls
+        if control
+        not in [
+            "live_submission_adapter",
+        ]
+    ]
+    if hard_controls and blocking_level == "live_auto_limited":
+        blockers.append(
+            "Live automation controls are incomplete: "
+            + ", ".join(hard_controls[:3])
+            + "."
+        )
+
+    return blockers
+
+
+def market_data_dependencies(family, adapter_id):
+    dependencies = ["forecast_provider", "actual_price_feed", "asset_telemetry"]
+
+    if family == "ancillary" or str(adapter_id).startswith("regelleistung_"):
+        dependencies.extend([
+            "asset_prequalification",
+            "availability_telemetry",
+            "tso_settlement_mapping",
+        ])
+    elif family == "wholesale" or str(adapter_id).startswith("epex_"):
+        dependencies.extend([
+            "epex_market_access",
+            "gate_closure_scheduler",
+            "settlement_account_mapping",
+        ])
+
+    return dependencies
 
 
 def operator_next_action(

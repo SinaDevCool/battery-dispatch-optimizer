@@ -18,7 +18,7 @@ export function SectionCard({
         className,
       )}
     >
-      <div className="mb-4 flex items-center justify-between gap-4">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-base font-semibold text-slate-100">{title}</h2>
         {action}
       </div>

@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ActionButton } from "@/components/action-button";
 import { BarComparisonChart } from "@/components/charts/bar-comparison-chart";
 import { DataTable } from "@/components/data-table";
+import { DecisionBrief, type DecisionBriefTone } from "@/components/decision-brief";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
 import { SectionCard } from "@/components/section-card";
@@ -68,6 +69,29 @@ export default function MarketPricesPage() {
     () => normalizeProductRows(products.data?.products ?? []),
     [products.data?.products],
   );
+  const actionablePriceRows = useMemo(
+    () => buildActionablePriceRows(forecastRows),
+    [forecastRows],
+  );
+  const decisionBrief = useMemo(
+    () =>
+      buildPriceDecisionBrief({
+        actualPrices: actualPrices.data,
+        forecastRows,
+        forecastStatus: forecastStatus.data,
+        marketCount: markets.data?.market_count,
+        priceStats,
+        productCount: products.data?.product_count,
+      }),
+    [
+      actualPrices.data,
+      forecastRows,
+      forecastStatus.data,
+      markets.data?.market_count,
+      priceStats,
+      products.data?.product_count,
+    ],
+  );
 
   const refetchPrices = () =>
     Promise.all([
@@ -85,6 +109,26 @@ export default function MarketPricesPage() {
         eyebrow="Market intelligence"
         title="Market prices"
       />
+
+      <div className="mb-6">
+        <DecisionBrief
+          action={
+            <ActionButton
+              endpoint={decisionBrief.actionEndpoint}
+              label={decisionBrief.actionLabel}
+              refetch={refetchPrices}
+              variant="primary"
+            />
+          }
+          blockers={decisionBrief.blockers}
+          decision={decisionBrief.decision}
+          evidence={decisionBrief.evidence}
+          eyebrow="Price-to-bid decision"
+          nextAction={decisionBrief.nextAction}
+          tone={decisionBrief.tone}
+          title="Can automation trust this price evidence?"
+        />
+      </div>
 
       <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard
@@ -118,15 +162,20 @@ export default function MarketPricesPage() {
           action={<StatusPill tone="blue">{forecastRows.length} interval(s)</StatusPill>}
           title="Forecast price curve"
         >
+          <div className="mb-4 grid gap-3 md:grid-cols-4">
+            <MarketPriceRow label="Negative" tone={priceStats.negativeHours ? "amber" : "emerald"} value={priceStats.negativeHours} />
+            <MarketPriceRow label="Low" tone="blue" value={priceStats.lowHours} />
+            <MarketPriceRow label="High" tone="blue" value={priceStats.highHours} />
+            <MarketPriceRow label="Scarcity" tone={priceStats.scarcityHours ? "amber" : "slate"} value={priceStats.scarcityHours} />
+          </div>
           <DataTable
             columns={[
               "timestamp",
               "forecast_price",
               "price_regime",
-              "forecast_provider",
-              "forecast_model",
+              "automation_use",
             ]}
-            rows={forecastRows}
+            rows={actionablePriceRows}
           />
           {forecastRows.length ? (
             <div className="mt-5">
@@ -164,7 +213,7 @@ export default function MarketPricesPage() {
               "settlement_granularity",
               "minimum_power_mw",
             ]}
-            rows={productRows}
+            rows={productRows.slice(0, 8)}
           />
         </SectionCard>
 
@@ -236,11 +285,111 @@ function buildPriceStats(
 
   return {
     averagePrice,
+    highHours: prices.filter((value) => value > 80 && value <= 120).length,
+    lowHours: prices.filter((value) => value >= 0 && value < 25).length,
     maxPrice,
     minPrice,
     negativeHours: Number(status?.negative_price_hours ?? prices.filter((value) => value < 0).length),
+    scarcityHours: prices.filter((value) => value > 120).length,
     spread: maxPrice - minPrice,
     volatility: Math.sqrt(variance),
+  };
+}
+
+function buildActionablePriceRows(
+  rows: ReturnType<typeof normalizeForecastPriceRows>,
+) {
+  const actionRows = rows.filter(
+    (row) => row.price_regime === "negative" || row.price_regime === "scarcity",
+  );
+  const sourceRows = actionRows.length ? actionRows : rows;
+
+  return sourceRows.slice(0, 18).map((row) => ({
+    ...row,
+    automation_use: priceAutomationUse(String(row.price_regime)),
+  }));
+}
+
+function priceAutomationUse(regime: string) {
+  if (regime === "negative") {
+    return "charge candidate";
+  }
+
+  if (regime === "scarcity" || regime === "high") {
+    return "discharge candidate";
+  }
+
+  if (regime === "low") {
+    return "watch charge window";
+  }
+
+  return "baseline evidence";
+}
+
+function buildPriceDecisionBrief({
+  actualPrices,
+  forecastRows,
+  forecastStatus,
+  marketCount,
+  priceStats,
+  productCount,
+}: {
+  actualPrices?: ActualPriceStatusResponse;
+  forecastRows: ReturnType<typeof normalizeForecastPriceRows>;
+  forecastStatus?: ForecastStatusResponse;
+  marketCount?: number;
+  priceStats: ReturnType<typeof buildPriceStats>;
+  productCount?: number;
+}) {
+  const blockers: string[] = [];
+
+  if (forecastStatus?.status !== "ok" || !forecastRows.length) {
+    blockers.push("Forecast price curve is missing or not validated.");
+  }
+
+  if (Number(forecastStatus?.missing_prices ?? 0) > 0) {
+    blockers.push(`${forecastStatus?.missing_prices} forecast price(s) are missing.`);
+  }
+
+  if (Number(forecastStatus?.duplicate_timestamps ?? 0) > 0) {
+    blockers.push(`${forecastStatus?.duplicate_timestamps} duplicate forecast timestamp(s) need cleanup.`);
+  }
+
+  if (actualPrices?.status !== "ok") {
+    blockers.push("Actual price evidence is not ready for forecast performance validation.");
+  }
+
+  if (!marketCount || !productCount) {
+    blockers.push("Tradable market and product context is incomplete.");
+  }
+
+  const hasPriceCurve = forecastStatus?.status === "ok" && forecastRows.length > 0;
+  const hasActualPrices = actualPrices?.status === "ok";
+  const tone: DecisionBriefTone = blockers.length
+    ? hasPriceCurve
+      ? "amber"
+      : "red"
+    : "emerald";
+
+  return {
+    actionEndpoint: hasPriceCurve ? "/data/update-actual-prices" : "/data/update-entsoe",
+    actionLabel: hasPriceCurve ? "Update actual prices" : "Update forecast",
+    blockers: blockers.slice(0, 4),
+    decision: blockers.length
+      ? "Keep market-price evidence in advisory mode until data gaps are cleared."
+      : "Price evidence is ready to feed automated bid proposal generation.",
+    evidence: [
+      `${forecastRows.length || forecastStatus?.valid_row_count || 0} forecast interval(s) available`,
+      `${priceStats.negativeHours} negative-price hour(s) flagged for charge/discharge strategy`,
+      `Forecast range ${formatNumber(priceStats.minPrice, 2)} to ${formatNumber(priceStats.maxPrice, 2)} EUR/MWh`,
+      hasActualPrices
+        ? `Actual prices ready through ${actualPrices?.last_timestamp ?? "latest file"}`
+        : "Actual prices unavailable for backtest evidence",
+    ],
+    nextAction: blockers.length
+      ? blockers[0]
+      : "Use this curve in Market Signals and validate realized performance after execution.",
+    tone,
   };
 }
 

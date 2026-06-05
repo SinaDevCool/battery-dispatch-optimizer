@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ActionButton } from "@/components/action-button";
 import { useAssetContext } from "@/components/asset-provider";
 import { DataTable } from "@/components/data-table";
+import { DecisionBrief } from "@/components/decision-brief";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
 import { SectionCard } from "@/components/section-card";
@@ -30,6 +31,10 @@ export default function TradingOrchestratorPage() {
   const evidence = data?.evidence ?? {};
   const workflow = data?.workflow ?? [];
   const blockers = data?.blockers ?? [];
+  const activeWorkflow = workflow
+    .filter((row) => row.status !== "complete")
+    .slice(0, 8);
+  const blockerRows = blockers.slice(0, 6);
 
   return (
     <>
@@ -37,6 +42,32 @@ export default function TradingOrchestratorPage() {
         description="Coordinate the automated trading workflow from market signal through proposal, policy, market allocation, paper validation, approval, and supervised submission readiness."
         eyebrow="Trading operations"
         title="Trading orchestrator"
+      />
+
+      <DecisionBrief
+        blockers={blockerRows.map((blocker) =>
+          String(blocker.blocker ?? blocker.message ?? blocker.status ?? "Workflow blocker"),
+        )}
+        className="mb-6"
+        decision={
+          <>
+            {data?.orchestrator_status ?? "orchestration pending"}
+            <span className="text-slate-500"> / </span>
+            {nextAction?.label ?? "next action pending"}
+          </>
+        }
+        evidence={[
+          `Current owner: ${nextAction?.owner ?? "not assigned"}.`,
+          `Target market: ${nextAction?.target_market ?? evidence.primary_market ?? "-"}.`,
+          `${workflow.length} workflow step(s) tracked across signal, proposal, policy, paper, approval, and submission.`,
+        ]}
+        eyebrow="Orchestration decision"
+        nextAction={
+          nextAction?.message ??
+          "Run the orchestrator to progress the next automated trading step."
+        }
+        title="What should automation do next?"
+        tone={blockerRows.length ? "amber" : stageTone(data?.orchestrator_status)}
       />
 
       <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -124,7 +155,7 @@ export default function TradingOrchestratorPage() {
         >
           <DataTable
             columns={["step", "label", "status", "message"]}
-            rows={formatWorkflow(workflow)}
+            rows={formatWorkflow(activeWorkflow.length ? activeWorkflow : workflow.slice(0, 8))}
           />
         </SectionCard>
 
@@ -134,7 +165,7 @@ export default function TradingOrchestratorPage() {
         >
           <DataTable
             columns={["source", "status", "blocker"]}
-            rows={blockers}
+            rows={blockerRows}
           />
         </SectionCard>
       </div>
@@ -143,14 +174,14 @@ export default function TradingOrchestratorPage() {
         <SectionCard title="Execution evidence">
           <DataTable
             columns={["metric", "value"]}
-            rows={formatEvidence(evidence)}
+            rows={formatEvidence(evidence).slice(0, 12)}
           />
         </SectionCard>
 
         <SectionCard title="Orchestrator audit">
           <DataTable
             columns={["event", "actor", "status", "note"]}
-            rows={data?.audit ?? []}
+            rows={(data?.audit ?? []).slice(0, 8)}
           />
         </SectionCard>
       </div>

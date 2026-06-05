@@ -29,7 +29,11 @@ export function DataTable({
           {rows.map((row, rowIndex) => (
             <tr className="bg-slate-950/40" key={rowIndex}>
               {columns.map((column) => (
-                <td key={column}>{formatCell(row[column])}</td>
+                <td className="max-w-[22rem] whitespace-normal break-words align-top" key={column}>
+                  <div className="max-h-16 overflow-hidden leading-5">
+                    {formatCell(row[column])}
+                  </div>
+                </td>
               ))}
             </tr>
           ))}
@@ -65,7 +69,7 @@ function formatCell(value: JsonValue | undefined) {
       return String(value.message);
     }
 
-    return JSON.stringify(value);
+    return compactJson(value);
   }
 
   return String(value);
@@ -81,8 +85,18 @@ function formatListItem(value: JsonValue) {
       return String(value.message);
     }
 
-    return JSON.stringify(value);
+    return compactJson(value);
   }
 
   return String(value);
+}
+
+function compactJson(value: object) {
+  const text = JSON.stringify(value);
+
+  if (text.length <= 180) {
+    return text;
+  }
+
+  return `${text.slice(0, 177)}...`;
 }

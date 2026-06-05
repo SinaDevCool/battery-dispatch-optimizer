@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ActionButton } from "@/components/action-button";
 import { useAssetContext } from "@/components/asset-provider";
 import { DataTable } from "@/components/data-table";
+import { DecisionBrief, type DecisionBriefTone } from "@/components/decision-brief";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
 import { SectionCard } from "@/components/section-card";
@@ -14,11 +15,14 @@ import { apiGet } from "@/lib/api";
 import { formatCurrency, formatDateTime, formatNumber } from "@/lib/format";
 import type {
   AutomationGuardrailsResponse,
+  AutomationControlStatusResponse,
   ExecutionReadinessResponse,
   ForecastConfidenceResponse,
   LatestSignalResponse,
   MultiMarketAllocationCandidate,
   MultiMarketAllocationResponse,
+  SignalSummary,
+  StrategyIntentResponse,
   TableRow,
 } from "@/types/api";
 
@@ -55,6 +59,22 @@ export default function MarketSignalsPage() {
     queryKey: ["market-signals-readiness", selectedAssetId],
   });
 
+  const automationControl = useQuery({
+    queryFn: () =>
+      apiGet<AutomationControlStatusResponse>(
+        `/assets/${selectedAssetId}/execution/automation-control/status`,
+      ),
+    queryKey: ["market-signals-automation-control", selectedAssetId],
+  });
+
+  const strategyIntent = useQuery({
+    queryFn: () =>
+      apiGet<StrategyIntentResponse>(
+        `/assets/${selectedAssetId}/execution/strategy-intent`,
+      ),
+    queryKey: ["market-signals-strategy-intent", selectedAssetId],
+  });
+
   const allocation = useQuery({
     queryFn: () =>
       apiGet<MultiMarketAllocationResponse>(
@@ -82,8 +102,22 @@ export default function MarketSignalsPage() {
   });
   const blockers = buildAutomationBlockers({
     allocation: allocation.data,
+    automationControl: automationControl.data,
     guardrails: guardrails.data,
     readiness: readiness.data,
+  });
+  const blockerSummary = summarizeBlockers(blockers);
+  const decisionBrief = buildMarketSignalDecisionBrief({
+    allocation: allocation.data,
+    automationControl: automationControl.data,
+    automationMode,
+    assetId: selectedAssetId,
+    blockers,
+    confidence: confidence.data,
+    primaryMarket,
+    recommendedAction,
+    signalSummary,
+    strategyIntent: strategyIntent.data,
   });
 
   const refetchSignals = () =>
@@ -92,6 +126,8 @@ export default function MarketSignalsPage() {
       confidence.refetch(),
       guardrails.refetch(),
       readiness.refetch(),
+      automationControl.refetch(),
+      strategyIntent.refetch(),
       allocation.refetch(),
     ]);
 
@@ -102,6 +138,29 @@ export default function MarketSignalsPage() {
         eyebrow="Market intelligence"
         title="Market signals"
       />
+
+      <div className="mb-6">
+        <DecisionBrief
+          action={
+            <ActionButton
+              endpoint={
+                decisionBrief.actionEndpoint ??
+                `/assets/${selectedAssetId}/signal/run-latest`
+              }
+              label={decisionBrief.actionLabel}
+              refetch={refetchSignals}
+              variant="primary"
+            />
+          }
+          blockers={decisionBrief.blockers}
+          decision={decisionBrief.decision}
+          evidence={decisionBrief.evidence}
+          eyebrow="Signal-to-trade decision"
+          nextAction={decisionBrief.nextAction}
+          tone={decisionBrief.tone}
+          title="Can automation trade this signal?"
+        />
+      </div>
 
       <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard
@@ -216,7 +275,12 @@ export default function MarketSignalsPage() {
           action={<StatusPill tone={blockers.length ? "amber" : "emerald"}>{blockers.length}</StatusPill>}
           title="Automation blockers"
         >
-          <DataTable columns={["source", "blocker"]} rows={blockers} />
+          <div className="mb-4 grid gap-3 md:grid-cols-3">
+            <AutomationDecisionRow label="Readiness" tone={blockerSummary.readiness ? "amber" : "emerald"} value={blockerSummary.readiness} />
+            <AutomationDecisionRow label="Guardrails" tone={blockerSummary.guardrails ? "amber" : "emerald"} value={blockerSummary.guardrails} />
+            <AutomationDecisionRow label="Market route" tone={blockerSummary.market ? "amber" : "emerald"} value={blockerSummary.market} />
+          </div>
+          <DataTable columns={["source", "blocker"]} rows={blockers.slice(0, 8)} />
         </SectionCard>
 
         <SectionCard
@@ -233,7 +297,7 @@ export default function MarketSignalsPage() {
               "pnl_eur",
               "total_pnl_eur",
             ]}
-            rows={formatDispatchRows(activeRows)}
+            rows={formatDispatchRows(activeRows.slice(0, 12))}
           />
         </SectionCard>
       </div>
@@ -251,7 +315,7 @@ export default function MarketSignalsPage() {
               "expected_revenue_eur",
               "operator_next_action",
             ]}
-            rows={formatMarketCandidates(allocation.data?.allocation ?? [])}
+            rows={formatMarketCandidates((allocation.data?.allocation ?? []).slice(0, 8))}
           />
         </SectionCard>
 
@@ -349,10 +413,12 @@ function buildRecommendedAction({
 
 function buildAutomationBlockers({
   allocation,
+  automationControl,
   guardrails,
   readiness,
 }: {
   allocation?: MultiMarketAllocationResponse;
+  automationControl?: AutomationControlStatusResponse;
   guardrails?: AutomationGuardrailsResponse;
   readiness?: ExecutionReadinessResponse;
 }) {
@@ -376,6 +442,27 @@ function buildAutomationBlockers({
     }
   }
 
+  for (const blocker of automationControl?.blockers ?? []) {
+    rows.push({
+      blocker:
+        blocker.message ??
+        blocker.required_action ??
+        blocker.label ??
+        blocker.check ??
+        "Automation control blocker",
+      source: `automation:${blocker.source ?? blocker.check ?? "control"}`,
+    });
+  }
+
+  for (const gate of automationControl?.freshness_gates ?? []) {
+    if (gate.freshness_status === "missing" || gate.freshness_status === "stale") {
+      rows.push({
+        blocker: gate.required_action ?? `${gate.label ?? gate.gate_id} is ${gate.freshness_status}`,
+        source: `freshness:${gate.gate_id ?? "gate"}`,
+      });
+    }
+  }
+
   for (const market of allocation?.excluded_markets ?? []) {
     rows.push({
       blocker: (market.blocking_reasons ?? []).join(" | ") || market.operator_next_action,
@@ -384,6 +471,77 @@ function buildAutomationBlockers({
   }
 
   return rows;
+}
+
+function buildMarketSignalDecisionBrief({
+  allocation,
+  automationControl,
+  automationMode,
+  assetId,
+  blockers,
+  confidence,
+  primaryMarket,
+  recommendedAction,
+  signalSummary,
+  strategyIntent,
+}: {
+  allocation?: MultiMarketAllocationResponse;
+  automationControl?: AutomationControlStatusResponse;
+  automationMode: string;
+  assetId: string;
+  blockers: TableRow[];
+  confidence?: ForecastConfidenceResponse;
+  primaryMarket?: MultiMarketAllocationCandidate | null;
+  recommendedAction: string;
+  signalSummary: SignalSummary;
+  strategyIntent?: StrategyIntentResponse;
+}) {
+  const automationAction = automationControl?.next_automation_action;
+  const intentAction = strategyIntent?.recommended_next_action;
+  const action = String(
+    automationAction?.label ??
+      intentAction?.label ??
+      recommendedAction ??
+      "Refresh market signal",
+  );
+  const blockerLabels = blockers
+    .slice(0, 4)
+    .map((row) => String(row.blocker ?? "Automation blocker"));
+
+  const actionEndpoint =
+    signalSummary?.signal === "ACTION" && automationMode !== "blocked"
+      ? `/assets/${assetId}/execution/proposal/build`
+      : undefined;
+
+  return {
+    actionEndpoint,
+    actionLabel:
+      signalSummary?.signal === "ACTION" && automationMode !== "blocked"
+        ? "Build proposal"
+        : "Refresh signal",
+    blockers: blockerLabels,
+    decision: action,
+    evidence: [
+      `Signal ${signalSummary?.signal ?? "unavailable"} with ${signalSummary?.opportunity_level ?? "no"} opportunity level`,
+      `Expected PnL ${formatCurrency(signalSummary?.total_pnl_eur)}`,
+      `Primary route ${primaryMarket?.market_name ?? allocation?.primary_market?.market_name ?? "not selected"}`,
+      `Forecast confidence ${formatNumber(confidence?.confidence_score, 1)}/100 (${confidence?.automation_eligibility ?? "not evaluated"})`,
+    ],
+    nextAction:
+      automationAction?.message ??
+      intentAction?.message ??
+      primaryMarket?.operator_next_action ??
+      recommendedAction,
+    tone: automationTone(automationMode),
+  };
+}
+
+function summarizeBlockers(rows: TableRow[]) {
+  return {
+    guardrails: rows.filter((row) => String(row.source ?? "").startsWith("guardrail")).length,
+    market: rows.filter((row) => String(row.source ?? "").startsWith("market")).length,
+    readiness: rows.filter((row) => String(row.source ?? "").startsWith("readiness")).length,
+  };
 }
 
 function formatDispatchRows(rows: TableRow[]) {
@@ -443,7 +601,7 @@ function AutomationStepLink({
   );
 }
 
-function automationTone(value: unknown) {
+function automationTone(value: unknown): DecisionBriefTone {
   if (value === "supervised_live_candidate") {
     return "emerald";
   }
@@ -463,7 +621,7 @@ function automationTone(value: unknown) {
   return "slate";
 }
 
-function confidenceTone(value: unknown) {
+function confidenceTone(value: unknown): DecisionBriefTone {
   if (value === "high") {
     return "emerald";
   }
@@ -479,7 +637,7 @@ function confidenceTone(value: unknown) {
   return "slate";
 }
 
-function allocationTone(value: unknown) {
+function allocationTone(value: unknown): DecisionBriefTone {
   if (value === "recommended") {
     return "emerald";
   }

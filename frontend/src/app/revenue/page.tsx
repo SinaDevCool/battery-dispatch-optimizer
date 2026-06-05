@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { useAssetContext } from "@/components/asset-provider";
+import { DecisionBrief } from "@/components/decision-brief";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
 import {
@@ -135,6 +136,18 @@ export default function RevenuePage() {
       (sum, row) => sum + Number(row.estimated_revenue_eur ?? 0),
       0,
     );
+  const bestProduct = rows
+    .filter((row) => row.eligibility_status === "eligible")
+    .toSorted(
+      (left, right) =>
+        Number(right.estimated_revenue_eur ?? 0) -
+        Number(left.estimated_revenue_eur ?? 0),
+    )[0];
+  const commercialBlockers = [
+    blockedRows.length ? `${blockedRows.length} product(s) are blocked or not eligible.` : null,
+    warningRows.length ? `${warningRows.length} product(s) require commercial review.` : null,
+    allocationRows.length ? null : "Capacity allocation evidence is not available yet.",
+  ].filter(Boolean) as string[];
 
   return (
     <>
@@ -142,6 +155,35 @@ export default function RevenuePage() {
         description="Decide which revenue streams are tradable, how capacity should be allocated, what constraints block value, and how the economics look to owners and investors."
         eyebrow="Commercial optimizer"
         title="Revenue stack"
+      />
+
+      <DecisionBrief
+        blockers={commercialBlockers}
+        className="mb-6"
+        decision={
+          <>
+            {formatCurrency(totalRevenue)}
+            <span className="text-slate-500"> / </span>
+            {bestProduct?.product_id ?? "product pending"}
+          </>
+        }
+        evidence={[
+          `${eligibleRows.length}/${stack.data?.product_count ?? rows.length} market product(s) eligible.`,
+          bestProduct
+            ? `${bestProduct.product_id} is currently the strongest eligible revenue product.`
+            : "No eligible product has been ranked yet.",
+          businessDecision.data?.decision?.recommendation_status
+            ? `Decision status: ${businessDecision.data.decision.recommendation_status}.`
+            : "Business decision evidence is pending.",
+        ]}
+        eyebrow="Commercial decision"
+        nextAction={
+          commercialBlockers.length
+            ? "Resolve product eligibility, allocation, or review blockers before promising automated revenue capture."
+            : "Use this revenue stack to guide market allocation and trading strategy intent."
+        }
+        title="Revenue-to-market decision"
+        tone={commercialBlockers.length ? "amber" : "emerald"}
       />
 
       <div className="mb-5 grid gap-4 md:grid-cols-4">
@@ -214,6 +256,7 @@ function normalizeRevenueRows(data?: RevenueStackResponse): TableRow[] {
 
   return sourceRows.map((row: RevenueStackResult) => ({
     ...row,
+    automation_fit: classifyRevenueAutomationFit(row),
     blocking_reasons: formatIssueList(row.blocking_reasons),
     estimated_revenue_eur: row.estimated_revenue_eur ?? row.revenue_eur ?? row.total_revenue_eur ?? 0,
     missing_inputs: row.missing_inputs?.join(", ") || "-",
@@ -240,4 +283,20 @@ function formatIssueList(value: unknown) {
       return JSON.stringify(item);
     })
     .join("; ");
+}
+
+function classifyRevenueAutomationFit(row: RevenueStackResult) {
+  if (row.eligibility_status === "eligible" && row.status === "ok") {
+    return "ready for market allocation";
+  }
+
+  if (row.eligibility_status === "not_eligible" || row.blocking_reasons?.length) {
+    return "blocked from automation";
+  }
+
+  if (row.eligibility_status === "review_required" || row.review_warnings?.length) {
+    return "needs commercial review";
+  }
+
+  return "advisory only";
 }

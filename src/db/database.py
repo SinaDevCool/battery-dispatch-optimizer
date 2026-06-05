@@ -12,8 +12,9 @@ def get_connection(db_file=DATABASE_FILE):
 
 def initialize_database(db_file=DATABASE_FILE):
     with get_connection(db_file=db_file) as connection:
-        connection.executescript(
-            """
+        try:
+            connection.executescript(
+                """
             CREATE TABLE IF NOT EXISTS assets (
                 asset_id TEXT PRIMARY KEY,
                 client_name TEXT,
@@ -336,6 +337,32 @@ def initialize_database(db_file=DATABASE_FILE):
 
             CREATE INDEX IF NOT EXISTS idx_automation_policies_updated_at
                 ON automation_policies(updated_at);
+
+            CREATE TABLE IF NOT EXISTS automation_events (
+                automation_event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                action TEXT,
+                status TEXT NOT NULL,
+                automation_mode_before TEXT,
+                automation_mode_after TEXT,
+                strategy_mode_before TEXT,
+                strategy_mode_after TEXT,
+                error_type TEXT,
+                payload_json TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_automation_events_asset_id
+                ON automation_events(asset_id);
+
+            CREATE INDEX IF NOT EXISTS idx_automation_events_created_at
+                ON automation_events(created_at);
             """
-        )
+            )
+        except sqlite3.OperationalError as error:
+            if "readonly" in str(error).lower() and db_file.exists():
+                return
+
+            raise
 

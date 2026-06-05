@@ -29,26 +29,34 @@ export function RevenueStackPanel({
   rows: TableRow[];
   warningRows: TableRow[];
 }) {
+  const rankedRows = rows
+    .toSorted(
+      (left, right) =>
+        Number(right.estimated_revenue_eur ?? 0) -
+        Number(left.estimated_revenue_eur ?? 0),
+    )
+    .slice(0, 8);
+  const blockerRows = uniqueRowsByProduct([...blockedRows, ...warningRows]).slice(0, 4);
+
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)]">
       <SectionCard
         action={<StatusPill tone="blue">{rows.length} product(s)</StatusPill>}
-        title="Revenue product results"
+        title="Automated revenue ranking"
       >
         <DataTable
           columns={[
             "product_id",
             "estimated_revenue_eur",
             "eligibility_status",
+            "automation_fit",
             "status",
-            "missing_inputs",
-            "blocking_reasons",
           ]}
-          rows={rows}
+          rows={rankedRows}
         />
-        {rows.length ? (
+        {rankedRows.length ? (
           <div className="mt-5">
-            <BarComparisonChart data={rows} xKey="product_id" yKey="estimated_revenue_eur" />
+            <BarComparisonChart data={rankedRows} xKey="product_id" yKey="estimated_revenue_eur" />
           </div>
         ) : null}
       </SectionCard>
@@ -58,6 +66,12 @@ export function RevenueStackPanel({
           <CommercialRow label="Blocked products" tone={blockedRows.length ? "amber" : "emerald"} value={blockedRows.length} />
           <CommercialRow label="Review warnings" tone={warningRows.length ? "amber" : "emerald"} value={warningRows.length} />
           <CommercialRow label="Ancillary eligible" tone={ancillary?.eligible ? "emerald" : "amber"} value={ancillary?.eligible ? "yes" : ancillary?.reason ?? "not yet"} />
+        </div>
+        <div className="mt-4">
+          <DataTable
+            columns={["product_id", "automation_fit", "blocking_reasons"]}
+            rows={blockerRows}
+          />
         </div>
       </SectionCard>
     </div>
@@ -237,4 +251,19 @@ function sumAllocationRevenue(rows: TableRow[]) {
     (sum, row) => sum + Number(row.expected_revenue_eur ?? 0),
     0,
   );
+}
+
+function uniqueRowsByProduct(rows: TableRow[]) {
+  const seen = new Set<string>();
+
+  return rows.filter((row) => {
+    const key = `${row.product_id ?? row.market ?? "-"}:${row.automation_fit ?? row.status ?? "-"}`;
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
 }

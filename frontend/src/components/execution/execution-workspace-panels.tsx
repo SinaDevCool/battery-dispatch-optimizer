@@ -1,35 +1,20 @@
 import { Activity, Send, ShieldCheck, UserCheck } from "lucide-react";
 
 import { ActionButton } from "@/components/action-button";
-import { TradingReadinessPanel } from "@/components/cockpit/trading-readiness-panel";
 import { DataTable } from "@/components/data-table";
 import { ExecutionMetric } from "@/components/execution/execution-metric";
-import {
-  AssetTelemetryPanel,
-  EpexDayAheadPreviewPanel,
-  EpexIntradayAuctionPreviewPanel,
-  EpexIntradayContinuousPreviewPanel,
-  MarketAdapterPanel,
-  RegelleistungAfrrPreviewPanel,
-  RegelleistungFcrPreviewPanel,
-  RegelleistungMfrrPreviewPanel,
-} from "@/components/execution/market-evidence-panels";
+import { AssetTelemetryPanel } from "@/components/execution/market-evidence-panels";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
 import { formatCurrency, formatNumber } from "@/lib/format";
 import type {
   AssetMarketAdapterStatusResponse,
   AssetTelemetryResponse,
-  EpexDayAheadPreviewResponse,
-  EpexIntradayAuctionPreviewResponse,
-  EpexIntradayContinuousPreviewResponse,
+  AutomationEvent,
   ExecutionApproval,
   ExecutionProposal,
   ExecutionReadinessResponse,
   JsonObject,
-  RegelleistungAfrrPreviewResponse,
-  RegelleistungFcrPreviewResponse,
-  RegelleistungMfrrPreviewResponse,
   TableRow,
 } from "@/types/api";
 
@@ -39,18 +24,12 @@ export function ExecutionOverviewPanel({
   approvalData,
   automationStatus,
   bids,
-  epexDayAheadPreview,
-  epexIntradayAuctionPreview,
-  epexIntradayContinuousPreview,
   hardBlockers,
   marketAdapterStatus,
   paperTrade,
   proposal,
   readiness,
   refetchExecution,
-  regelleistungAfrrPreview,
-  regelleistungFcrPreview,
-  regelleistungMfrrPreview,
   selectedAssetId,
   submission,
   telemetryData,
@@ -58,18 +37,12 @@ export function ExecutionOverviewPanel({
   approvalData?: ExecutionApproval | null;
   automationStatus?: string;
   bids: TableRow[];
-  epexDayAheadPreview?: EpexDayAheadPreviewResponse["preview"];
-  epexIntradayAuctionPreview?: EpexIntradayAuctionPreviewResponse["preview"];
-  epexIntradayContinuousPreview?: EpexIntradayContinuousPreviewResponse["preview"];
   hardBlockers: string[];
   marketAdapterStatus?: AssetMarketAdapterStatusResponse;
   paperTrade?: TableRow | null;
   proposal?: ExecutionProposal | null;
   readiness?: ExecutionReadinessResponse;
   refetchExecution: RefetchExecution;
-  regelleistungAfrrPreview?: RegelleistungAfrrPreviewResponse["preview"];
-  regelleistungFcrPreview?: RegelleistungFcrPreviewResponse["preview"];
-  regelleistungMfrrPreview?: RegelleistungMfrrPreviewResponse["preview"];
   selectedAssetId: string;
   submission?: TableRow | null;
   telemetryData: AssetTelemetryResponse["telemetry"];
@@ -78,7 +51,7 @@ export function ExecutionOverviewPanel({
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
       <SectionCard
         action={<StatusPill tone={automationTone(automationStatus)}>{automationStatus ?? "not evaluated"}</StatusPill>}
-        title="Operator command sequence"
+        title="Automation command sequence"
       >
         <div className="mb-5 flex flex-wrap gap-3">
           <ActionButton
@@ -89,25 +62,25 @@ export function ExecutionOverviewPanel({
           />
           <ActionButton
             endpoint={`/assets/${selectedAssetId}/execution/approval/request`}
-            label="Request approval"
+            label="Request human gate"
             refetch={refetchExecution}
             variant="secondary"
           />
           <ActionButton
             endpoint={`/assets/${selectedAssetId}/execution/approval/approve`}
-            label="Approve"
+            label="Clear human gate"
             refetch={refetchExecution}
             variant="secondary"
           />
           <ActionButton
             endpoint={`/assets/${selectedAssetId}/execution/paper-trade/run`}
-            label="Run paper trade"
+            label="Run auto paper"
             refetch={refetchExecution}
             variant="secondary"
           />
           <ActionButton
             endpoint={`/assets/${selectedAssetId}/execution/demo-submit`}
-            label="Demo submit"
+            label="Simulate submission"
             refetch={refetchExecution}
             variant="secondary"
           />
@@ -115,22 +88,63 @@ export function ExecutionOverviewPanel({
         <div className="grid gap-3 md:grid-cols-5">
           <WorkflowStep icon={<Activity className="h-4 w-4" />} label="Signal" status={proposal?.signal_id ? "complete" : "pending"} />
           <WorkflowStep icon={<ShieldCheck className="h-4 w-4" />} label="Risk" status={hardBlockers.length ? "blocked" : bids.length ? "complete" : "pending"} />
-          <WorkflowStep icon={<UserCheck className="h-4 w-4" />} label="Approval" status={approvalData?.status === "approved" ? "complete" : "required"} />
+          <WorkflowStep icon={<UserCheck className="h-4 w-4" />} label="Human gate" status={approvalData?.status === "approved" ? "complete" : "required"} />
           <WorkflowStep icon={<Activity className="h-4 w-4" />} label="Paper" status={paperTrade ? "complete" : "pending"} />
           <WorkflowStep icon={<Send className="h-4 w-4" />} label="Submit" status={submission ? "complete" : "disabled"} />
         </div>
       </SectionCard>
 
       <div className="space-y-5">
-        <AssetTelemetryPanel telemetryData={telemetryData} />
-        <TradingReadinessPanel readiness={readiness} />
-        <MarketAdapterPanel status={marketAdapterStatus} />
-        <EpexDayAheadPreviewPanel preview={epexDayAheadPreview} />
-        <EpexIntradayAuctionPreviewPanel preview={epexIntradayAuctionPreview} />
-        <EpexIntradayContinuousPreviewPanel preview={epexIntradayContinuousPreview} />
-        <RegelleistungFcrPreviewPanel preview={regelleistungFcrPreview} />
-        <RegelleistungAfrrPreviewPanel preview={regelleistungAfrrPreview} />
-        <RegelleistungMfrrPreviewPanel preview={regelleistungMfrrPreview} />
+        <SectionCard
+          action={<StatusPill tone={readinessTone(readiness?.readiness_status)}>{readiness?.readiness_status ?? "not evaluated"}</StatusPill>}
+          title="Automation evidence snapshot"
+        >
+          <div className="grid gap-3 md:grid-cols-2">
+            <ExecutionMetric
+              label="Readiness score"
+              value={formatNumber(readiness?.readiness_score, 1)}
+            />
+            <ExecutionMetric
+              label="Connected markets"
+              value={formatNumber(marketAdapterStatus?.connected_adapter_count, 0)}
+            />
+            <ExecutionMetric
+              label="SOC"
+              value={`${formatNumber(telemetryData?.soc_percent, 1)}%`}
+            />
+            <ExecutionMetric
+              label="Draft bids"
+              value={formatNumber(bids.length, 0)}
+            />
+          </div>
+          <div className="mt-4">
+            <DataTable
+              columns={["evidence", "status", "automation_use"]}
+              rows={[
+                {
+                  automation_use: "Blocks live submission when readiness is red",
+                  evidence: "Execution readiness",
+                  status: readiness?.readiness_status ?? "-",
+                },
+                {
+                  automation_use: "Selects whether EPEX or ancillary routes can be submitted",
+                  evidence: "Market adapters",
+                  status: marketAdapterStatus?.market_adapter_status ?? "-",
+                },
+                {
+                  automation_use: "Validates physical ability to follow automated orders",
+                  evidence: "Asset telemetry",
+                  status: telemetryData?.availability_status ?? "missing",
+                },
+                {
+                  automation_use: "Carries the proposed automated order package",
+                  evidence: "Bid package",
+                  status: proposal?.status ?? "-",
+                },
+              ]}
+            />
+          </div>
+        </SectionCard>
       </div>
     </div>
   );
@@ -171,7 +185,7 @@ export function ExecutionRiskApprovalPanel({
             <ExecutionMetric label="Review" value={formatNumber(guardrailSummary.review, 0)} />
             <ExecutionMetric label="Blocked" value={formatNumber(guardrailSummary.blocked, 0)} />
           </div>
-          <DataTable columns={["guardrail", "status", "message", "context"]} rows={guardrails} />
+          <DataTable columns={["guardrail", "status", "message", "context"]} rows={guardrails.slice(0, 8)} />
         </SectionCard>
         <SectionCard
           action={<StatusPill tone={confidenceTone(confidence?.confidence_band)}>{String(confidence?.confidence_band ?? "unscored")}</StatusPill>}
@@ -191,19 +205,19 @@ export function ExecutionRiskApprovalPanel({
               "revenue_delta_eur",
               "score",
             ]}
-            rows={(confidence?.evidence as TableRow[]) ?? []}
+            rows={((confidence?.evidence as TableRow[]) ?? []).slice(0, 8)}
           />
         </SectionCard>
       </div>
       <div className="space-y-5">
         <SectionCard
           action={<StatusPill tone={approvalTone(approvalData?.status)}>{approvalData?.status ?? "missing"}</StatusPill>}
-          title="Operator approval"
+          title="Human automation gate"
         >
           <div className="mb-4 flex flex-wrap gap-3">
-            <ActionButton endpoint={`/assets/${selectedAssetId}/execution/approval/request`} label="Request approval" refetch={refetchExecution} variant="primary" />
-            <ActionButton endpoint={`/assets/${selectedAssetId}/execution/approval/approve`} label="Approve" refetch={refetchExecution} variant="secondary" />
-            <ActionButton endpoint={`/assets/${selectedAssetId}/execution/approval/reject`} label="Reject" refetch={refetchExecution} variant="secondary" />
+            <ActionButton endpoint={`/assets/${selectedAssetId}/execution/approval/request`} label="Request human gate" refetch={refetchExecution} variant="primary" />
+            <ActionButton endpoint={`/assets/${selectedAssetId}/execution/approval/approve`} label="Clear gate" refetch={refetchExecution} variant="secondary" />
+            <ActionButton endpoint={`/assets/${selectedAssetId}/execution/approval/reject`} label="Block gate" refetch={refetchExecution} variant="secondary" />
           </div>
           <DataTable
             columns={[
@@ -225,13 +239,13 @@ export function ExecutionRiskApprovalPanel({
         >
           <DataTable
             columns={["blocker"]}
-            rows={hardBlockers.map((blocker) => ({ blocker }))}
+            rows={hardBlockers.slice(0, 6).map((blocker) => ({ blocker }))}
           />
         </SectionCard>
         <SectionCard action={<StatusPill tone="amber">{automationBlockers.length}</StatusPill>} title="Automation blockers">
           <DataTable
             columns={["blocker"]}
-            rows={automationBlockers.map((blocker) => ({ blocker }))}
+            rows={automationBlockers.slice(0, 6).map((blocker) => ({ blocker }))}
           />
         </SectionCard>
       </div>
@@ -261,12 +275,10 @@ export function ExecutionSimulationPanel({
       <div className="space-y-5">
         <SectionCard
           action={<ActionButton endpoint={`/assets/${selectedAssetId}/execution/paper-trade/run`} label="Run paper trade" refetch={refetchExecution} variant="primary" />}
-          title="Latest paper trade"
+          title="Latest automatic paper trade"
         >
           <DataTable
             columns={[
-              "paper_fill_id",
-              "bid_id",
               "delivery_time",
               "market_product_id",
               "side",
@@ -275,7 +287,7 @@ export function ExecutionSimulationPanel({
               "notional_eur",
               "status",
             ]}
-            rows={paperFills}
+            rows={paperFills.slice(0, 8)}
           />
         </SectionCard>
         <SectionCard
@@ -291,20 +303,20 @@ export function ExecutionSimulationPanel({
               "paper_pnl_eur",
               "paper_vs_expected_delta_eur",
             ]}
-            rows={paperHistoryRows}
+            rows={paperHistoryRows.slice(0, 6)}
           />
         </SectionCard>
       </div>
       <SectionCard
-        action={<ActionButton endpoint={`/assets/${selectedAssetId}/execution/demo-submit`} label="Demo submit bids" refetch={refetchExecution} variant="primary" />}
-        title="Demo market submission"
+        action={<ActionButton endpoint={`/assets/${selectedAssetId}/execution/demo-submit`} label="Simulate bid submission" refetch={refetchExecution} variant="primary" />}
+        title="Simulated market submission"
       >
         <div className="mb-4 grid gap-3 md:grid-cols-3">
           <ExecutionMetric label="Submitted" value={formatNumber(submissionSummary.submitted_bid_count, 0)} />
           <ExecutionMetric label="Accepted" value={formatNumber(submissionSummary.accepted_bid_count, 0)} />
           <ExecutionMetric label="Awarded notional" value={formatCurrency(submissionSummary.notional_eur)} />
         </div>
-        <DataTable columns={["step", "label", "status", "owner"]} rows={(submission?.lifecycle as TableRow[]) ?? []} />
+        <DataTable columns={["step", "label", "status", "owner"]} rows={((submission?.lifecycle as TableRow[]) ?? []).slice(0, 6)} />
       </SectionCard>
     </div>
   );
@@ -332,7 +344,7 @@ export function ExecutionSettlementPanel({
           <ExecutionMetric label="Paper PnL" value={formatCurrency(settlementSummary.paper_pnl_eur)} />
           <ExecutionMetric label="Realized PnL" value={formatCurrency(settlementSummary.realized_pnl_eur)} />
         </div>
-        <DataTable columns={["driver", "severity", "delta_eur", "message"]} rows={varianceDrivers} />
+        <DataTable columns={["driver", "severity", "delta_eur", "message"]} rows={varianceDrivers.slice(0, 8)} />
       </SectionCard>
     </div>
   );
@@ -340,11 +352,13 @@ export function ExecutionSettlementPanel({
 
 export function ExecutionAuditPanel({
   auditRows,
+  automationEvents,
   lifecycleRows,
   riskChecks,
   telemetryData,
 }: {
   auditRows: TableRow[];
+  automationEvents: AutomationEvent[];
   lifecycleRows: TableRow[];
   riskChecks: TableRow[];
   telemetryData: AssetTelemetryResponse["telemetry"];
@@ -352,17 +366,35 @@ export function ExecutionAuditPanel({
   return (
     <div className="grid gap-5 xl:grid-cols-2">
       <SectionCard title="Bid lifecycle">
-        <DataTable columns={["step", "label", "status", "owner"]} rows={lifecycleRows} />
+        <DataTable columns={["step", "label", "status", "owner"]} rows={lifecycleRows.slice(0, 6)} />
       </SectionCard>
       <SectionCard title="Backend risk checks">
-        <DataTable columns={["check", "status", "message", "context"]} rows={riskChecks} />
+        <DataTable columns={["check", "status", "message"]} rows={riskChecks.slice(0, 8)} />
+      </SectionCard>
+
+      <SectionCard
+        action={<StatusPill tone={automationEvents.length ? "emerald" : "slate"}>{automationEvents.length}</StatusPill>}
+        title="Automation event trail"
+      >
+        <DataTable
+          columns={[
+            "created_at",
+            "event_type",
+            "action",
+            "status",
+            "automation_mode_after",
+            "strategy_mode_after",
+            "error_type",
+          ]}
+          rows={automationEvents.slice(0, 8)}
+        />
       </SectionCard>
 
       <SectionCard
         action={<StatusPill tone="blue">Pre-trade audit</StatusPill>}
         title="Execution audit trail"
       >
-        <DataTable columns={["event", "actor", "status", "note"]} rows={auditRows} />
+        <DataTable columns={["event", "actor", "status", "note"]} rows={auditRows.slice(0, 10)} />
       </SectionCard>
       <AssetTelemetryPanel telemetryData={telemetryData} />
     </div>
@@ -445,6 +477,22 @@ function approvalTone(value: unknown) {
   }
 
   if (value === "rejected") {
+    return "red";
+  }
+
+  return "slate";
+}
+
+function readinessTone(value: unknown) {
+  if (value === "supervised_ready" || value === "ready") {
+    return "emerald";
+  }
+
+  if (value === "operator_review_required" || value === "review") {
+    return "blue";
+  }
+
+  if (value === "blocked") {
     return "red";
   }
 

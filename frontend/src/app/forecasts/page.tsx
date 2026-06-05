@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { useAssetContext } from "@/components/asset-provider";
+import { DecisionBrief } from "@/components/decision-brief";
 import { ErrorState } from "@/components/error-state";
 import {
   ForecastConfidencePanel,
@@ -130,6 +131,11 @@ export default function ForecastsPage() {
   const currentProvider = signalMetadata.forecast_provider ?? signalMetadata.source;
   const currentSignalUsesFallback = currentProvider === "local_saved_forecast";
   const revenueLeakage = Math.abs(Number(latestPerformance?.revenue_delta_eur ?? 0));
+  const forecastBlockers = [
+    currentSignalUsesFallback ? "Latest signal used local saved forecast fallback." : null,
+    latestPerformance ? null : "Forecast-vs-actual performance is not available yet.",
+    actualPrices.data?.status === "ok" ? null : "Actual price evidence is not ready.",
+  ].filter(Boolean) as string[];
 
   const refetchForecasts = () =>
     Promise.all([
@@ -155,6 +161,48 @@ export default function ForecastsPage() {
           <ErrorState message="Latest signal used a local saved forecast fallback. Treat the dispatch recommendation as advisory until live or validated forecast data is available." />
         </div>
       ) : null}
+
+      <DecisionBrief
+        blockers={forecastBlockers}
+        className="mb-6"
+        decision={
+          <>
+            {recommendedProvider?.forecast_provider ??
+              bestComparison?.forecast_provider ??
+              currentProvider ??
+              "Source pending"}
+            <span className="text-slate-500"> / </span>
+            {forecastQualityScore >= 80
+              ? "tradable"
+              : forecastQualityScore >= 60
+                ? "supervised"
+                : "advisory"}
+          </>
+        }
+        evidence={[
+          `${forecastQualityScore}/100 forecast quality score.`,
+          latestPerformance
+            ? `${formatNumber(latestPerformance.mae_eur_per_mwh, 2)} EUR/MWh MAE on latest performance run.`
+            : "No latest performance run is available.",
+          recommendedProvider
+            ? `${formatCurrency(recommendedProvider.total_pnl_eur)} modelled PnL from recommended source.`
+            : "Provider ranking needs a comparison run.",
+        ]}
+        eyebrow="Forecast decision"
+        nextAction={
+          forecastBlockers.length
+            ? "Keep trading in advisory or supervised mode until forecast evidence is current."
+            : "Use this source as the trading confidence input for strategy intent and bid sizing."
+        }
+        title="Forecast-to-trade decision"
+        tone={
+          forecastBlockers.length
+            ? "amber"
+            : forecastQualityScore >= 80
+              ? "emerald"
+              : "blue"
+        }
+      />
 
       <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard

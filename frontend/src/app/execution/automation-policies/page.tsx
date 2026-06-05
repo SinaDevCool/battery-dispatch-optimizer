@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ActionButton } from "@/components/action-button";
 import { useAssetContext } from "@/components/asset-provider";
 import { DataTable } from "@/components/data-table";
+import { DecisionBrief } from "@/components/decision-brief";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
 import { SectionCard } from "@/components/section-card";
@@ -14,6 +15,7 @@ import { apiGet } from "@/lib/api";
 import { formatCurrency, formatDateTime, formatNumber } from "@/lib/format";
 import type {
   AutomationPolicy,
+  AutomationControlStatusResponse,
   AutomationPolicyEvaluationResponse,
   AutomationPolicyHistoryResponse,
   AutomationPolicyResponse,
@@ -22,7 +24,7 @@ import type {
 } from "@/types/api";
 
 export default function AutomationPoliciesPage() {
-  const { selectedAsset, selectedAssetId } = useAssetContext();
+  const { selectedAssetId } = useAssetContext();
 
   const policy = useQuery({
     queryFn: () =>
@@ -30,6 +32,14 @@ export default function AutomationPoliciesPage() {
         `/assets/${selectedAssetId}/execution/automation-policy`,
       ),
     queryKey: ["automation-policy", selectedAssetId],
+  });
+
+  const automationControl = useQuery({
+    queryFn: () =>
+      apiGet<AutomationControlStatusResponse>(
+        `/assets/${selectedAssetId}/execution/automation-control/status`,
+      ),
+    queryKey: ["automation-control-status", selectedAssetId],
   });
 
   const evaluation = useQuery({
@@ -57,44 +67,156 @@ export default function AutomationPoliciesPage() {
   const policyDecision = evaluation.data?.policy_decision;
   const checks = evaluation.data?.checks ?? [];
   const summary = evaluation.data?.summary ?? {};
-  const allowedMarkets = currentPolicy?.allowed_markets ?? [];
+  const control = automationControl.data;
+  const humanGate = control?.human_gate ?? {};
+  const nextAutomationAction = control?.next_automation_action ?? {};
+  const blockerRows = (control?.blockers ?? []).slice(0, 6);
+  const criticalCheckRows = checks
+    .filter((check) => check.status !== "passed")
+    .slice(0, 6);
 
   const refetchPolicy = () =>
-    Promise.all([policy.refetch(), evaluation.refetch(), history.refetch()]);
+    Promise.all([
+      policy.refetch(),
+      evaluation.refetch(),
+      history.refetch(),
+      automationControl.refetch(),
+    ]);
 
   return (
     <>
       <PageHeading
-        description="Define the supervised automation envelope for each asset: allowed markets, confidence gates, risk limits, paper-trade requirements, approval rules, and fallback behavior."
+        description="Control automated battery trading by mode: advisory, paper trading, supervised automation, and limited live automation with hard risk, confidence, connector, and human-gate constraints."
         eyebrow="Trading operations"
-        title="Automation policies"
+        title="Automation control plane"
+      />
+
+      <DecisionBrief
+        blockers={blockerRows.map((blocker) =>
+          String(blocker.message ?? blocker.key ?? "Automation blocker"),
+        )}
+        className="mb-6"
+        decision={
+          <>
+            {policyDecision ?? "Policy pending"}
+            <span className="text-slate-500"> / </span>
+            {control?.automation_mode ?? currentPolicy?.automation_mode ?? "mode pending"}
+          </>
+        }
+        evidence={[
+          `${summary.passed ?? 0} policy gate(s) passed.`,
+          `${summary.blocked ?? 0} blocked and ${summary.review ?? 0} review gate(s).`,
+          control?.live_trading_allowed
+            ? "Limited live submission is permitted by the control plane."
+            : "Live submission remains gated by policy evidence.",
+        ]}
+        eyebrow="Automation policy decision"
+        nextAction={
+          nextAutomationAction.message ??
+          "Evaluate policy gates before changing automated trading mode."
+        }
+        title="Can the asset trade automatically?"
+        tone={policyDecision === "blocked" ? "red" : blockerRows.length ? "amber" : "emerald"}
       />
 
       <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard
-          accent={automationTone(currentPolicy?.automation_mode)}
-          helper={policy.data?.source === "default" ? "Generated baseline" : "Saved policy"}
-          label="Automation mode"
-          value={currentPolicy?.automation_mode ?? "-"}
+          accent={controlModeTone(control?.automation_mode)}
+          helper={control?.live_trading_allowed ? "Live submission permitted by control plane" : "Live submission gated"}
+          label="Trading mode"
+          value={control?.automation_mode ?? currentPolicy?.automation_mode ?? "-"}
         />
         <KpiCard
           accent={decisionTone(policyDecision)}
-          helper={`${summary.blocked ?? 0} blocked / ${summary.review ?? 0} review`}
+          helper={`${summary.blocked ?? 0} blocked / ${summary.review ?? 0} review gate(s)`}
           label="Policy decision"
           value={policyDecision ?? "-"}
         />
         <KpiCard
-          accent="blue"
-          helper="Minimum score for supervised live candidate"
-          label="Confidence gate"
-          value={`${formatNumber(confidencePolicy.min_confidence_score, 0)}/100`}
+          accent={control?.paper_trading_allowed ? "emerald" : "slate"}
+          helper={nextAutomationAction.message ?? "No automation action evaluated"}
+          label="Next auto action"
+          value={nextAutomationAction.label ?? "-"}
         />
         <KpiCard
-          accent="emerald"
-          helper={selectedAsset?.asset_name ?? selectedAsset?.site_name ?? selectedAssetId}
-          label="Allowed markets"
-          value={allowedMarkets.length}
+          accent={humanGateTone(humanGate.status)}
+          helper={humanGate.required ? "Human gate remains part of automation policy" : "No human gate required"}
+          label="Human gate"
+          value={String(humanGate.status ?? "-")}
         />
+      </div>
+
+      <div className="mb-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.75fr)]">
+        <SectionCard
+          action={<StatusPill tone={controlModeTone(control?.automation_mode)}>{control?.automation_mode ?? "-"}</StatusPill>}
+          title="Automated trading status"
+        >
+          <div className="grid gap-3 md:grid-cols-3">
+            <PolicyRow
+              label="Paper trading"
+              tone={control?.paper_trading_allowed ? "emerald" : "slate"}
+              value={control?.paper_trading_allowed ? "allowed" : "gated"}
+            />
+            <PolicyRow
+              label="Supervised auto"
+              tone={control?.supervised_trading_allowed ? "emerald" : "amber"}
+              value={control?.supervised_trading_allowed ? "allowed" : "gated"}
+            />
+            <PolicyRow
+              label="Limited live auto"
+              tone={control?.live_trading_allowed ? "emerald" : "red"}
+              value={control?.live_trading_allowed ? "allowed" : "blocked"}
+            />
+            <PolicyRow
+              label="Readiness"
+              tone={control?.readiness_status === "blocked" ? "red" : "blue"}
+              value={`${formatNumber(control?.readiness_score, 1)} / ${control?.readiness_status ?? "-"}`}
+            />
+            <PolicyRow
+              label="Connector"
+              tone={control?.evidence?.live_submission_enabled ? "emerald" : "amber"}
+              value={control?.connector_status ?? "-"}
+            />
+            <PolicyRow
+              label="Primary market"
+              tone={control?.primary_market ? "blue" : "slate"}
+              value={control?.primary_market?.market_name ?? "-"}
+            />
+          </div>
+        </SectionCard>
+
+        <SectionCard title="Automation evidence">
+          <DataTable
+            columns={["evidence", "record", "status"]}
+            rows={[
+              {
+                evidence: "Policy",
+                record: control?.evidence?.automation_policy_id ?? "-",
+                status: control?.evidence?.automation_policy_source ?? policy.data?.source,
+              },
+              {
+                evidence: "Proposal",
+                record: control?.evidence?.execution_proposal_id ?? "-",
+                status: control?.evidence?.execution_proposal_id ? "available" : "missing",
+              },
+              {
+                evidence: "Paper trade",
+                record: control?.evidence?.paper_trade_id ?? "-",
+                status: control?.paper_trading_allowed ? "allowed" : "required",
+              },
+              {
+                evidence: "Approval gate",
+                record: control?.evidence?.approval_id ?? "-",
+                status: humanGate.status ?? "-",
+              },
+              {
+                evidence: "Submission",
+                record: control?.evidence?.market_submission_id ?? "-",
+                status: control?.live_trading_allowed ? "live allowed" : "not live",
+              },
+            ]}
+          />
+        </SectionCard>
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.75fr)]">
@@ -121,7 +243,7 @@ export default function AutomationPoliciesPage() {
               value={formatDateTime(currentPolicy?.updated_at)}
             />
             <PolicyRow
-              label="Human approval"
+              label="Human gate"
               tone={approvalPolicy.require_human_approval ? "blue" : "amber"}
               value={approvalPolicy.require_human_approval ? "required" : "not required"}
             />
@@ -143,26 +265,26 @@ export default function AutomationPoliciesPage() {
           </div>
         </SectionCard>
 
-        <SectionCard title="Next trading workflow">
+        <SectionCard title="Automated trading workflow">
           <div className="space-y-3">
             <WorkflowLink
               href="/market-signals"
-              label="Watch market signals"
-              value="Signal to automation decision"
+              label="Ingest market signals"
+              value="Automated trigger source"
             />
             <WorkflowLink
               href="/execution/market-allocation"
-              label="Apply market allocation"
-              value="Policy filters eligible routes"
+              label="Select market route"
+              value="Policy-filtered allocation"
             />
             <WorkflowLink
               href="/execution/risk-approval"
-              label="Review guardrails"
+              label="Evaluate automation gates"
               value={policyDecision ?? "Policy not evaluated"}
             />
             <WorkflowLink
               href="/execution/simulation"
-              label="Run paper market"
+              label="Run automatic paper market"
               value={simulationPolicy.require_paper_trade ? "Required" : "Optional"}
             />
           </div>
@@ -225,21 +347,29 @@ export default function AutomationPoliciesPage() {
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
         <SectionCard
           action={<StatusPill tone={decisionTone(policyDecision)}>{policyDecision ?? "-"}</StatusPill>}
-          title="Policy evaluation"
+          title="Policy exceptions"
         >
           <DataTable
             columns={["check", "status", "message", "context"]}
-            rows={formatChecks(checks)}
+            rows={formatChecks(criticalCheckRows.length ? criticalCheckRows : checks.slice(0, 6))}
           />
         </SectionCard>
 
-        <SectionCard title="Recommended actions">
+        <SectionCard title="Automation blockers and next action">
           <DataTable
-            columns={["priority", "action"]}
-            rows={(evaluation.data?.recommended_actions ?? []).map((action, index) => ({
-              action,
-              priority: index + 1,
-            }))}
+            columns={["source", "key", "status", "message"]}
+            rows={
+              blockerRows.length
+                ? blockerRows
+                : [
+                    {
+                      key: nextAutomationAction.action ?? "-",
+                      message: nextAutomationAction.message ?? "No automation blocker reported.",
+                      source: nextAutomationAction.owner ?? "automation_control",
+                      status: "next",
+                    },
+                  ]
+            }
           />
         </SectionCard>
       </div>
@@ -257,7 +387,7 @@ export default function AutomationPoliciesPage() {
               "min_confidence_score",
               "fallback_mode",
             ]}
-            rows={formatHistory(history.data?.policies ?? [])}
+            rows={formatHistory(history.data?.policies ?? []).slice(0, 6)}
           />
         </SectionCard>
       </div>
@@ -339,16 +469,32 @@ function compactContext(context: JsonValue | undefined) {
     .join(" | ");
 }
 
-function automationTone(value: unknown) {
-  if (value === "supervised_live") {
+function controlModeTone(value: unknown) {
+  if (value === "live_auto_limited" || value === "supervised_auto") {
     return "emerald";
   }
 
-  if (value === "paper_first") {
+  if (value === "paper_trading") {
     return "blue";
   }
 
-  if (value === "disabled") {
+  if (value === "live_auto_blocked") {
+    return "red";
+  }
+
+  return "slate";
+}
+
+function humanGateTone(value: unknown) {
+  if (value === "passed" || value === "not_required") {
+    return "emerald";
+  }
+
+  if (value === "pending" || value === "required") {
+    return "blue";
+  }
+
+  if (value === "blocked") {
     return "red";
   }
 

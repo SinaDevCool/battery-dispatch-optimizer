@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { ActionButton } from "@/components/action-button";
 import { useAssetContext } from "@/components/asset-provider";
+import { DecisionBrief } from "@/components/decision-brief";
 import { ErrorState } from "@/components/error-state";
 import {
   DecisionHistoryPanel,
@@ -101,6 +102,13 @@ export default function DecisionIntelligencePage() {
     (row) => row.eligibility_status === "not_eligible",
   ).length;
   const latestPerformance = performanceRows[0];
+  const evidenceDecision = buildEvidenceDecision({
+    blockedCount,
+    latestDecision,
+    latestPerformance,
+    latestRun,
+    reviewCount,
+  });
 
   const refetchIntelligence = () =>
     Promise.all([
@@ -133,6 +141,17 @@ export default function DecisionIntelligencePage() {
           <ErrorState message="No audited workflow exists yet. Run the audited workflow to connect forecast, dispatch, revenue, and business decision evidence." />
         </div>
       ) : null}
+
+      <DecisionBrief
+        blockers={evidenceDecision.blockers}
+        className="mb-6"
+        decision={evidenceDecision.decision}
+        evidence={evidenceDecision.evidence}
+        eyebrow="Audit evidence decision"
+        nextAction={evidenceDecision.nextAction}
+        title="Can this recommendation be trusted?"
+        tone={evidenceDecision.tone}
+      />
 
       <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard
@@ -211,6 +230,12 @@ function buildDecisionTrend(rows: BusinessDecision[]) {
 
 function buildProductMatrix(rows: EligibleProductResult[]) {
   return rows.map((row) => ({
+    automation_gate:
+      row.eligibility_status === "eligible"
+        ? "can feed revenue allocation"
+        : row.eligibility_status === "review_required"
+          ? "needs commercial review"
+          : summarizeIssues(row.blocking_reasons),
     blocking_reasons: summarizeIssues(row.blocking_reasons),
     eligibility_status: row.eligibility_status,
     market: row.product?.market ?? "-",
@@ -234,4 +259,46 @@ function summarizeIssues(value: unknown) {
       return String(item);
     })
     .join(" | ");
+}
+
+function buildEvidenceDecision({
+  blockedCount,
+  latestDecision,
+  latestPerformance,
+  latestRun,
+  reviewCount,
+}: {
+  blockedCount: number;
+  latestDecision?: BusinessDecision;
+  latestPerformance?: TableRow;
+  latestRun?: TableRow | null;
+  reviewCount: number;
+}) {
+  const blockers = [
+    !latestRun ? "No audited workflow has linked the evidence chain yet." : null,
+    blockedCount ? `${blockedCount} product(s) are blocked from commercial use.` : null,
+    reviewCount ? `${reviewCount} product(s) still need review evidence.` : null,
+    !latestPerformance ? "Forecast-vs-actual performance has not been tested yet." : null,
+  ].filter(Boolean) as string[];
+
+  return {
+    blockers,
+    decision: latestDecision?.recommendation_title
+      ? latestDecision.recommendation_title
+      : blockers.length
+        ? "Recommendation evidence is not enterprise-ready yet."
+        : "Recommendation evidence is ready for commercial and audit review.",
+    evidence: [
+      `Workflow ${latestRun?.workflow_run_id ?? "not linked"}`,
+      `Decision posture ${latestDecision?.recommendation_status ?? "not generated"}`,
+      `Expected PnL ${formatCurrency(latestDecision?.expected_pnl_eur)}`,
+      latestPerformance
+        ? `Forecast MAE ${formatNumber(latestPerformance.mae_eur_per_mwh, 2)} EUR/MWh`
+        : "No forecast performance evidence",
+    ],
+    nextAction: blockers.length
+      ? blockers[0]
+      : "Use this evidence chain in client reporting and automated trading audit trails.",
+    tone: blockers.length ? "amber" as const : "emerald" as const,
+  };
 }

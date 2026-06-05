@@ -13,6 +13,10 @@ import {
   EvidenceList,
   StatusRow,
 } from "@/components/cockpit/control-room-panels";
+import {
+  DecisionBrief,
+  type DecisionBriefTone,
+} from "@/components/decision-brief";
 import { DecisionSummary } from "@/components/cockpit/decision-summary";
 import { RevenueStackOverview } from "@/components/cockpit/revenue-stack-overview";
 import { RiskCompliancePanel } from "@/components/cockpit/risk-compliance-panel";
@@ -32,7 +36,9 @@ import type {
   AssetMarketAdapterStatusResponse,
   AssetCockpitResponse,
   AssetTelemetryResponse,
+  AutomationControlStatusResponse,
   AutomationGuardrailsResponse,
+  BusinessDecision,
   BusinessDecisionResponse,
   DataCompletenessResponse,
   DatabaseStatusResponse,
@@ -43,9 +49,12 @@ import type {
   HealthResponse,
   HedgingRevenueResponse,
   LatestSignalResponse,
+  RevenueStackResult,
   RevenueStackResponse,
   SettlementResponse,
+  SignalSummary,
   StorageClassificationResponse,
+  StrategyIntentResponse,
   WorkflowRunResponse,
 } from "@/types/api";
 
@@ -203,6 +212,22 @@ export default function OverviewPage() {
     queryKey: ["overview-automation-guardrails", selectedAssetId],
   });
 
+  const automationControl = useQuery({
+    queryFn: () =>
+      apiGet<AutomationControlStatusResponse>(
+        `/assets/${selectedAssetId}/execution/automation-control/status`,
+      ),
+    queryKey: ["overview-automation-control", selectedAssetId],
+  });
+
+  const strategyIntent = useQuery({
+    queryFn: () =>
+      apiGet<StrategyIntentResponse>(
+        `/assets/${selectedAssetId}/execution/strategy-intent`,
+      ),
+    queryKey: ["overview-strategy-intent", selectedAssetId],
+  });
+
   const telemetry = useQuery({
     queryFn: () =>
       apiGet<AssetTelemetryResponse>(
@@ -267,6 +292,22 @@ export default function OverviewPage() {
       0,
     );
   const isBackendDown = Boolean(health.error);
+  const personaDecision = buildPersonaDecisionBrief({
+    activeDispatchCount: activeDispatchRows.length,
+    automationControl: automationControl.data,
+    businessDecision: businessDecisionPayload?.decision,
+    completeness: completenessPayload,
+    enterpriseMaturity,
+    guardrails: guardrails.data,
+    marketAdapterStatus: marketAdapterStatus.data,
+    personaId: persona.id,
+    readiness: readiness.data,
+    revenueRows,
+    settlement: settlement.data,
+    signalSummary: summary,
+    strategyIntent: strategyIntent.data,
+    totalRevenue,
+  });
 
   const refetchCockpit = () =>
     Promise.all([
@@ -284,6 +325,8 @@ export default function OverviewPage() {
       completeness.refetch(),
       executionProposal.refetch(),
       approval.refetch(),
+      automationControl.refetch(),
+      strategyIntent.refetch(),
       guardrails.refetch(),
       telemetry.refetch(),
       settlement.refetch(),
@@ -335,33 +378,53 @@ export default function OverviewPage() {
         />
       </div>
 
-      <div className="mb-6 grid gap-5 xl:grid-cols-[minmax(360px,0.65fr)_minmax(0,1fr)]">
-        <SectionCard title="Role view">
-          <div className="space-y-3">
-            <StatusRow
-              label="Persona"
-              tone="blue"
-              value={persona.label}
-            />
-            <StatusRow
-              label="Workspace focus"
+      <DecisionBrief
+        blockers={personaDecision.blockers}
+        className="mb-6"
+        decision={personaDecision.decision}
+        evidence={personaDecision.evidence}
+        eyebrow={persona.label}
+        nextAction={personaDecision.nextAction}
+        title={personaDecision.title}
+        tone={personaDecision.tone}
+      />
+
+      <SectionCard
+        action={<StatusPill tone="blue">{persona.defaultNavigationLabel}</StatusPill>}
+        className="mb-6"
+        title="Persona operating lens"
+      >
+        <div className="grid gap-5 xl:grid-cols-3">
+          <div>
+            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Decisions
+            </div>
+            <EvidenceList items={persona.priorityActions} tone="blue" />
+          </div>
+          <div>
+            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              KPI lens
+            </div>
+            <EvidenceList
+              items={persona.priorityKpis.map((item) =>
+                item.replaceAll("_", " "),
+              )}
               tone="emerald"
-              value={persona.header}
-            />
-            <StatusRow
-              label="Default cockpit"
-              tone="slate"
-              value={persona.defaultControlRoomTab.replaceAll("_", " ")}
             />
           </div>
-        </SectionCard>
-        <SectionCard
-          action={<StatusPill tone="blue">{persona.label}</StatusPill>}
-          title="Role priorities"
-        >
-          <EvidenceList items={persona.priorityActions} tone="blue" />
-        </SectionCard>
-      </div>
+          <div>
+            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Automation scope
+            </div>
+            <EvidenceList
+              items={persona.allowedAutomationActions.map((item) =>
+                item.replaceAll("_", " "),
+              )}
+              tone="blue"
+            />
+          </div>
+        </div>
+      </SectionCard>
 
       <WorkspaceTabs
         activeTab={activeTab}
@@ -593,6 +656,233 @@ function approvalTone(value?: string) {
   }
 
   return "amber";
+}
+
+function buildPersonaDecisionBrief({
+  activeDispatchCount,
+  automationControl,
+  businessDecision,
+  completeness,
+  enterpriseMaturity,
+  guardrails,
+  marketAdapterStatus,
+  personaId,
+  readiness,
+  revenueRows,
+  settlement,
+  signalSummary,
+  strategyIntent,
+  totalRevenue,
+}: {
+  activeDispatchCount: number;
+  automationControl?: AutomationControlStatusResponse;
+  businessDecision?: BusinessDecision;
+  completeness?: DataCompletenessResponse;
+  enterpriseMaturity?: NonNullable<AssetCockpitResponse["cockpit"]>["enterprise_maturity"];
+  guardrails?: AutomationGuardrailsResponse;
+  marketAdapterStatus?: AssetMarketAdapterStatusResponse;
+  personaId: string;
+  readiness?: ExecutionReadinessResponse;
+  revenueRows: RevenueStackResult[];
+  settlement?: SettlementResponse;
+  signalSummary: SignalSummary;
+  strategyIntent?: StrategyIntentResponse;
+  totalRevenue: number;
+}): {
+  blockers: string[];
+  decision: React.ReactNode;
+  evidence: string[];
+  nextAction: string;
+  title: string;
+  tone: DecisionBriefTone;
+} {
+  const automationMode = automationControl?.automation_mode ?? "not evaluated";
+  const strategyMode = strategyIntent?.strategy_mode?.replaceAll("_", " ") ?? "strategy pending";
+  const dispatchBias = strategyIntent?.dispatch_bias?.replaceAll("_", " ") ?? "hold";
+  const blockerCount = automationControl?.blockers?.length ?? readiness?.summary?.blocked ?? 0;
+  const topBlockers = [
+    ...(automationControl?.blockers ?? []).map((blocker) =>
+      String(blocker.message ?? blocker.key ?? "Automation blocker"),
+    ),
+    ...(businessDecision?.blockers ?? []),
+  ].slice(0, 4);
+  const evidence = [
+    `${String(signalSummary?.signal ?? "No signal")} trading signal with ${formatCurrency(signalSummary?.total_pnl_eur)} expected PnL.`,
+    `${formatCurrency(totalRevenue)} modelled revenue across ${revenueRows?.length ?? 0} product(s).`,
+    `Automation mode is ${String(automationMode).replaceAll("_", " ")}.`,
+  ];
+
+  if (personaId === "asset_owner") {
+    return {
+      blockers: topBlockers,
+      decision: (
+        <>
+          {formatCurrency(totalRevenue)}
+          <span className="text-slate-500"> / </span>
+          revenue assurance
+        </>
+      ),
+      evidence: [
+        `${revenueRows?.length ?? 0} market product(s) assessed for owner value.`,
+        businessDecision?.recommendation_status
+          ? `Commercial decision is ${businessDecision.recommendation_status}.`
+          : "Commercial decision evidence is pending.",
+        enterpriseMaturity?.display_level
+          ? `Enterprise maturity: ${enterpriseMaturity.display_level}.`
+          : "Enterprise maturity is not scored yet.",
+      ],
+      nextAction:
+        blockerCount > 0
+          ? "Resolve the top commercial or automation blocker before presenting revenue as production-ready."
+          : "Use the revenue assurance view for owner reporting and next market allocation.",
+      title: "Owner value decision",
+      tone: blockerCount ? "amber" : "emerald",
+    };
+  }
+
+  if (personaId === "trader") {
+    return {
+      blockers: topBlockers,
+      decision: (
+        <>
+          {strategyMode}
+          <span className="text-slate-500"> / </span>
+          {automationControl?.primary_market?.market_name ?? "route pending"}
+        </>
+      ),
+      evidence: [
+        `Dispatch bias is ${dispatchBias}.`,
+        automationControl?.next_automation_action?.message ??
+          "No next automation action has been evaluated.",
+        marketAdapterStatus?.market_adapter_status
+          ? `Market access: ${marketAdapterStatus.market_adapter_status}.`
+          : "Market access is not evaluated.",
+      ],
+      nextAction:
+        automationControl?.next_automation_action?.message ??
+        "Open Mission Control to build proposal or run paper validation.",
+      title: "Trading desk decision",
+      tone: blockerCount ? "amber" : "emerald",
+    };
+  }
+
+  if (personaId === "automation_manager") {
+    return {
+      blockers: topBlockers,
+      decision: (
+        <>
+          {String(automationMode).replaceAll("_", " ")}
+          <span className="text-slate-500"> / </span>
+          {automationControl?.mode_escalation?.next_eligible_mode?.replaceAll("_", " ") ?? "gated"}
+        </>
+      ),
+      evidence: [
+        `${blockerCount} automation blocker(s) currently detected.`,
+        automationControl?.mode_escalation?.can_escalate
+          ? "Mode escalation evidence is clear."
+          : "Mode escalation is gated by evidence.",
+        `${automationControl?.remediation_queue?.length ?? 0} remediation item(s) queued.`,
+      ],
+      nextAction:
+        automationControl?.next_automation_action?.message ??
+        "Clear remediation and evidence blockers before increasing autonomy.",
+      title: "Automation escalation decision",
+      tone: automationControl?.mode_escalation?.can_escalate ? "emerald" : "amber",
+    };
+  }
+
+  if (personaId === "optimizer") {
+    return {
+      blockers: topBlockers,
+      decision: (
+        <>
+          {String(signalSummary?.signal ?? "No signal")}
+          <span className="text-slate-500"> / </span>
+          {activeDispatchCount} active intervals
+        </>
+      ),
+      evidence: [
+        `${formatNumber(signalSummary?.profit_per_mw_day, 2)} EUR/MW-day expected from latest dispatch.`,
+        `${formatCurrency(totalRevenue)} modelled revenue stack.`,
+        `${completeness?.score ?? 0}/100 evidence completeness score.`,
+      ],
+      nextAction:
+        activeDispatchCount > 0
+          ? "Use Trading Schedule and Forecast Trust to validate bid conversion."
+          : "Run optimization to generate a tradable schedule.",
+      title: "Optimization decision",
+      tone: activeDispatchCount > 0 ? "emerald" : "amber",
+    };
+  }
+
+  if (personaId === "risk_compliance") {
+    return {
+      blockers: topBlockers,
+      decision: (
+        <>
+          {guardrails?.automation_status ?? "not evaluated"}
+          <span className="text-slate-500"> / </span>
+          {settlement?.settlement?.status ?? "settlement pending"}
+        </>
+      ),
+      evidence: [
+        `${guardrails?.summary?.blocked ?? 0} blocked guardrail(s), ${guardrails?.summary?.review ?? 0} review item(s).`,
+        readiness?.readiness_status
+          ? `Execution readiness is ${readiness.readiness_status}.`
+          : "Execution readiness is not evaluated.",
+        settlement?.settlement
+          ? "Settlement evidence exists."
+          : "Settlement evidence is not reconciled yet.",
+      ],
+      nextAction:
+        blockerCount > 0
+          ? "Review Automation Gates and Audit Evidence before approving automation."
+          : "Keep audit and settlement evidence attached to the trading packet.",
+      title: "Governance decision",
+      tone: blockerCount ? "amber" : "emerald",
+    };
+  }
+
+  if (personaId === "executive") {
+    return {
+      blockers: topBlockers,
+      decision: (
+        <>
+          {enterpriseMaturity?.display_level ?? "maturity pending"}
+          <span className="text-slate-500"> / </span>
+          {formatCurrency(totalRevenue)}
+        </>
+      ),
+      evidence: [
+        `${formatCurrency(signalSummary?.total_pnl_eur)} expected PnL from latest signal.`,
+        `${enterpriseMaturity?.differentiation_score ?? 0}/100 differentiation score.`,
+        `${blockerCount} blocker(s) separating demo evidence from production automation.`,
+      ],
+      nextAction:
+        blockerCount > 0
+          ? "Focus the team on the top blocker before promising production-grade automated trading."
+          : "Use Reports and Revenue Assurance for stakeholder communication.",
+      title: "Executive operating decision",
+      tone: blockerCount ? "amber" : "emerald",
+    };
+  }
+
+  return {
+    blockers: topBlockers,
+    decision: (
+      <>
+        {strategyMode}
+        <span className="text-slate-500"> / </span>
+        {dispatchBias}
+      </>
+    ),
+    evidence,
+    nextAction:
+      automationControl?.next_automation_action?.message ??
+      "Use the workspace tabs below to validate trading, readiness, commercial value, and execution evidence.",
+    title: "Platform decision",
+    tone: blockerCount ? "amber" : "emerald",
+  };
 }
 
 function displayValue(value: unknown, fallback: string) {

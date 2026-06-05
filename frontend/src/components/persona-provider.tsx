@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import {
+  DEFAULT_PERSONA_ID,
   isPersonaId,
   personaProfiles,
   type PersonaId,
@@ -32,10 +33,14 @@ export function PersonaProvider({ children }: { children: React.ReactNode }) {
     const storedValue = window.localStorage.getItem(STORAGE_KEY);
 
     if (storedValue && isPersonaId(storedValue)) {
+      if (storedValue === "optimizer") {
+        return DEFAULT_PERSONA_ID;
+      }
+
       return storedValue;
     }
 
-    return "all";
+    return DEFAULT_PERSONA_ID;
   });
 
   const setPersonaId = (nextPersonaId: PersonaId) => {

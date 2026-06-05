@@ -1,16 +1,23 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
+import { useAssetContext } from "@/components/asset-provider";
 import { DataTable } from "@/components/data-table";
+import { DecisionBrief, type DecisionBriefTone } from "@/components/decision-brief";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
 import { apiGet } from "@/lib/api";
 import type {
+  AncillaryEligibilityResponse,
   ApiEnvelope,
+  AutomationControlStatusResponse,
+  EligibleProductsResponse,
+  MarketConnectorReadinessResponse,
   MarketAdapterRegistryResponse,
   TableRow,
 } from "@/types/api";
@@ -72,12 +79,46 @@ const marketRuleCatalog = [
 ];
 
 export default function MarketRulesPage() {
+  const { selectedAssetId } = useAssetContext();
+
   const adapters = useQuery({
     queryFn: () =>
       apiGet<MarketAdapterRegistryResponse>(
         "/execution/market-adapters?country=Germany",
       ),
     queryKey: ["market-rules-adapters"],
+  });
+
+  const connectorReadiness = useQuery({
+    queryFn: () =>
+      apiGet<MarketConnectorReadinessResponse>(
+        "/execution/market-connectors/readiness?country=Germany",
+      ),
+    queryKey: ["market-rules-connector-readiness"],
+  });
+
+  const automationControl = useQuery({
+    queryFn: () =>
+      apiGet<AutomationControlStatusResponse>(
+        `/assets/${selectedAssetId}/execution/automation-control/status`,
+      ),
+    queryKey: ["market-rules-automation-control", selectedAssetId],
+  });
+
+  const eligibleProducts = useQuery({
+    queryFn: () =>
+      apiGet<EligibleProductsResponse>(
+        `/assets/${selectedAssetId}/eligible-products`,
+      ),
+    queryKey: ["market-rules-eligible-products", selectedAssetId],
+  });
+
+  const ancillary = useQuery({
+    queryFn: () =>
+      apiGet<AncillaryEligibilityResponse>(
+        `/assets/${selectedAssetId}/ancillary/germany/eligibility`,
+      ),
+    queryKey: ["market-rules-ancillary", selectedAssetId],
   });
 
   const products = useQuery({
@@ -87,12 +128,28 @@ export default function MarketRulesPage() {
   });
 
   const ruleRows = useMemo(
-    () => buildRuleRows(adapters.data?.adapters ?? []),
-    [adapters.data?.adapters],
+    () =>
+      buildRuleRows({
+        adapters: adapters.data?.adapters ?? [],
+        connectors:
+          connectorReadiness.data?.connectors ??
+          connectorReadiness.data?.integrations ??
+          [],
+      }),
+    [
+      adapters.data?.adapters,
+      connectorReadiness.data?.connectors,
+      connectorReadiness.data?.integrations,
+    ],
   );
+  const routeSummaryRows = useMemo(() => buildRouteSummaryRows(ruleRows), [ruleRows]);
   const productRows = useMemo(
     () => normalizeProductRows(products.data?.products ?? []),
     [products.data?.products],
+  );
+  const eligibleProductRows = useMemo(
+    () => normalizeEligibleProductRows(eligibleProducts.data?.products ?? []),
+    [eligibleProducts.data?.products],
   );
   const previewOnlyCount = ruleRows.filter(
     (row) => row.live_submission === false,
@@ -100,6 +157,32 @@ export default function MarketRulesPage() {
   const missingCredentialCount = ruleRows.filter(
     (row) => row.credential_status === "missing",
   ).length;
+  const blockedProductCount = eligibleProductRows.filter(
+    (row) => row.eligibility_status === "not_eligible" || row.eligibility_status === "blocked",
+  ).length;
+  const decisionBrief = useMemo(
+    () =>
+      buildMarketRulesDecisionBrief({
+        ancillary: ancillary.data,
+        automationControl: automationControl.data,
+        blockedProductCount,
+        connectorReadiness: connectorReadiness.data,
+        eligibleProductCount: eligibleProducts.data?.eligible_product_count,
+        missingCredentialCount,
+        previewOnlyCount,
+        ruleRows,
+      }),
+    [
+      ancillary.data,
+      automationControl.data,
+      blockedProductCount,
+      connectorReadiness.data,
+      eligibleProducts.data?.eligible_product_count,
+      missingCredentialCount,
+      previewOnlyCount,
+      ruleRows,
+    ],
+  );
 
   return (
     <>
@@ -108,6 +191,26 @@ export default function MarketRulesPage() {
         eyebrow="Market intelligence"
         title="Market rules"
       />
+
+      <div className="mb-6">
+        <DecisionBrief
+          action={
+            <Link
+              className="rounded-md border border-sky-400/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 transition hover:border-sky-300 hover:bg-sky-400/20"
+              href={decisionBrief.actionHref}
+            >
+              {decisionBrief.actionLabel}
+            </Link>
+          }
+          blockers={decisionBrief.blockers}
+          decision={decisionBrief.decision}
+          evidence={decisionBrief.evidence}
+          eyebrow="Market eligibility gate"
+          nextAction={decisionBrief.nextAction}
+          tone={decisionBrief.tone}
+          title="Which markets can automation trade?"
+        />
+      </div>
 
       <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard
@@ -138,21 +241,18 @@ export default function MarketRulesPage() {
 
       <SectionCard
         action={<StatusPill tone="amber">Automation gate checks</StatusPill>}
-        title="Market gate and automation rules"
+        title="Market route automation gates"
       >
         <DataTable
           columns={[
             "adapter_id",
             "venue",
             "market_segment",
-            "gate_closure",
-            "product_timing",
-            "supported_granularity",
-            "submission_mode",
-            "credential_status",
-            "automation_blocker",
+            "automation_mode",
+            "readiness_score",
+            "next_gate",
           ]}
-          rows={ruleRows}
+          rows={routeSummaryRows}
         />
       </SectionCard>
 
@@ -163,12 +263,10 @@ export default function MarketRulesPage() {
               "product_id",
               "product_name",
               "market",
-              "settlement_interval_minutes",
               "minimum_power_mw",
-              "minimum_duration_hours",
               "requires_prequalification",
             ]}
-            rows={productRows}
+            rows={productRows.slice(0, 8)}
           />
         </SectionCard>
 
@@ -197,24 +295,93 @@ export default function MarketRulesPage() {
           </div>
         </SectionCard>
       </div>
+
+      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
+        <SectionCard
+          action={<StatusPill tone={blockedProductCount ? "amber" : "emerald"}>{eligibleProductRows.length}</StatusPill>}
+          title="Asset-specific product eligibility"
+        >
+          <DataTable
+            columns={[
+              "product_id",
+              "product_name",
+              "market",
+              "eligibility_status",
+              "automation_gate",
+            ]}
+            rows={eligibleProductRows.slice(0, 8)}
+          />
+        </SectionCard>
+
+        <SectionCard title="EPEX vs ancillary automation contract">
+          <div className="space-y-3">
+            <MarketRuleRow
+              label="EPEX wholesale"
+              tone={epexTone(ruleRows)}
+              value={epexReadinessLabel(ruleRows)}
+            />
+            <MarketRuleRow
+              label="Ancillary services"
+              tone={ancillary.data?.eligible ? "emerald" : "amber"}
+              value={ancillary.data?.eligible ? "eligible" : ancillary.data?.reason ?? "prequalification required"}
+            />
+            <MarketRuleRow
+              label="Connector readiness"
+              tone={connectorReadiness.data?.connector_status === "production_ready" ? "emerald" : "amber"}
+              value={connectorReadiness.data?.connector_status ?? "not evaluated"}
+            />
+            <MarketRuleRow
+              label="Automation control"
+              tone={automationControl.data?.live_trading_allowed ? "emerald" : automationControl.data?.paper_trading_allowed ? "blue" : "amber"}
+              value={automationControl.data?.automation_status ?? automationControl.data?.automation_mode ?? "not evaluated"}
+            />
+          </div>
+        </SectionCard>
+      </div>
     </>
   );
 }
 
-function buildRuleRows(adapters: NonNullable<MarketAdapterRegistryResponse["adapters"]>) {
+function buildRuleRows({
+  adapters,
+  connectors,
+}: {
+  adapters: NonNullable<MarketAdapterRegistryResponse["adapters"]>;
+  connectors: NonNullable<MarketConnectorReadinessResponse["connectors"]>;
+}) {
+  const connectorById = new Map(
+    connectors.map((connector) => [connector.adapter_id, connector]),
+  );
+
   return adapters
     .filter((adapter) => adapter.environment !== "paper" && adapter.environment !== "demo")
     .map((adapter) => {
       const rule = marketRuleCatalog.find(
         (item) => item.adapter_id === adapter.adapter_id,
       );
+      const connector = connectorById.get(adapter.adapter_id);
+      const missingCredentials =
+        connector?.missing_credentials?.length
+          ? `Missing ${connector.missing_credentials.join(", ")}`
+          : null;
+      const missingControls =
+        connector?.missing_controls?.length
+          ? `Missing ${connector.missing_controls.join(", ")}`
+          : null;
 
       return {
         ...adapter,
-        automation_blocker: rule?.automation_blocker ?? adapter.next_connection_action,
+        automation_blocker:
+          missingCredentials ??
+          missingControls ??
+          connector?.next_integration_action ??
+          rule?.automation_blocker ??
+          adapter.next_connection_action,
+        automation_scope: connector?.automation_blocking_level ?? "preview_only",
         gate_closure: rule?.gate_closure ?? "Connector-specific gate timing required",
         market_rule: rule?.market_rule ?? adapter.next_connection_action,
         product_timing: rule?.product_timing ?? "-",
+        readiness_score: connector?.readiness_score ?? "-",
         submission_mode: adapter.live_submission ? "live_enabled" : rule?.submission_mode ?? "preview_only",
         supported_granularity: (adapter.supported_granularity ?? []).join(", "),
       };
@@ -227,6 +394,156 @@ function normalizeProductRows(rows: TableRow[]) {
     product_name: row.product_name ?? row.name ?? "-",
     requires_prequalification: row.requires_prequalification ?? false,
   }));
+}
+
+function normalizeEligibleProductRows(
+  rows: NonNullable<EligibleProductsResponse["products"]>,
+) {
+  return rows.map((row) => {
+    const product = row.product ?? {};
+
+    return {
+      automation_gate:
+        row.eligibility_status === "eligible"
+          ? "eligible for allocation"
+          : row.eligibility_status === "review_required"
+            ? "review before automation"
+            : formatList(row.blocking_reasons),
+      blocking_reasons: formatList(row.blocking_reasons),
+      eligibility_status: row.eligibility_status ?? "-",
+      market: product.market ?? row.market ?? "-",
+      product_id: product.product_id ?? row.product_id ?? "-",
+      product_name: product.product_name ?? row.product_name ?? "-",
+      review_warnings: formatList(row.review_warnings),
+    };
+  });
+}
+
+function buildRouteSummaryRows(rows: ReturnType<typeof buildRuleRows>) {
+  return rows.map((row) => ({
+    adapter_id: row.adapter_id,
+    automation_mode: row.live_submission ? "live enabled" : row.submission_mode,
+    market_segment: row.market_segment,
+    next_gate: row.automation_blocker,
+    readiness_score: row.readiness_score,
+    venue: row.venue,
+  }));
+}
+
+function buildMarketRulesDecisionBrief({
+  ancillary,
+  automationControl,
+  blockedProductCount,
+  connectorReadiness,
+  eligibleProductCount,
+  missingCredentialCount,
+  previewOnlyCount,
+  ruleRows,
+}: {
+  ancillary?: AncillaryEligibilityResponse;
+  automationControl?: AutomationControlStatusResponse;
+  blockedProductCount: number;
+  connectorReadiness?: MarketConnectorReadinessResponse;
+  eligibleProductCount?: number;
+  missingCredentialCount: number;
+  previewOnlyCount: number;
+  ruleRows: ReturnType<typeof buildRuleRows>;
+}) {
+  const blockers: string[] = [];
+  const summary = connectorReadiness?.summary ?? {};
+  const liveBlockingCount = Number(summary.live_auto_blocking_count ?? 0);
+
+  if (missingCredentialCount > 0) {
+    blockers.push(`${missingCredentialCount} market route(s) still need exchange credentials.`);
+  }
+
+  if (previewOnlyCount > 0) {
+    blockers.push(`${previewOnlyCount} route(s) remain preview-only before live submission.`);
+  }
+
+  if (!ancillary?.eligible) {
+    blockers.push(ancillary?.reason ?? "Ancillary prequalification is not confirmed.");
+  }
+
+  if (blockedProductCount > 0) {
+    blockers.push(`${blockedProductCount} asset product(s) are blocked or not eligible.`);
+  }
+
+  for (const blocker of automationControl?.blockers ?? []) {
+    blockers.push(
+      String(
+        blocker.message ??
+          blocker.required_action ??
+          blocker.label ??
+          "Automation control blocker",
+      ),
+    );
+  }
+
+  const hasLiveRoute = ruleRows.some((row) => row.live_submission === true);
+  const tone: DecisionBriefTone = automationControl?.live_trading_allowed
+    ? "emerald"
+    : automationControl?.supervised_trading_allowed || automationControl?.paper_trading_allowed
+      ? "blue"
+      : blockers.length
+        ? "amber"
+        : "slate";
+
+  return {
+    actionHref: blockers.length ? "/execution/market-connectors" : "/execution/market-allocation",
+    actionLabel: blockers.length ? "Open market access" : "Allocate markets",
+    blockers: blockers.slice(0, 4),
+    decision: automationControl?.live_trading_allowed
+      ? "At least one market route is eligible for live automated trading."
+      : automationControl?.supervised_trading_allowed
+        ? "Markets can support supervised automation, but live auto remains gated."
+        : automationControl?.paper_trading_allowed
+          ? "Keep market execution in paper mode until connector and eligibility gates clear."
+          : "Market rules currently block automated trading escalation.",
+    evidence: [
+      `${ruleRows.length} German market route(s) mapped across EPEX and regelleistung`,
+      `${eligibleProductCount ?? 0} asset product(s) commercially eligible or reviewable`,
+      `${Number(summary.epex_count ?? 0)} EPEX route(s), ${Number(summary.ancillary_count ?? 0)} ancillary route(s) tracked`,
+      hasLiveRoute
+        ? "At least one connector advertises live submission"
+        : `${liveBlockingCount || previewOnlyCount} route(s) still block live automation`,
+    ],
+    nextAction:
+      automationControl?.next_automation_action?.message ??
+      connectorReadiness?.recommended_actions?.[0] ??
+      blockers[0] ??
+      "Feed eligible routes into market allocation before bid proposal generation.",
+    tone,
+  };
+}
+
+function epexTone(rows: ReturnType<typeof buildRuleRows>): DecisionBriefTone {
+  const epexRows = rows.filter((row) => String(row.adapter_id).startsWith("epex_"));
+
+  if (epexRows.some((row) => row.live_submission === true)) {
+    return "emerald";
+  }
+
+  if (epexRows.length) {
+    return "amber";
+  }
+
+  return "red";
+}
+
+function epexReadinessLabel(rows: ReturnType<typeof buildRuleRows>) {
+  const epexRows = rows.filter((row) => String(row.adapter_id).startsWith("epex_"));
+  const liveCount = epexRows.filter((row) => row.live_submission === true).length;
+
+  if (liveCount) {
+    return `${liveCount} live route(s)`;
+  }
+
+  return epexRows.length ? "preview/live credentials required" : "not mapped";
+}
+
+function formatList(value: unknown) {
+  return Array.isArray(value) ? value.join(" | ") || "-" : String(value ?? "-");
 }
 
 function MarketRuleRow({

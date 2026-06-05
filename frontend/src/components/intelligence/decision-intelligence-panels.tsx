@@ -10,23 +10,46 @@ export function WorkflowAuditTrailPanel({
 }: {
   workflowRows: TableRow[];
 }) {
+  const latestRows = workflowRows.slice(0, 10);
+
   return (
     <SectionCard
       action={<StatusPill tone="blue">{workflowRows.length} runs</StatusPill>}
       title="Workflow audit trail"
     >
+      {workflowRows[0] ? (
+        <div className="mb-4 grid gap-3 md:grid-cols-3">
+          <KpiCard
+            accent={workflowRows[0].status === "ok" ? "emerald" : "amber"}
+            helper="Most recent audited run"
+            label="Latest status"
+            value={String(workflowRows[0].status ?? "-")}
+          />
+          <KpiCard
+            accent="blue"
+            helper="Forecast, signal, revenue, and decision linkage"
+            label="Evidence links"
+            value={countEvidenceLinks(workflowRows[0])}
+          />
+          <KpiCard
+            accent="emerald"
+            helper="Commercial recommendation evidence"
+            label="Decision"
+            value={String(workflowRows[0].recommendation_status ?? "-")}
+          />
+        </div>
+      ) : null}
       <DataTable
         columns={[
           "workflow_run_id",
           "completed_at",
-          "forecast_snapshot_id",
           "signal_id",
           "revenue_stack_id",
           "decision_id",
           "recommendation_status",
           "expected_pnl_eur",
         ]}
-        rows={workflowRows}
+        rows={latestRows}
       />
     </SectionCard>
   );
@@ -75,6 +98,8 @@ export function DecisionHistoryPanel({
 }: {
   decisionTrend: TableRow[];
 }) {
+  const latestRows = decisionTrend.slice(0, 8);
+
   return (
     <SectionCard title="Decision history">
       <DataTable
@@ -83,11 +108,9 @@ export function DecisionHistoryPanel({
           "readiness",
           "recommendation_status",
           "expected_pnl_eur",
-          "hedged_revenue_eur",
           "residual_exposure_eur",
-          "forecast_provider",
         ]}
-        rows={decisionTrend}
+        rows={latestRows}
       />
       {decisionTrend.length ? (
         <div className="mt-5">
@@ -107,6 +130,8 @@ export function ForecastPerformanceEvidencePanel({
 }: {
   performanceRows: TableRow[];
 }) {
+  const latestRows = performanceRows.slice(0, 8);
+
   return (
     <SectionCard title="Forecast performance history">
       <DataTable
@@ -114,13 +139,10 @@ export function ForecastPerformanceEvidencePanel({
           "target_date",
           "forecast_provider",
           "mae_eur_per_mwh",
-          "rmse_eur_per_mwh",
           "bias_eur_per_mwh",
-          "predicted_pnl_eur",
-          "realized_pnl_eur",
           "revenue_delta_eur",
         ]}
-        rows={performanceRows}
+        rows={latestRows}
       />
       {performanceRows.length ? (
         <div className="mt-5">
@@ -140,6 +162,8 @@ export function ProductEligibilityMatrixPanel({
 }: {
   productMatrix: TableRow[];
 }) {
+  const productRows = productMatrix.slice(0, 10);
+
   return (
     <SectionCard title="Market product eligibility matrix">
       <DataTable
@@ -148,11 +172,19 @@ export function ProductEligibilityMatrixPanel({
           "product_name",
           "market",
           "eligibility_status",
-          "blocking_reasons",
-          "review_warnings",
+          "automation_gate",
         ]}
-        rows={productMatrix}
+        rows={productRows}
       />
     </SectionCard>
   );
+}
+
+function countEvidenceLinks(row: TableRow) {
+  return [
+    row.forecast_snapshot_id,
+    row.signal_id,
+    row.revenue_stack_id,
+    row.decision_id,
+  ].filter((value) => value !== null && value !== undefined && value !== "-").length;
 }

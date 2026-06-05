@@ -5,11 +5,11 @@ import ExecutionPage from "@/app/execution/page";
 export default function ExecutionSimulationPage() {
   return (
     <ExecutionPage
-      description="Validate bids through paper trading and demo market lifecycle evidence before enabling live market connectivity."
-      eyebrow="Trading operations"
+      description="Validate automated bids through paper trading and simulated market lifecycle evidence before enabling higher automation modes."
+      eyebrow="Automated trading"
       initialTab="simulation"
       showTabs={false}
-      title="Simulation"
+      title="Paper Trading"
     />
   );
 }

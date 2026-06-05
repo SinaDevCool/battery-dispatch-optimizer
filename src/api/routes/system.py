@@ -15,6 +15,7 @@ from src.config.paths import (
     OUTPUT_DATA_DIR,
     SCENARIO_RESULTS_FILE,
 )
+from src.services.persistence_readiness import build_persistence_readiness
 
 
 router = APIRouter()
@@ -72,6 +73,28 @@ def system_health():
         "checks": checks,
         "missing_required": missing_required,
     }
+
+
+@router.get("/system/persistence-readiness")
+def persistence_readiness():
+    try:
+        return build_persistence_readiness()
+    except Exception as error:
+        return {
+            "status": "error",
+            "persistence_status": "blocked",
+            "message": f"Could not evaluate persistence readiness: {error}",
+            "checks": [],
+            "summary": {
+                "blocked": 1,
+                "passed": 0,
+                "review": 0,
+                "total": 1,
+            },
+            "recommended_actions": [
+                "Resolve backend persistence readiness evaluation before automated trading.",
+            ],
+        }
 
 
 @router.get("/status")
