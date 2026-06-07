@@ -5,8 +5,11 @@ import { useState } from "react";
 
 import { useAssetContext } from "@/components/asset-provider";
 import { DecisionBrief } from "@/components/decision-brief";
+import { DataTable } from "@/components/data-table";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
+import { SectionCard } from "@/components/section-card";
+import { StatusPill } from "@/components/status-pill";
 import {
   RevenueAllocationPanel,
   RevenueConstraintsPanel,
@@ -143,11 +146,18 @@ export default function RevenuePage() {
         Number(right.estimated_revenue_eur ?? 0) -
         Number(left.estimated_revenue_eur ?? 0),
     )[0];
+  const executableRevenue = eligibleRows
+    .filter((row) => row.status === "ok" || row.automation_fit === "ready for market allocation")
+    .reduce((sum, row) => sum + Number(row.estimated_revenue_eur ?? 0), 0);
+  const blockedRevenue = rows
+    .filter((row) => row.automation_fit !== "ready for market allocation")
+    .reduce((sum, row) => sum + Number(row.estimated_revenue_eur ?? 0), 0);
   const commercialBlockers = [
     blockedRows.length ? `${blockedRows.length} product(s) are blocked or not eligible.` : null,
     warningRows.length ? `${warningRows.length} product(s) require commercial review.` : null,
     allocationRows.length ? null : "Capacity allocation evidence is not available yet.",
   ].filter(Boolean) as string[];
+  const revenueUnlockRows = buildRevenueUnlockRows(rows);
 
   return (
     <>
@@ -192,6 +202,41 @@ export default function RevenuePage() {
         <KpiCard label="Allocation status" value={allocation.data?.status ?? "-"} />
         <KpiCard accent="blue" label="Asset" value={selectedAssetId} />
       </div>
+
+      <SectionCard
+        action={
+          <StatusPill tone={commercialBlockers.length ? "amber" : "emerald"}>
+            {commercialBlockers.length ? "Revenue not fully bankable" : "Bankable stack"}
+          </StatusPill>
+        }
+        className="mb-5"
+        title="Bankable revenue bridge"
+      >
+        <div className="mb-4 grid gap-4 md:grid-cols-3">
+          <KpiCard
+            accent="emerald"
+            label="Automatable now"
+            value={formatCurrency(executableRevenue)}
+            helper="Eligible products with clear automation fit."
+          />
+          <KpiCard
+            accent={blockedRevenue > 0 ? "amber" : "emerald"}
+            label="Blocked or review upside"
+            value={formatCurrency(blockedRevenue)}
+            helper={`${blockedRows.length + warningRows.length} product(s) need evidence or review.`}
+          />
+          <KpiCard
+            accent={allocationRows.length ? "emerald" : "amber"}
+            label="Allocation proof"
+            value={allocationRows.length ? "available" : "missing"}
+            helper="Needed before promising capacity across products."
+          />
+        </div>
+        <DataTable
+          columns={["product_id", "commercial_value", "automation_fit", "unlock_action"]}
+          rows={revenueUnlockRows}
+        />
+      </SectionCard>
 
       <WorkspaceTabs
         activeTab={activeTab}
@@ -299,4 +344,40 @@ function classifyRevenueAutomationFit(row: RevenueStackResult) {
   }
 
   return "advisory only";
+}
+
+function buildRevenueUnlockRows(rows: TableRow[]) {
+  return rows
+    .toSorted(
+      (left, right) =>
+        Number(right.estimated_revenue_eur ?? 0) -
+        Number(left.estimated_revenue_eur ?? 0),
+    )
+    .slice(0, 6)
+    .map((row) => ({
+      automation_fit: row.automation_fit,
+      commercial_value: formatCurrency(Number(row.estimated_revenue_eur ?? 0)),
+      product_id: row.product_id,
+      unlock_action: buildUnlockAction(row),
+    }));
+}
+
+function buildUnlockAction(row: TableRow) {
+  if (row.automation_fit === "ready for market allocation") {
+    return "Route into capacity allocation and bid proposal.";
+  }
+
+  if (row.blocking_reasons && row.blocking_reasons !== "-") {
+    return String(row.blocking_reasons);
+  }
+
+  if (row.review_warnings && row.review_warnings !== "-") {
+    return String(row.review_warnings);
+  }
+
+  if (row.missing_inputs && row.missing_inputs !== "-") {
+    return `Provide missing inputs: ${row.missing_inputs}`;
+  }
+
+  return "Run allocation and commercial review before automation.";
 }

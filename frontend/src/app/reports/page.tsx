@@ -48,13 +48,26 @@ export default function ReportsPage() {
     reportStatus: latest.data?.status,
     reportName,
   });
+  const deliveryGapRows = buildDeliveryGapRows({
+    completeness: completeness.data,
+    reportStatus: latest.data?.status,
+  });
+  const backendConnectionRows = buildBackendConnectionRows({
+    archiveCount: archive.data?.report_count,
+    completeness: completeness.data,
+    reportStatus: latest.data?.status,
+    selectedAssetId,
+  });
+  const deliveryState = reportDecision.blockers.length
+    ? "Draft"
+    : "Client ready";
 
   return (
     <>
       <PageHeading
-        description="Management reporting should be backed by forecast, dispatch, revenue, regulatory, and execution evidence. This first web view links the current HTML report and shows whether the selected asset has enough evidence for a client-facing report."
+        description="Package forecast, dispatch, revenue, regulatory, and execution evidence into a defensible client report. This view makes the delivery state, open evidence gaps, archive, and backend source routes explicit."
         eyebrow="Management reporting"
-        title="Reports"
+        title="Client reporting"
       />
 
       <DecisionBrief
@@ -70,18 +83,27 @@ export default function ReportsPage() {
 
       <div className="mb-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="Latest report" value={reportName} />
-        <KpiCard label="Report status" value={latest.data?.status ?? "-"} />
+        <KpiCard
+          accent={deliveryState === "Client ready" ? "emerald" : "amber"}
+          label="Client delivery state"
+          value={deliveryState}
+          helper={latest.data?.status === "ok" ? "HTML report available" : "Report not generated"}
+        />
+        <KpiCard
+          accent={
+            Number(completeness.data?.missing_count ?? 0) > 0
+              ? "amber"
+              : "emerald"
+          }
+          label="Evidence score"
+          value={`${completeness.data?.score ?? "-"} / 100`}
+          helper={`${completeness.data?.complete_count ?? 0} of ${completeness.data?.check_count ?? 0} checks complete`}
+        />
         <KpiCard
           accent="blue"
           label="Archive count"
           value={archive.data?.report_count ?? 0}
           helper="Persisted report files"
-        />
-        <KpiCard
-          accent={latest.data?.status === "ok" ? "emerald" : "amber"}
-          label="Format"
-          value="HTML"
-          helper="PDF export should be added for client delivery"
         />
       </div>
 
@@ -113,6 +135,10 @@ export default function ReportsPage() {
                   { field: "Report name", value: reportName },
                   { field: "Report file", value: latest.data.report_file ?? "-" },
                   { field: "Delivery status", value: "Draft HTML" },
+                  {
+                    field: "Viewer route",
+                    value: "/reports/monthly/latest/view",
+                  },
                 ]}
               />
             </div>
@@ -127,6 +153,43 @@ export default function ReportsPage() {
           data={completeness.data}
           title="Report evidence readiness"
         />
+      </div>
+
+      <div className="mb-5 grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <SectionCard
+          action={
+            <StatusPill tone={deliveryGapRows.length ? "amber" : "emerald"}>
+              {deliveryGapRows.length ? `${deliveryGapRows.length} gap(s)` : "Clear"}
+            </StatusPill>
+          }
+          title="Client delivery gaps"
+        >
+          <DataTable
+            columns={["gap", "status", "next_action"]}
+            rows={
+              deliveryGapRows.length
+                ? deliveryGapRows
+                : [
+                    {
+                      gap: "Client delivery pack",
+                      status: "ready",
+                      next_action:
+                        "Use the latest report and archive as the delivery evidence.",
+                    },
+                  ]
+            }
+          />
+        </SectionCard>
+
+        <SectionCard
+          action={<StatusPill tone="blue">Backend linked</StatusPill>}
+          title="Backend connection map"
+        >
+          <DataTable
+            columns={["capability", "backend_route", "status", "business_value"]}
+            rows={backendConnectionRows}
+          />
+        </SectionCard>
       </div>
 
       <SectionCard title="Report archive">
@@ -171,4 +234,80 @@ function buildReportDecision({
       "Deliver the report and use the archive as the asset audit trail.",
     tone: blockers.length ? "amber" as const : "emerald" as const,
   };
+}
+
+function buildDeliveryGapRows({
+  completeness,
+  reportStatus,
+}: {
+  completeness?: DataCompletenessResponse;
+  reportStatus?: string;
+}) {
+  const rows = [];
+
+  if (reportStatus !== "ok") {
+    rows.push({
+      gap: "Monthly report artifact",
+      status: "missing",
+      next_action: "Generate the monthly report before client delivery.",
+    });
+  }
+
+  if (Number(completeness?.missing_count ?? 0) > 0) {
+    rows.push({
+      gap: "Evidence completeness",
+      status: `${completeness?.missing_count} open gap(s)`,
+      next_action:
+        completeness?.next_actions?.[0] ??
+        "Close missing forecast, dispatch, revenue, or execution evidence.",
+    });
+  }
+
+  rows.push({
+    gap: "PDF delivery export",
+    status: "not connected",
+    next_action:
+      "HTML is available now; add a backend PDF export route before formal client delivery.",
+  });
+
+  return rows;
+}
+
+function buildBackendConnectionRows({
+  archiveCount,
+  completeness,
+  reportStatus,
+  selectedAssetId,
+}: {
+  archiveCount?: number;
+  completeness?: DataCompletenessResponse;
+  reportStatus?: string;
+  selectedAssetId: string;
+}) {
+  return [
+    {
+      capability: "Latest report metadata",
+      backend_route: "/reports/monthly/latest",
+      status: reportStatus ?? "not_loaded",
+      business_value: "Shows the current client-facing report artifact.",
+    },
+    {
+      capability: "HTML report viewer",
+      backend_route: "/reports/monthly/latest/view",
+      status: reportStatus === "ok" ? "available" : "not_available",
+      business_value: "Lets a user inspect the generated report directly.",
+    },
+    {
+      capability: "Report archive",
+      backend_route: "/reports/monthly/list",
+      status: `${archiveCount ?? 0} archived`,
+      business_value: "Keeps a lightweight client reporting audit trail.",
+    },
+    {
+      capability: "Evidence readiness",
+      backend_route: `/assets/${selectedAssetId}/data-completeness`,
+      status: completeness?.readiness ?? completeness?.status ?? "not_loaded",
+      business_value: "Prevents reports from being sent without proof.",
+    },
+  ];
 }

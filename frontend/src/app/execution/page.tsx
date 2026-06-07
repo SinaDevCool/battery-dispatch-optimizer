@@ -42,16 +42,21 @@ import type {
   ExecutionProposalHistoryResponse,
   ExecutionProposalResponse,
   ExecutionReadinessResponse,
+  LiveTradingReadinessResponse,
+  ExecutionRecoveryPlanResponse,
   EpexDayAheadPreviewResponse,
   EpexIntradayAuctionPreviewResponse,
   EpexIntradayContinuousPreviewResponse,
   ForecastConfidenceResponse,
   LatestSignalResponse,
+  MarketConnectorReadinessResponse,
+  MarketSubmissionLifecycleResponse,
   MarketSubmissionResponse,
   MultiMarketAllocationResponse,
   RegelleistungAfrrPreviewResponse,
   RegelleistungFcrPreviewResponse,
   RegelleistungMfrrPreviewResponse,
+  RouteAutomationCertification,
   SettlementResponse,
   StrategyIntentResponse,
 } from "@/types/api";
@@ -126,6 +131,14 @@ export default function ExecutionPage({
         `/assets/${selectedAssetId}/execution/automation-control/status`,
       ),
     queryKey: ["execution-automation-control", selectedAssetId],
+  });
+
+  const liveTradingReadiness = useQuery({
+    queryFn: () =>
+      apiGet<LiveTradingReadinessResponse>(
+        `/assets/${selectedAssetId}/execution/live-trading-readiness?country=Germany`,
+      ),
+    queryKey: ["execution-live-trading-readiness", selectedAssetId],
   });
 
   const automationEvents = useQuery({
@@ -214,6 +227,22 @@ export default function ExecutionPage({
     queryKey: ["execution-market-submission-latest", selectedAssetId],
   });
 
+  const submissionLifecycle = useQuery({
+    queryFn: () =>
+      apiGet<MarketSubmissionLifecycleResponse>(
+        `/assets/${selectedAssetId}/execution/submission-lifecycle`,
+      ),
+    queryKey: ["execution-submission-lifecycle", selectedAssetId],
+  });
+
+  const recoveryPlan = useQuery({
+    queryFn: () =>
+      apiGet<ExecutionRecoveryPlanResponse>(
+        `/assets/${selectedAssetId}/execution/recovery-plan`,
+      ),
+    queryKey: ["execution-recovery-plan", selectedAssetId],
+  });
+
   const approval = useQuery({
     queryFn: () =>
       apiGet<ExecutionApprovalResponse>(
@@ -236,6 +265,14 @@ export default function ExecutionPage({
         `/assets/${selectedAssetId}/execution/market-adapter/status`,
       ),
     queryKey: ["execution-market-adapter-status", selectedAssetId],
+  });
+
+  const marketConnectorReadiness = useQuery({
+    queryFn: () =>
+      apiGet<MarketConnectorReadinessResponse>(
+        `/execution/market-connectors/readiness?country=Germany&asset_id=${selectedAssetId}`,
+      ),
+    queryKey: ["execution-market-connectors-readiness", selectedAssetId],
   });
 
   const multiMarketAllocation = useQuery({
@@ -303,6 +340,8 @@ export default function ExecutionPage({
   const automationBlockers = proposal?.automation_blockers ?? [];
   const hardBlockers = proposal?.blockers ?? [];
   const summary = proposal?.summary ?? {};
+  const bidPackage = proposal?.bid_package;
+  const bidPackageSummary = bidPackage?.summary ?? {};
   const expectedPnl = Number(
     summary.expected_pnl_eur ?? signalSummary.total_pnl_eur ?? 0,
   );
@@ -310,7 +349,11 @@ export default function ExecutionPage({
     summary.profit_per_mw_day ?? signalSummary.profit_per_mw_day;
   const paperTrade = latestPaperTrade.data?.paper_trade;
   const paperTradeFills = paperTrade?.fills ?? [];
-  const lifecycleRows = paperTrade?.bid_lifecycle ?? proposal?.bid_lifecycle ?? [];
+  const lifecycleRows =
+    submissionLifecycle.data?.steps ??
+    paperTrade?.bid_lifecycle ??
+    proposal?.bid_lifecycle ??
+    [];
   const settlementData = settlement.data?.settlement;
   const settlementSummary = settlementData?.summary ?? {};
   const varianceDrivers = settlementData?.variance_drivers ?? [];
@@ -323,6 +366,9 @@ export default function ExecutionPage({
   const submissionSummary = submission?.summary ?? {};
   const approvalData = approval.data?.approval;
   const marketAllocation = multiMarketAllocation.data;
+  const connectorReadiness = marketConnectorReadiness.data;
+  const connectorSummary = connectorReadiness?.summary ?? {};
+  const routeCertifications = connectorReadiness?.route_certifications ?? [];
   const control = automationControl.data;
   const eventRows = automationEvents.data?.events ?? [];
   const humanGate = control?.human_gate ?? {};
@@ -331,6 +377,7 @@ export default function ExecutionPage({
   const freshnessGates = control?.freshness_gates ?? [];
   const modeEscalation = control?.mode_escalation;
   const remediationQueue = control?.remediation_queue ?? [];
+  const recovery = recoveryPlan.data;
   const primaryMarket = control?.primary_market ?? marketAllocation?.primary_market;
   const intent = strategyIntent.data;
   const pipelineStages = useMemo(
@@ -448,6 +495,7 @@ export default function ExecutionPage({
     Promise.all([
       latestProposal.refetch(),
       automationControl.refetch(),
+      liveTradingReadiness.refetch(),
       automationEvents.refetch(),
       strategyIntent.refetch(),
       proposalHistory.refetch(),
@@ -458,9 +506,12 @@ export default function ExecutionPage({
       automationGuardrails.refetch(),
       telemetry.refetch(),
       marketSubmission.refetch(),
+      submissionLifecycle.refetch(),
+      recoveryPlan.refetch(),
       approval.refetch(),
       readiness.refetch(),
       marketAdapterStatus.refetch(),
+      marketConnectorReadiness.refetch(),
       multiMarketAllocation.refetch(),
       epexDayAheadPreview.refetch(),
       epexIntradayAuctionPreview.refetch(),
@@ -518,6 +569,36 @@ export default function ExecutionPage({
               helper={humanGate.required ? "Required by automation policy" : "Not required"}
             />
             <KpiCard
+              accent={officialApiTone(connectorReadiness?.official_api_compliance_status)}
+              label="Official API"
+              value={connectorReadiness?.official_api_compliance_status ?? "-"}
+              helper={`${connectorSummary.official_api_compliant_route_count ?? 0}/${connectorSummary.official_api_route_count ?? 0} compliant`}
+            />
+            <KpiCard
+              accent={routeCertificationTone(connectorReadiness?.route_certification_status)}
+              label="Route certification"
+              value={connectorReadiness?.route_certification_status ?? "-"}
+              helper={`${connectorSummary.certified_route_count ?? 0}/${connectorSummary.route_certification_count ?? 0} certified`}
+            />
+            <KpiCard
+              accent={sandboxCertificationTone(connectorReadiness?.sandbox_certification_status)}
+              label="Sandbox certification"
+              value={connectorReadiness?.sandbox_certification_status ?? "-"}
+              helper={`${connectorSummary.paper_certified_count ?? 0} paper / ${connectorSummary.supervised_live_certified_count ?? 0} supervised live`}
+            />
+            <KpiCard
+              accent={supervisedLiveGateTone(connectorReadiness?.supervised_live_gate_status)}
+              label="Supervised live gate"
+              value={connectorReadiness?.supervised_live_gate_status ?? "-"}
+              helper={`${connectorSummary.supervised_live_candidate_count ?? 0} candidate / ${connectorSummary.paper_ready_live_blocked_count ?? 0} blocked`}
+            />
+            <KpiCard
+              accent={handshakeTone(connectorReadiness?.handshake_readiness_status)}
+              label="Live handshake"
+              value={connectorReadiness?.handshake_readiness_status ?? "-"}
+              helper={`${connectorSummary.handshake_ready_count ?? 0}/${connectorSummary.handshake_target_count ?? 0} dry-run ready`}
+            />
+            <KpiCard
               accent={controlBlockers.length ? "red" : "emerald"}
               label="Blockers"
               value={controlBlockers.length}
@@ -542,6 +623,11 @@ export default function ExecutionPage({
               primaryMarket?.market_name
                 ? `Primary route: ${primaryMarket.market_name}.`
                 : "No primary market route is selected yet.",
+              `${connectorSummary.official_api_compliant_route_count ?? 0}/${connectorSummary.official_api_route_count ?? 0} route(s) meet official API compliance gates.`,
+              `${connectorSummary.paper_certified_count ?? 0} market route(s) are certified for automated paper execution.`,
+              `${connectorSummary.certified_route_count ?? 0}/${connectorSummary.route_certification_count ?? 0} route(s) have route-level automation certification.`,
+              `${connectorSummary.supervised_live_candidate_count ?? 0} route(s) clear supervised-live readiness.`,
+              `${connectorSummary.handshake_ready_count ?? 0}/${connectorSummary.handshake_target_count ?? 0} live adapter handshakes are dry-run ready.`,
             ]}
             eyebrow="Mission control"
             nextAction={
@@ -613,6 +699,15 @@ export default function ExecutionPage({
               </div>
             </div>
           </SectionCard>
+
+          <GoLiveReadinessPanel
+            data={liveTradingReadiness.data}
+            refetchExecution={refetchExecution}
+          />
+          <RouteCertificationPanel
+            routes={routeCertifications}
+            status={connectorReadiness?.route_certification_status}
+          />
         </>
       ) : null}
 
@@ -671,6 +766,9 @@ export default function ExecutionPage({
             evidence={[
               `Expected PnL ${formatCurrency(summary.expected_pnl_eur ?? expectedPnl)}.`,
               `Route ${primaryMarket?.market_name ?? proposal?.market ?? "not selected"}.`,
+              `Gate ${String(summary.market_gate_closure ?? primaryMarket?.gate_closure_label ?? "not configured")}.`,
+              `Order style ${String(summary.order_style ?? primaryMarket?.order_style ?? "not configured").replaceAll("_", " ")}.`,
+              `Package ${String(summary.package_validation_status ?? bidPackage?.validation?.status ?? "not built")}.`,
               `Paper mode ${control?.paper_trading_allowed ? "allowed" : "gated"}.`,
             ]}
             eyebrow="Bid proposal decision"
@@ -688,6 +786,41 @@ export default function ExecutionPage({
             title="Order package automation pipeline"
           />
           <SectionCard
+            action={<StatusPill tone={bidPackageTone(bidPackage?.package_status)}>{bidPackage?.package_status ?? "not built"}</StatusPill>}
+            title="Market-native bid package"
+          >
+            <div className="mb-4 grid gap-3 md:grid-cols-4">
+              <KpiCard
+                accent="blue"
+                helper={String(bidPackage?.order_style ?? "-").replaceAll("_", " ")}
+                label="Adapter"
+                value={bidPackage?.adapter_id ?? "-"}
+              />
+              <KpiCard
+                accent={bidPackageTone(bidPackage?.validation?.status)}
+                helper="Package validation"
+                label="Validation"
+                value={bidPackage?.validation?.status ?? "-"}
+              />
+              <KpiCard
+                accent="emerald"
+                helper={`${formatNumber(bidPackageSummary.buy_order_count, 0)} buy / ${formatNumber(bidPackageSummary.sell_order_count, 0)} sell`}
+                label="Energy orders"
+                value={formatNumber(bidPackageSummary.order_count, 0)}
+              />
+              <KpiCard
+                accent={Number(bidPackageSummary.reserve_order_count ?? 0) ? "emerald" : "slate"}
+                helper={`${formatNumber(bidPackageSummary.total_reserve_mw, 2)} MW reserve`}
+                label="Reserve orders"
+                value={formatNumber(bidPackageSummary.reserve_order_count, 0)}
+              />
+            </div>
+            <DataTable
+              columns={["check", "status", "message"]}
+              rows={(bidPackage?.validation?.checks ?? []).slice(0, 5)}
+            />
+          </SectionCard>
+          <SectionCard
             action={
               <ActionButton
                 endpoint={`/assets/${selectedAssetId}/execution/proposal/build`}
@@ -701,9 +834,16 @@ export default function ExecutionPage({
             <DataTable
               columns={[
                 "bid_id",
+                "adapter_id",
                 "market_product_id",
+                "market_product",
+                "package_order_type",
+                "automation_lane",
+                "gate_closure_label",
                 "side",
+                "bid_type",
                 "volume_mw",
+                "capacity_mw",
                 "energy_mwh",
                 "limit_price_eur_mwh",
                 "risk_adjusted_limit_price_eur_mwh",
@@ -711,6 +851,7 @@ export default function ExecutionPage({
                 "automation_eligibility",
                 "approval_status",
                 "submission_status",
+                "market_lifecycle_status",
                 "lifecycle_status",
               ]}
               rows={bids.slice(0, 12)}
@@ -771,10 +912,11 @@ export default function ExecutionPage({
       {activeTab === "risk" ? (
         <div className="space-y-5">
           <AutomationModeLadder escalation={modeEscalation} />
-          <AutomationRemediationQueue
-            items={remediationQueue}
-            refetchExecution={refetchExecution}
-          />
+            <AutomationRemediationQueue
+              items={remediationQueue}
+              recoveryPlan={recovery}
+              refetchExecution={refetchExecution}
+            />
           <FreshnessTrustGates gates={freshnessGates} />
           <ExecutionRiskApprovalPanel
             approvalData={approvalData}
@@ -794,10 +936,12 @@ export default function ExecutionPage({
         <ExecutionSimulationPanel
           paperFills={formatPaperFills(paperTradeFills)}
           paperHistoryRows={formatPaperTradeHistory(paperTradeHistory.data?.paper_trades ?? [])}
+          paperTrade={paperTrade}
           paperTradeRunCount={paperTradeHistory.data?.paper_trades?.length ?? 0}
           refetchExecution={refetchExecution}
           selectedAssetId={selectedAssetId}
           submission={submission}
+          submissionLifecycle={submissionLifecycle.data}
           submissionSummary={submissionSummary}
         />
       ) : null}
@@ -806,6 +950,7 @@ export default function ExecutionPage({
         <ExecutionSettlementPanel
           refetchExecution={refetchExecution}
           selectedAssetId={selectedAssetId}
+          settlementData={settlementData}
           settlementSummary={settlementSummary}
           varianceDrivers={varianceDrivers}
         />
@@ -816,6 +961,7 @@ export default function ExecutionPage({
           auditRows={auditRows}
           automationEvents={eventRows}
           lifecycleRows={lifecycleRows}
+          submissionLifecycle={submissionLifecycle.data}
           riskChecks={riskChecks}
           telemetryData={telemetryData}
         />
@@ -850,6 +996,233 @@ function formatPaperFills(
     filled_volume_mwh: formatNumber(row.filled_volume_mwh, 4),
     notional_eur: formatCurrency(row.notional_eur),
   }));
+}
+
+function RouteCertificationPanel({
+  routes,
+  status,
+}: {
+  routes: RouteAutomationCertification[];
+  status?: string;
+}) {
+  const rows = routes.slice(0, 6).map((route) => ({
+    route: route.adapter_id,
+    stage: route.route_certification_stage?.replaceAll("_", " ") ?? "-",
+    score: `${formatNumber(route.route_certification_score, 1)}/100`,
+    latest_drill: route.latest_route_drill_status ?? "-",
+    paper: route.certified_for_paper ? "yes" : "no",
+    supervised: route.certified_for_supervised ? "yes" : "no",
+    next_action: route.route_certification_next_action ?? "-",
+  }));
+
+  const leader = routes
+    .slice()
+    .sort(
+      (left, right) =>
+        Number(right.route_certification_score ?? 0) -
+        Number(left.route_certification_score ?? 0),
+    )[0];
+
+  return (
+    <SectionCard
+      action={
+        <StatusPill tone={routeCertificationTone(status)}>
+          {status?.replaceAll("_", " ") ?? "not evaluated"}
+        </StatusPill>
+      }
+      className="mb-6"
+      title="Route certification"
+    >
+      <div className="mb-4 grid gap-3 md:grid-cols-3">
+        <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-4">
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Best route
+          </div>
+          <div className="mt-2 text-sm font-semibold text-slate-100">
+            {leader?.adapter_id ?? "-"}
+          </div>
+          <div className="mt-1 text-xs leading-5 text-slate-400">
+            {leader?.route_certification_stage?.replaceAll("_", " ") ?? "No route certified"}
+          </div>
+        </div>
+        <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-4">
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Certification score
+          </div>
+          <div className="mt-2 text-sm font-semibold text-slate-100">
+            {formatNumber(leader?.route_certification_score, 1)}/100
+          </div>
+          <div className="mt-1 text-xs leading-5 text-slate-400">
+            Latest drill {leader?.latest_route_drill_status ?? "-"}
+          </div>
+        </div>
+        <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-4">
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Next certification action
+          </div>
+          <div className="mt-2 text-xs leading-5 text-slate-300">
+            {leader?.route_certification_next_action ?? "Evaluate route certification."}
+          </div>
+        </div>
+      </div>
+      <DataTable
+        columns={["route", "stage", "score", "latest_drill", "paper", "supervised", "next_action"]}
+        rows={rows}
+      />
+    </SectionCard>
+  );
+}
+
+function GoLiveReadinessPanel({
+  data,
+  refetchExecution,
+}: {
+  data?: LiveTradingReadinessResponse;
+  refetchExecution: () => Promise<unknown>;
+}) {
+  const summary = data?.summary ?? {};
+  const nextAction = data?.next_best_action;
+  const runbookSteps = data?.runbook?.steps ?? [];
+  const unlockQueue = (data?.route_readiness ?? [])
+    .map((row) => row.unlock_action)
+    .filter((action): action is NonNullable<typeof action> => Boolean(action))
+    .slice(0, 4);
+  const routeRows = (data?.route_readiness ?? []).slice(0, 6).map((row) => ({
+    market_name: row.market_name,
+    mode: row.mode?.replaceAll("_", " "),
+    readiness_score: formatNumber(row.readiness_score, 1),
+    expected_revenue_eur: formatCurrency(row.expected_revenue_eur),
+    gate: row.market_gate_status,
+    connector: row.connector_tier,
+    blockers: row.blocker_count ?? 0,
+    unlock: row.unlock_label ?? row.unlock_action?.label,
+    owner: row.unlock_owner ?? row.unlock_action?.owner,
+    severity: row.unlock_severity ?? row.unlock_action?.severity,
+    auto_safe: row.unlock_action?.auto_resolvable ? "yes" : "manual",
+  }));
+  const runbookRows = runbookSteps.map((step) => ({
+    step: step.label,
+    status: step.status,
+    next_action: step.next_action,
+  }));
+
+  return (
+    <SectionCard
+      action={
+        <div className="flex flex-wrap gap-2">
+          {nextAction?.auto_resolvable && nextAction.resolution_endpoint ? (
+            <ActionButton
+              endpoint={nextAction.resolution_endpoint}
+              label="Run next unlock"
+              refetch={refetchExecution}
+              variant="primary"
+            />
+          ) : null}
+          <StatusPill tone={goLiveTone(data?.go_live_status)}>
+            {data?.go_live_status?.replaceAll("_", " ") ?? "Not evaluated"}
+          </StatusPill>
+        </div>
+      }
+      className="mb-6"
+      title="Go-live readiness"
+    >
+      <div className="mb-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <KpiCard
+          accent={goLiveTone(data?.go_live_status)}
+          helper={data?.mode_recommendation?.replaceAll("_", " ") ?? "No mode recommendation"}
+          label="Live readiness score"
+          value={`${formatNumber(data?.live_trading_readiness_score, 1)}/100`}
+        />
+        <KpiCard
+          accent={Number(summary.live_ready_route_count ?? 0) > 0 ? "emerald" : "amber"}
+          helper={`${summary.supervised_ready_route_count ?? 0} supervised / ${summary.paper_ready_route_count ?? 0} paper`}
+          label="Live-ready routes"
+          value={summary.live_ready_route_count ?? 0}
+        />
+        <KpiCard
+          accent={Number(summary.blocked_route_count ?? 0) > 0 ? "red" : "emerald"}
+          helper={`${summary.route_count ?? 0} German routes evaluated`}
+          label="Blocked routes"
+          value={summary.blocked_route_count ?? 0}
+        />
+        <KpiCard
+          accent={Number(summary.handshake_ready_count ?? 0) > 0 ? "emerald" : "amber"}
+          helper={`${summary.handshake_ready_count ?? 0}/${summary.handshake_target_count ?? 0} dry-run ready`}
+          label="Live handshake"
+          value={summary.best_route_mode?.replaceAll("_", " ") ?? "-"}
+        />
+      </div>
+
+      <div className="mb-5 rounded-lg border border-slate-800 bg-slate-900/45 p-4">
+        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+          Next best action
+        </div>
+        <div className="mt-2 text-sm font-semibold text-slate-100">
+          {nextAction?.label ?? "No next action evaluated."}
+        </div>
+        <div className="mt-1 text-xs leading-5 text-slate-400">
+          Owner: {nextAction?.owner ?? "automation_control"} / Best route: {summary.best_route ?? "-"}
+        </div>
+      </div>
+
+      <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {unlockQueue.map((action, index) => (
+          <div
+            className="min-h-40 rounded-lg border border-slate-800 bg-slate-900/45 p-4"
+            key={`${action.adapter_id ?? "route"}-${action.category ?? index}`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-100">
+                  {action.label ?? "Review unlock"}
+                </div>
+                <div className="mt-1 text-xs text-slate-500">
+                  {String(action.category ?? "route").replaceAll("_", " ")}
+                </div>
+              </div>
+              <StatusPill tone={unlockSeverityTone(action.severity)}>
+                {String(action.severity ?? "review")}
+              </StatusPill>
+            </div>
+            <div className="mt-4 text-xs leading-5 text-slate-400">
+              {String(action.message ?? "Review this route before escalation.")}
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {action.auto_resolvable && action.resolution_endpoint ? (
+                <ActionButton
+                  endpoint={String(action.resolution_endpoint)}
+                  label="Run"
+                  refetch={refetchExecution}
+                  variant="primary"
+                />
+              ) : null}
+              <StatusPill tone={action.auto_resolvable ? "emerald" : "blue"}>
+                {action.auto_resolvable ? "auto-safe" : String(action.owner ?? "manual")}
+              </StatusPill>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
+        <div>
+          <div className="mb-3 text-sm font-semibold text-slate-100">
+            Route-level readiness
+          </div>
+          <DataTable
+            columns={["market_name", "mode", "readiness_score", "expected_revenue_eur", "gate", "connector", "blockers", "unlock", "owner", "severity", "auto_safe"]}
+            rows={routeRows}
+          />
+        </div>
+        <div>
+          <div className="mb-3 text-sm font-semibold text-slate-100">
+            Go-live runbook
+          </div>
+          <DataTable columns={["step", "status", "next_action"]} rows={runbookRows} />
+        </div>
+      </div>
+    </SectionCard>
+  );
 }
 
 function StrategyIntentPanel({ intent }: { intent?: StrategyIntentResponse }) {
@@ -972,20 +1345,31 @@ function StrategyIntentPanel({ intent }: { intent?: StrategyIntentResponse }) {
 
 function AutomationRemediationQueue({
   items,
+  recoveryPlan,
   refetchExecution,
 }: {
   items: AutomationRemediationItem[];
+  recoveryPlan?: ExecutionRecoveryPlanResponse;
   refetchExecution: () => Promise<unknown>;
 }) {
+  const recoveryRows = recoveryPlan?.recovery_queue ?? [];
+  const primaryAction = recoveryPlan?.primary_action;
+
   if (!items.length) {
     return (
       <SectionCard
-        action={<StatusPill tone="emerald">Clear</StatusPill>}
+        action={<StatusPill tone={recoveryTone(recoveryPlan?.recovery_status)}>{recoveryPlan?.recovery_status ?? "Clear"}</StatusPill>}
         className="mb-6"
-        title="Automation remediation queue"
+        title="Execution recovery plan"
       >
+        <div className="mb-4 grid gap-3 md:grid-cols-4">
+          <ExecutionRecoveryMetric label="Stuck step" value={recoveryPlan?.stuck_step?.label ?? "-"} />
+          <ExecutionRecoveryMetric label="Root cause" value={recoveryPlan?.root_cause?.category?.replaceAll("_", " ") ?? "-"} />
+          <ExecutionRecoveryMetric label="Auto actions" value={recoveryPlan?.summary?.auto_resolvable_count ?? 0} />
+          <ExecutionRecoveryMetric label="Manual reviews" value={recoveryPlan?.summary?.manual_review_count ?? 0} />
+        </div>
         <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-100">
-          No remediation items are blocking the automation engine.
+          {recoveryPlan?.primary_action?.message ?? "No remediation items are blocking the automation engine."}
         </div>
       </SectionCard>
     );
@@ -1006,15 +1390,24 @@ function AutomationRemediationQueue({
 
   return (
     <SectionCard
-      action={<StatusPill tone={items.some((item) => item.severity === "critical") ? "red" : "amber"}>{items.length} item(s)</StatusPill>}
+      action={<StatusPill tone={recoveryTone(recoveryPlan?.recovery_status)}>{recoveryPlan?.recovery_status ?? `${items.length} item(s)`}</StatusPill>}
       className="mb-6"
-      title="Automation remediation queue"
+      title="Execution recovery plan"
     >
+      <div className="mb-4 grid gap-3 md:grid-cols-4">
+        <ExecutionRecoveryMetric label="Stuck step" value={recoveryPlan?.stuck_step?.label ?? "-"} />
+        <ExecutionRecoveryMetric label="Root cause" value={recoveryPlan?.root_cause?.category?.replaceAll("_", " ") ?? "-"} />
+        <ExecutionRecoveryMetric label="Primary action" value={primaryAction?.label ?? "-"} />
+        <ExecutionRecoveryMetric label="Auto-safe" value={primaryAction?.auto_resolvable ? "yes" : "no"} />
+      </div>
+      <div className="mb-4 rounded-lg border border-slate-800 bg-slate-900/45 p-4 text-sm leading-6 text-slate-300">
+        {recoveryPlan?.root_cause?.message ?? primaryAction?.message ?? "Recovery plan is not available yet."}
+      </div>
       <div className="mb-4 flex flex-wrap gap-3">
-        {items.find((item) => item.auto_resolvable && item.resolution_endpoint) ? (
+        {primaryAction?.auto_resolvable && primaryAction.resolution_endpoint ? (
           <ActionButton
-            endpoint={items.find((item) => item.auto_resolvable && item.resolution_endpoint)?.resolution_endpoint ?? ""}
-            label="Fix next automatically"
+            endpoint={primaryAction.resolution_endpoint}
+            label={primaryAction.label ?? "Run recovery"}
             refetch={refetchExecution}
             variant="primary"
           />
@@ -1024,7 +1417,32 @@ function AutomationRemediationQueue({
         columns={["severity", "category", "source", "action", "required_action"]}
         rows={queueRows}
       />
+      {recoveryRows.length ? (
+        <div className="mt-5">
+          <DataTable
+            columns={["severity", "category", "source", "action", "label", "auto_resolvable"]}
+            rows={recoveryRows.slice(0, 6)}
+          />
+        </div>
+      ) : null}
     </SectionCard>
+  );
+}
+
+function ExecutionRecoveryMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-4">
+      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+        {label}
+      </div>
+      <div className="mt-2 text-sm font-semibold text-slate-100">{value}</div>
+    </div>
   );
 }
 
@@ -1173,6 +1591,58 @@ function freshnessTone(value: unknown) {
   return "slate";
 }
 
+function recoveryTone(value: unknown) {
+  if (value === "no_recovery_needed") {
+    return "emerald";
+  }
+
+  if (value === "auto_recovery_available") {
+    return "blue";
+  }
+
+  if (value === "human_gate_required") {
+    return "amber";
+  }
+
+  if (value === "manual_recovery_required") {
+    return "red";
+  }
+
+  return "slate";
+}
+
+function goLiveTone(value: unknown) {
+  if (value === "go_live_ready" || value === "supervised_ready") {
+    return "emerald";
+  }
+
+  if (value === "paper_ready" || value === "advisory_only") {
+    return "blue";
+  }
+
+  if (value === "blocked") {
+    return "red";
+  }
+
+  return "slate";
+}
+
+function unlockSeverityTone(value: unknown) {
+  if (value === "critical" || value === "high") {
+    return "red";
+  }
+
+  if (value === "medium") {
+    return "amber";
+  }
+
+  if (value === "low") {
+    return "emerald";
+  }
+
+  return "slate";
+}
+
 function ladderTone(value: unknown) {
   if (value === "passed" || value === "current") {
     return "emerald";
@@ -1239,6 +1709,100 @@ function humanGateTone(value: unknown) {
   return "slate";
 }
 
+function sandboxCertificationTone(value: unknown) {
+  if (value === "live_certified_route_available" || value === "supervised_live_certified_route_available") {
+    return "emerald";
+  }
+
+  if (value === "paper_certified_routes_available") {
+    return "blue";
+  }
+
+  if (value === "sandbox_blocked") {
+    return "red";
+  }
+
+  return "slate";
+}
+
+function officialApiTone(value: unknown) {
+  if (value === "official_api_compliant" || value === "compliant") {
+    return "emerald";
+  }
+
+  if (value === "partial_official_api_compliance") {
+    return "amber";
+  }
+
+  if (value === "official_api_blocked" || value === "blocked") {
+    return "red";
+  }
+
+  return "slate";
+}
+
+function routeCertificationTone(value: unknown) {
+  if (
+    value === "certified_for_live" ||
+    value === "live_certified_route_available" ||
+    value === "certified_for_supervised" ||
+    value === "supervised_certified_route_available"
+  ) {
+    return "emerald";
+  }
+
+  if (
+    value === "certified_for_paper" ||
+    value === "paper_certified_route_available" ||
+    value === "routes_ready_for_drill" ||
+    value === "ready_for_drill"
+  ) {
+    return "blue";
+  }
+
+  if (value === "route_drill_failed" || value === "drill_failed") {
+    return "red";
+  }
+
+  if (value === "routes_not_configured" || value === "not_configured") {
+    return "amber";
+  }
+
+  return "slate";
+}
+
+function supervisedLiveGateTone(value: unknown) {
+  if (value === "supervised_live_candidate_available") {
+    return "emerald";
+  }
+
+  if (value === "paper_ready_live_blocked") {
+    return "blue";
+  }
+
+  if (value === "supervised_live_blocked") {
+    return "red";
+  }
+
+  return "slate";
+}
+
+function handshakeTone(value: unknown) {
+  if (value === "handshake_ready") {
+    return "emerald";
+  }
+
+  if (value === "partial_handshake_ready") {
+    return "blue";
+  }
+
+  if (value === "handshake_blocked" || value === "handshake_disabled") {
+    return "amber";
+  }
+
+  return "slate";
+}
+
 function actionTone(value: unknown) {
   if (value === "submit_with_limits" || value === "monitor_and_reoptimize") {
     return "emerald";
@@ -1255,6 +1819,22 @@ function actionTone(value: unknown) {
 
   if (value === "clear_blockers") {
     return "red";
+  }
+
+  return "slate";
+}
+
+function bidPackageTone(value: unknown) {
+  if (value === "draft_ready" || value === "passed") {
+    return "emerald";
+  }
+
+  if (value === "draft_blocked" || value === "blocked") {
+    return "red";
+  }
+
+  if (value === "review") {
+    return "amber";
   }
 
   return "slate";

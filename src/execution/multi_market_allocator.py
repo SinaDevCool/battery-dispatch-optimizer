@@ -14,7 +14,11 @@ from src.execution.epex_intraday_continuous_preview import (
 )
 from src.execution.execution_readiness import build_execution_readiness
 from src.execution.market_adapters.registry import get_asset_market_adapter_status
+from src.execution.market_adapter_readiness_gate import (
+    build_market_adapter_readiness_gate,
+)
 from src.execution.market_connector_readiness import market_connector_readiness
+from src.execution.market_lifecycle import get_market_lifecycle
 from src.execution.regelleistung_afrr_preview import latest_regelleistung_afrr_preview
 from src.execution.regelleistung_fcr_preview import latest_regelleistung_fcr_preview
 from src.execution.regelleistung_mfrr_preview import latest_regelleistung_mfrr_preview
@@ -90,6 +94,7 @@ def build_multi_market_allocation(asset_id, refresh_revenue_stack=False):
     readiness = build_execution_readiness(asset_id)
     adapter_status = get_asset_market_adapter_status(asset_id)
     connector_readiness = market_connector_readiness(country="Germany")
+    readiness_gate = build_market_adapter_readiness_gate(asset_id)
     forecast_confidence = build_forecast_confidence(asset_id)
     approval = latest_execution_approval(asset_id)
 
@@ -100,6 +105,10 @@ def build_multi_market_allocation(asset_id, refresh_revenue_stack=False):
     connector_by_id = {
         connector.get("adapter_id"): connector
         for connector in connector_readiness.get("integrations", [])
+    }
+    gate_by_id = {
+        route.get("adapter_id"): route
+        for route in readiness_gate.get("route_gates", [])
     }
     allocation_by_product = {
         row.get("product_id"): row
@@ -119,6 +128,7 @@ def build_multi_market_allocation(asset_id, refresh_revenue_stack=False):
                 market["commercial_product_id"]
             ),
             connector=connector_by_id.get(market["adapter_id"], {}),
+            route_gate=gate_by_id.get(market["adapter_id"], {}),
             excluded_commercial_product=excluded_by_product.get(
                 market["commercial_product_id"]
             ),
@@ -184,6 +194,16 @@ def build_multi_market_allocation(asset_id, refresh_revenue_stack=False):
                 "confidence_score"
             ),
             "approval_status": extract_approval_status(approval),
+            "market_gate_status": readiness_gate.get("gate_status"),
+            "paper_only_route_count": readiness_gate.get("summary", {}).get(
+                "paper_only_count"
+            ),
+            "supervised_ready_route_count": readiness_gate.get("summary", {}).get(
+                "supervised_ready_count"
+            ),
+            "live_ready_route_count": readiness_gate.get("summary", {}).get(
+                "live_ready_count"
+            ),
         },
         "allocation": ranked_candidates,
         "excluded_markets": excluded,
@@ -209,6 +229,10 @@ def build_multi_market_allocation(asset_id, refresh_revenue_stack=False):
                 "connector_status"
             ),
             "connector_readiness_summary": connector_readiness.get("summary", {}),
+            "market_adapter_readiness_gate": {
+                "gate_status": readiness_gate.get("gate_status"),
+                "summary": readiness_gate.get("summary", {}),
+            },
             "readiness_evidence": readiness.get("evidence", {}),
             "forecast_confidence_status": forecast_confidence.get("status"),
         },
@@ -233,6 +257,7 @@ def build_market_candidate(
     adapter,
     commercial_allocation,
     connector,
+    route_gate,
     excluded_commercial_product,
     readiness,
     forecast_confidence,
@@ -243,6 +268,7 @@ def build_market_candidate(
     preview_status = (preview.get("preview") or {}).get("status") or preview.get(
         "status"
     )
+    lifecycle = get_market_lifecycle(market["adapter_id"])
     blocking_reasons = []
 
     if not commercial_allocation:
@@ -266,6 +292,12 @@ def build_market_candidate(
     connector_blocking_reasons = connector_blockers_for_market(connector)
     blocking_reasons.extend(connector_blocking_reasons)
 
+    if route_gate.get("gate_status") == "blocked":
+        blocking_reasons.append(
+            route_gate.get("next_action")
+            or "Market adapter readiness gate blocks this route."
+        )
+
     readiness_status = readiness.get("readiness_status")
     if readiness_status == "blocked":
         blocking_reasons.append("Execution readiness is blocked.")
@@ -287,8 +319,10 @@ def build_market_candidate(
         validation=validation,
         adapter=adapter,
         connector=connector,
+        route_gate=route_gate,
         approval=approval,
         blocking_reasons=blocking_reasons,
+        lifecycle=lifecycle,
     )
     recommendation_status = classify_candidate_status(
         score=score,
@@ -319,6 +353,8 @@ def build_market_candidate(
         "adapter_connection_status": adapter.get("connection_status"),
         "adapter_credential_status": adapter.get("credential_status"),
         "automation_blocking_level": connector.get("automation_blocking_level"),
+        "automation_lane": lifecycle.get("automation_lane"),
+        "bid_granularity": lifecycle.get("bid_granularity"),
         "connector_family": connector.get("family"),
         "connector_readiness_score": connector.get("readiness_score"),
         "connector_readiness_tier": connector.get("production_readiness_tier"),
@@ -327,14 +363,30 @@ def build_market_candidate(
             market["adapter_id"],
         ),
         "live_submission": bool(adapter.get("live_submission")),
+        "market_gate_status": route_gate.get("gate_status"),
+        "market_gate_score": route_gate.get("readiness_score"),
+        "market_gate_next_action": route_gate.get("next_action"),
+        "market_gate_missing_controls": route_gate.get("missing_controls", []),
+        "market_gate_settlement_basis": route_gate.get("settlement_basis"),
+        "gate_closure_label": lifecycle.get("gate_closure_label"),
+        "lifecycle_status": lifecycle.get("lifecycle_status"),
+        "market_lifecycle": lifecycle,
+        "minutes_to_gate_closure": lifecycle.get("minutes_to_gate_closure"),
         "missing_connector_controls": connector.get("missing_controls", []),
         "missing_credentials": connector.get("missing_credentials", []),
+        "next_deadline_action": lifecycle.get("next_deadline_action"),
+        "next_gate_closure_at": lifecycle.get("next_gate_closure_at"),
+        "order_style": lifecycle.get("order_style"),
         "operator_next_action": operator_next_action(
             recommendation_status=recommendation_status,
             market_name=market["market_name"],
             blocking_reasons=blocking_reasons,
             adapter=adapter,
+            lifecycle=lifecycle,
         ),
+        "required_evidence": lifecycle.get("required_evidence", []),
+        "supported_order_types": lifecycle.get("supported_order_types", []),
+        "trading_clock_status": lifecycle.get("trading_clock_status"),
         "blocking_reasons": dedupe(blocking_reasons),
         "commercial_allocation_reason": (commercial_allocation or {}).get(
             "allocation_reason"
@@ -379,8 +431,10 @@ def score_market_candidate(
     validation,
     adapter,
     connector,
+    route_gate,
     approval,
     blocking_reasons,
+    lifecycle,
 ):
     if blocking_reasons:
         return 0.0
@@ -400,7 +454,9 @@ def score_market_candidate(
         else 0.0
     )
     connector_component = numeric(connector.get("readiness_score")) * 0.18
+    gate_component = numeric(route_gate.get("readiness_score")) * 0.2
     approval_component = 7.0 if extract_approval_status(approval) == "approved" else 3.0
+    lifecycle_component = lifecycle_score(lifecycle) * 0.1
 
     return round(
         min(
@@ -412,7 +468,9 @@ def score_market_candidate(
             + validation_component
             + adapter_component
             + connector_component
-            + approval_component,
+            + gate_component
+            + approval_component
+            + lifecycle_component,
         ),
         1,
     )
@@ -470,6 +528,18 @@ def compact_market(candidate):
         "allocated_power_mw": candidate.get("allocated_power_mw"),
         "allocated_energy_mwh": candidate.get("allocated_energy_mwh"),
         "expected_revenue_eur": candidate.get("expected_revenue_eur"),
+        "automation_lane": candidate.get("automation_lane"),
+        "bid_granularity": candidate.get("bid_granularity"),
+        "gate_closure_label": candidate.get("gate_closure_label"),
+        "lifecycle_status": candidate.get("lifecycle_status"),
+        "market_lifecycle": candidate.get("market_lifecycle"),
+        "market_gate_status": candidate.get("market_gate_status"),
+        "market_gate_score": candidate.get("market_gate_score"),
+        "market_gate_next_action": candidate.get("market_gate_next_action"),
+        "market_gate_settlement_basis": candidate.get("market_gate_settlement_basis"),
+        "next_gate_closure_at": candidate.get("next_gate_closure_at"),
+        "order_style": candidate.get("order_style"),
+        "trading_clock_status": candidate.get("trading_clock_status"),
         "operator_next_action": candidate.get("operator_next_action"),
     }
 
@@ -585,8 +655,13 @@ def operator_next_action(
     market_name,
     blocking_reasons,
     adapter,
+    lifecycle=None,
 ):
     if recommendation_status == "recommended":
+        deadline_action = (lifecycle or {}).get("next_deadline_action")
+        if deadline_action:
+            return deadline_action
+
         return f"Prepare supervised bid review for {market_name}."
 
     if recommendation_status == "operator_review":
@@ -596,6 +671,24 @@ def operator_next_action(
         return blocking_reasons[0]
 
     return adapter.get("next_connection_action") or "Monitor market readiness."
+
+
+def lifecycle_score(lifecycle):
+    status = (lifecycle or {}).get("trading_clock_status")
+
+    if status in ["today", "same_session"]:
+        return 100.0
+
+    if status == "scheduled":
+        return 80.0
+
+    if status == "urgent":
+        return 45.0
+
+    if status == "closed":
+        return 0.0
+
+    return 25.0
 
 
 def extract_approval_status(approval):

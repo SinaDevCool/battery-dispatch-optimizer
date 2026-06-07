@@ -11,10 +11,13 @@ from src.db.repositories.workflow_repository import get_latest_workflow_run
 from src.backtesting.forecast_actual.forecast_confidence import (
     build_forecast_confidence,
 )
+from src.execution.bid_package_builder import build_market_bid_package
 from src.services.asset_signal_store import load_asset_latest_signal
 
 
 def build_execution_proposal(asset_id):
+    from src.execution.multi_market_allocator import build_multi_market_allocation
+
     asset = get_asset(asset_id)
     latest_signal = load_asset_latest_signal(asset_id)
 
@@ -30,11 +33,18 @@ def build_execution_proposal(asset_id):
     signal_run = get_latest_signal_run(asset_id)
     workflow_run = get_latest_workflow_run(asset_id)
     forecast_confidence = build_forecast_confidence(asset_id)
-    orders = build_orders(
+    market_allocation = build_multi_market_allocation(asset_id)
+    selected_route = market_allocation.get("primary_market") or {}
+    market_lifecycle = selected_route.get("market_lifecycle") or {}
+    bid_package = build_market_bid_package(
+        asset=asset,
         dispatch_rows=dispatch_rows,
-        market=asset.market or "DE-LU day-ahead",
+        market=selected_route.get("market_name") or asset.market or "DE-LU day-ahead",
         forecast_confidence=forecast_confidence,
+        market_lifecycle=market_lifecycle,
+        selected_route=selected_route,
     )
+    orders = bid_package["orders"]
     risk_checks = build_risk_checks(
         asset=asset,
         orders=orders,
@@ -52,12 +62,12 @@ def build_execution_proposal(asset_id):
     status = "blocked" if hard_blockers else "draft"
     approval_status = "blocked" if hard_blockers else "requires_approval"
     total_buy_mwh = sum(
-        order["volume_mwh"] for order in orders
-        if order["side"] == "buy"
+        numeric(order.get("volume_mwh")) for order in orders
+        if order.get("side") == "buy"
     )
     total_sell_mwh = sum(
-        order["volume_mwh"] for order in orders
-        if order["side"] == "sell"
+        numeric(order.get("volume_mwh")) for order in orders
+        if order.get("side") == "sell"
     )
     expected_pnl = numeric(summary.get("total_pnl_eur"))
     max_daily_loss = resolve_max_daily_loss(asset)
@@ -75,7 +85,12 @@ def build_execution_proposal(asset_id):
         "forecast_provider": metadata.get("forecast_provider") or metadata.get("source"),
         "forecast_model": metadata.get("forecast_model"),
         "forecast_confidence": forecast_confidence,
-        "market": asset.market or "DE-LU day-ahead",
+        "market": selected_route.get("market_name") or asset.market or "DE-LU day-ahead",
+        "market_allocation_status": market_allocation.get("allocation_status"),
+        "market_lifecycle": market_lifecycle,
+        "selected_market_route": selected_route,
+        "bid_package": bid_package,
+        "bid_package_status": bid_package.get("package_status"),
         "orders": orders,
         "bids": orders,
         "bid_lifecycle": build_bid_lifecycle(
@@ -94,6 +109,11 @@ def build_execution_proposal(asset_id):
             "expected_pnl_eur": round(expected_pnl, 2),
             "profit_per_mw_day": numeric(summary.get("profit_per_mw_day")),
             "max_daily_loss_eur": max_daily_loss,
+            "market_gate_closure": market_lifecycle.get("gate_closure_label"),
+            "order_style": market_lifecycle.get("order_style"),
+            "package_status": bid_package.get("package_status"),
+            "package_validation_status": bid_package.get("validation", {}).get("status"),
+            "reserve_order_count": bid_package.get("summary", {}).get("reserve_order_count"),
         },
         "audit": build_audit_events(
             has_signal=True,
@@ -135,9 +155,17 @@ def execution_proposal_history(asset_id, limit=25):
     }
 
 
-def build_orders(dispatch_rows, market, forecast_confidence=None):
+def build_orders(
+    dispatch_rows,
+    market,
+    forecast_confidence=None,
+    market_lifecycle=None,
+    selected_route=None,
+):
     orders = []
     confidence = forecast_confidence or {}
+    lifecycle = market_lifecycle or {}
+    route = selected_route or {}
     risk_policy = confidence.get("risk_policy", {})
     volume_multiplier = numeric(risk_policy.get("volume_multiplier")) or 1.0
     price_buffer = numeric(risk_policy.get("price_buffer_eur_per_mwh"))
@@ -180,8 +208,14 @@ def build_orders(dispatch_rows, market, forecast_confidence=None):
                 "delivery_start": row.get("timestamp"),
                 "delivery_end": row.get("timestamp"),
                 "market": market,
+                "adapter_id": route.get("adapter_id"),
+                "automation_lane": lifecycle.get("automation_lane"),
+                "bid_granularity": lifecycle.get("bid_granularity"),
                 "market_product_id": infer_market_product_id(market),
                 "bid_type": "limit",
+                "gate_closure_label": lifecycle.get("gate_closure_label"),
+                "market_lifecycle_status": lifecycle.get("lifecycle_status"),
+                "market_segment": route.get("market_segment"),
                 "side": side,
                 "volume_mw": round(volume_mwh / 0.25, 4),
                 "volume_mwh": round(volume_mwh, 4),
@@ -193,6 +227,8 @@ def build_orders(dispatch_rows, market, forecast_confidence=None):
                 "risk_adjusted_volume_mw": risk_adjusted_volume_mw,
                 "risk_adjusted_volume_mwh": risk_adjusted_volume_mwh,
                 "risk_adjusted_limit_price_eur_mwh": risk_adjusted_limit_price,
+                "next_gate_closure_at": lifecycle.get("next_gate_closure_at"),
+                "order_style": lifecycle.get("order_style"),
                 "automation_eligibility": automation_eligibility,
                 "confidence_reason": confidence_reason,
                 "source_action": action,
@@ -297,11 +333,19 @@ def build_risk_checks(asset, orders, summary, dispatch_rows):
     max_export_mw = numeric(grid_connection.get("max_export_mw"))
     min_soc_mwh = numeric(battery_config.get("min_soc_mwh"))
     max_buy_mwh = max(
-        [order["volume_mwh"] for order in orders if order["side"] == "buy"]
+        [
+            numeric(order.get("volume_mwh"))
+            for order in orders
+            if order.get("side") == "buy"
+        ]
         or [0.0]
     )
     max_sell_mwh = max(
-        [order["volume_mwh"] for order in orders if order["side"] == "sell"]
+        [
+            numeric(order.get("volume_mwh"))
+            for order in orders
+            if order.get("side") == "sell"
+        ]
         or [0.0]
     )
     min_observed_soc = min(

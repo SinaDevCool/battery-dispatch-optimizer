@@ -6,6 +6,7 @@ from src.db.repositories.execution_repository import (
     list_execution_paper_trades,
     save_execution_paper_trade,
 )
+from src.execution.market_paper_simulator import simulate_market_paper_execution
 from src.execution.market_adapters.paper import PaperMarketAdapter
 from src.execution.pretrade_proposal import numeric
 
@@ -64,13 +65,19 @@ def run_execution_paper_trade(asset_id):
     generated_at = datetime.now().isoformat(timespec="seconds")
     expected_pnl = numeric(proposal.get("summary", {}).get("expected_pnl_eur"))
 
-    adapter = PaperMarketAdapter()
-    adapter_result = adapter.submit_bids(
-        bids=orders,
-        submitted_at=generated_at,
+    simulation = simulate_market_paper_execution(
+        proposal=proposal,
+        generated_at=generated_at,
     )
-    fills = adapter_result["fills"]
-    summary = summarize_paper_fills(fills, expected_pnl)
+    fills = simulation["fills"]
+    summary = {
+        **simulation["summary"],
+        "expected_pnl_eur": round(expected_pnl, 2),
+        "paper_vs_expected_delta_eur": round(
+            numeric(simulation["summary"].get("paper_pnl_eur")) - expected_pnl,
+            2,
+        ),
+    }
     bid_results = build_paper_bid_results(orders, fills)
 
     paper_trade = {
@@ -78,15 +85,19 @@ def run_execution_paper_trade(asset_id):
         "execution_proposal_id": latest_record["execution_proposal_id"],
         "generated_at": generated_at,
         "mode": "paper_trading",
-        "adapter_id": adapter.adapter_id,
+        "adapter_id": simulation["adapter_id"],
+        "awards": simulation["awards"],
         "proposal_generated_at": proposal.get("generated_at"),
-        "status": "completed",
+        "status": simulation["status"],
         "lifecycle_status": "paper_filled",
         "bid_lifecycle": build_paper_lifecycle(proposal),
+        "market_execution_model": simulation["market_execution_model"],
+        "settlement_basis": simulation["settlement_basis"],
         "summary": summary,
         "bids": bid_results,
         "fills": fills,
-        "audit": [
+        "validation": simulation["validation"],
+        "audit": simulation["audit"] + [
             {
                 "event": "paper_trade_started",
                 "actor": "backend",
@@ -95,30 +106,18 @@ def run_execution_paper_trade(asset_id):
             },
             {
                 "event": "bids_submitted_to_paper_adapter",
-                "actor": "paper_adapter",
-                "status": "complete",
-                "note": "Submitted draft bids to the paper market adapter.",
-            },
-            {
-                "event": "bids_simulated",
-                "actor": "paper_adapter",
-                "status": adapter_result["status"],
-                "note": "Simulated full fills at draft bid limit prices.",
+                "actor": "market_paper_simulator",
+                "status": simulation["status"],
+                "note": "Submitted draft bids to the market-specific paper simulator.",
             },
             {
                 "event": "pnl_calculated",
                 "actor": "paper_trading_engine",
                 "status": "complete",
-                "note": "Calculated paper PnL and delta versus proposal PnL.",
+                "note": "Calculated paper PnL and delta versus proposal PnL using market-specific execution evidence.",
             },
         ],
-        "assumptions": {
-            "fill_model": "full_fill_at_limit_price",
-            "market_impact": "not_modelled",
-            "fees": "already_reflected_in_dispatch_expected_pnl",
-            "live_submission": False,
-            "adapter_id": adapter.adapter_id,
-        },
+        "assumptions": simulation["assumptions"],
     }
 
     paper_trade_id = save_execution_paper_trade(paper_trade)

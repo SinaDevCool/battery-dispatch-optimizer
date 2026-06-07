@@ -16,6 +16,8 @@ import { apiGet } from "@/lib/api";
 import { formatCurrency, formatNumber } from "@/lib/format";
 import type {
   AutomationControlStatusResponse,
+  MarketAdapterReadinessGateResponse,
+  MarketAdapterRouteGate,
   MultiMarketAllocationCandidate,
   MultiMarketAllocationResponse,
   StrategyIntentResponse,
@@ -31,6 +33,14 @@ export default function ExecutionMarketAllocationPage() {
         `/assets/${selectedAssetId}/execution/multi-market/allocation`,
       ),
     queryKey: ["market-allocation-allocation", selectedAssetId],
+  });
+
+  const readinessGate = useQuery({
+    queryFn: () =>
+      apiGet<MarketAdapterReadinessGateResponse>(
+        `/assets/${selectedAssetId}/execution/market-adapter/readiness-gate`,
+      ),
+    queryKey: ["market-allocation-readiness-gate", selectedAssetId],
   });
 
   const automationControl = useQuery({
@@ -50,10 +60,12 @@ export default function ExecutionMarketAllocationPage() {
   });
 
   const summary = allocation.data?.summary ?? {};
+  const gateSummary = readinessGate.data?.summary ?? {};
   const primary = allocation.data?.primary_market;
   const secondary = allocation.data?.secondary_market;
   const candidateRows = allocation.data?.allocation ?? [];
   const excludedRows = allocation.data?.excluded_markets ?? [];
+  const routeGateRows = readinessGate.data?.route_gates ?? [];
   const liveRows = candidateRows.filter((row) => row.live_submission === true);
   const paperRows = candidateRows.filter((row) => row.live_submission !== true);
   const decisionBrief = useMemo(
@@ -62,15 +74,17 @@ export default function ExecutionMarketAllocationPage() {
         allocation: allocation.data,
         automationControl: automationControl.data,
         primary,
+        readinessGate: readinessGate.data,
         secondary,
         strategyIntent: strategyIntent.data,
       }),
-    [allocation.data, automationControl.data, primary, secondary, strategyIntent.data],
+    [allocation.data, automationControl.data, primary, readinessGate.data, secondary, strategyIntent.data],
   );
 
   const refetchAllocation = () =>
     Promise.all([
       allocation.refetch(),
+      readinessGate.refetch(),
       automationControl.refetch(),
       strategyIntent.refetch(),
     ]);
@@ -96,7 +110,7 @@ export default function ExecutionMarketAllocationPage() {
         />
       </div>
 
-      <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <KpiCard
           accent={allocationTone(allocation.data?.allocation_status)}
           helper="Backend allocator status"
@@ -105,7 +119,7 @@ export default function ExecutionMarketAllocationPage() {
         />
         <KpiCard
           accent={primary ? routeTone(primary) : "amber"}
-          helper={primary?.market_segment ?? "No primary market selected"}
+          helper={primary?.gate_closure_label ?? "No primary market selected"}
           label="Primary route"
           value={primary?.market_name ?? "-"}
         />
@@ -120,6 +134,12 @@ export default function ExecutionMarketAllocationPage() {
           helper={`${liveRows.length} live / ${paperRows.length} paper or preview`}
           label="Excluded routes"
           value={excludedRows.length}
+        />
+        <KpiCard
+          accent={gateTone(readinessGate.data?.gate_status)}
+          helper={`${gateSummary.supervised_ready_count ?? 0} supervised / ${gateSummary.live_ready_count ?? 0} live`}
+          label="Market gate"
+          value={readinessGate.data?.gate_status ?? "-"}
         />
       </div>
 
@@ -140,11 +160,15 @@ export default function ExecutionMarketAllocationPage() {
               "adapter_id",
               "market_name",
               "execution_mode",
+              "trading_clock_status",
+              "market_gate_status",
+              "market_gate_score",
+              "market_gate_settlement_basis",
+              "gate_closure_label",
               "recommendation_status",
               "allocation_score",
               "allocated_power_mw",
               "expected_revenue_eur",
-              "automation_blocking_level",
               "operator_next_action",
             ]}
             rows={formatCandidateRows(candidateRows).slice(0, 8)}
@@ -180,6 +204,27 @@ export default function ExecutionMarketAllocationPage() {
           </div>
         </SectionCard>
       </div>
+
+      <SectionCard
+        action={<StatusPill tone={gateTone(readinessGate.data?.gate_status)}>{readinessGate.data?.gate_status ?? "-"}</StatusPill>}
+        className="mt-5"
+        title="Market adapter readiness gate"
+      >
+        <DataTable
+          columns={[
+            "adapter_id",
+            "market_family",
+            "gate_status",
+            "readiness_score",
+            "settlement_basis",
+            "trading_clock_status",
+            "gate_closure_label",
+            "missing_controls",
+            "next_action",
+          ]}
+          rows={formatRouteGateRows(routeGateRows)}
+        />
+      </SectionCard>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
         <SectionCard
@@ -247,12 +292,14 @@ function buildAllocationDecisionBrief({
   allocation,
   automationControl,
   primary,
+  readinessGate,
   secondary,
   strategyIntent,
 }: {
   allocation?: MultiMarketAllocationResponse;
   automationControl?: AutomationControlStatusResponse;
   primary?: MultiMarketAllocationCandidate | null;
+  readinessGate?: MarketAdapterReadinessGateResponse;
   secondary?: MultiMarketAllocationCandidate | null;
   strategyIntent?: StrategyIntentResponse;
 }) {
@@ -287,6 +334,7 @@ function buildAllocationDecisionBrief({
       : "No eligible primary market route is ready for automated trading.",
     evidence: [
       `Allocation status ${allocation?.allocation_status ?? "not evaluated"}`,
+      `Market gate ${readinessGate?.gate_status ?? "not evaluated"}`,
       `Primary ${primary?.market_name ?? "none"}${secondary?.market_name ? `, secondary ${secondary.market_name}` : ""}`,
       `Expected route revenue ${formatCurrency(allocation?.summary?.total_expected_revenue_eur)}`,
       `Automation ${automationControl?.automation_status ?? automationControl?.automation_mode ?? "not evaluated"}`,
@@ -324,8 +372,12 @@ function RouteDecisionCard({
         </div>
         <div className="grid gap-3 md:grid-cols-3">
           <RouteMetric label="Mode" value={route ? executionMode(route) : "-"} />
+          <RouteMetric label="Gate" value={route?.market_gate_status?.replaceAll("_", " ") ?? "-"} />
           <RouteMetric label="Score" value={formatNumber(route?.allocation_score, 1)} />
           <RouteMetric label="Revenue" value={formatCurrency(route?.expected_revenue_eur)} />
+          <RouteMetric label="Cut-off" value={route?.gate_closure_label ?? "-"} />
+          <RouteMetric label="Order style" value={route?.order_style?.replaceAll("_", " ") ?? "-"} />
+          <RouteMetric label="Settlement" value={route?.market_gate_settlement_basis?.replaceAll("_", " ") ?? "-"} />
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-4 text-sm leading-6 text-slate-300">
           {route?.operator_next_action ?? "No allocator action is available yet."}
@@ -388,10 +440,16 @@ function formatCandidateRows(rows: MultiMarketAllocationCandidate[]): TableRow[]
     allocation_score: formatNumber(row.allocation_score, 1),
     expected_revenue_eur: formatCurrency(row.expected_revenue_eur),
     execution_mode: executionMode(row),
+    gate_closure_label: row.gate_closure_label ?? "-",
     market_group: marketGroup(row),
+    market_gate_missing_controls: row.market_gate_missing_controls?.join(" | ") ?? "-",
+    market_gate_score: formatNumber(row.market_gate_score, 1),
+    market_gate_settlement_basis: row.market_gate_settlement_basis?.replaceAll("_", " ") ?? "-",
+    market_gate_status: row.market_gate_status?.replaceAll("_", " ") ?? "-",
     missing_credentials: row.missing_credentials?.join(" | ") ?? "-",
     rank: index + 1,
     risk_score: formatNumber(row.risk_score, 1),
+    trading_clock_status: row.trading_clock_status?.replaceAll("_", " ") ?? "-",
   }));
 }
 
@@ -402,6 +460,19 @@ function formatExcludedRows(rows: MultiMarketAllocationCandidate[]): TableRow[] 
     market_group: marketGroup(row),
     missing_connector_controls: row.missing_connector_controls?.join(" | ") ?? "-",
     missing_credentials: row.missing_credentials?.join(" | ") ?? "-",
+  }));
+}
+
+function formatRouteGateRows(rows: MarketAdapterRouteGate[]): TableRow[] {
+  return rows.map((row) => ({
+    ...row,
+    automation_lane: row.automation_lane?.replaceAll("_", " ") ?? "-",
+    gate_status: row.gate_status?.replaceAll("_", " ") ?? "-",
+    missing_controls: row.missing_controls?.slice(0, 4).join(" | ") ?? "-",
+    order_style: row.order_style?.replaceAll("_", " ") ?? "-",
+    readiness_score: formatNumber(row.readiness_score, 1),
+    settlement_basis: row.settlement_basis?.replaceAll("_", " ") ?? "-",
+    trading_clock_status: row.trading_clock_status?.replaceAll("_", " ") ?? "-",
   }));
 }
 
@@ -451,7 +522,39 @@ function allocationTone(value: unknown): DecisionBriefTone {
   return "slate";
 }
 
+function gateTone(value: unknown): DecisionBriefTone {
+  if (value === "live_ready_route_available" || value === "live_ready") {
+    return "emerald";
+  }
+
+  if (value === "supervised_ready_route_available" || value === "supervised_ready") {
+    return "blue";
+  }
+
+  if (value === "paper_only_routes_available" || value === "paper_only") {
+    return "amber";
+  }
+
+  if (value === "blocked") {
+    return "red";
+  }
+
+  return "slate";
+}
+
 function routeTone(route: MultiMarketAllocationCandidate): DecisionBriefTone {
+  if (route.market_gate_status === "live_ready") {
+    return "emerald";
+  }
+
+  if (route.market_gate_status === "supervised_ready") {
+    return "blue";
+  }
+
+  if (route.market_gate_status === "paper_only") {
+    return "amber";
+  }
+
   if (route.live_submission) {
     return "emerald";
   }

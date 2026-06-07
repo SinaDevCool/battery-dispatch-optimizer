@@ -57,6 +57,10 @@ export function MarketAllocationPanel({
             label="Expected revenue"
             value={formatCurrency(summary.total_expected_revenue_eur)}
           />
+          <ExecutionMetric
+            label="Market gate"
+            value={summary.market_gate_status ?? "-"}
+          />
         </div>
 
         <div className="grid gap-4 xl:grid-cols-2">
@@ -80,6 +84,9 @@ export function MarketAllocationPanel({
             "recommendation_status",
             "allocation_score",
             "risk_score",
+            "market_gate_status",
+            "market_gate_score",
+            "market_gate_settlement_basis",
             "connector_family",
             "connector_readiness_tier",
             "automation_blocking_level",
@@ -184,6 +191,10 @@ function formatMarketAllocationRows(
     connector_readiness_score: formatNumber(row.connector_readiness_score, 1),
     data_dependencies: row.data_dependencies?.join(" | ") ?? "-",
     expected_revenue_eur: formatCurrency(row.expected_revenue_eur),
+    market_gate_missing_controls: row.market_gate_missing_controls?.join(" | ") ?? "-",
+    market_gate_score: formatNumber(row.market_gate_score, 1),
+    market_gate_settlement_basis: row.market_gate_settlement_basis?.replaceAll("_", " ") ?? "-",
+    market_gate_status: row.market_gate_status?.replaceAll("_", " ") ?? "-",
     missing_connector_controls: row.missing_connector_controls?.join(" | ") ?? "-",
     missing_credentials: row.missing_credentials?.join(" | ") ?? "-",
     risk_score: formatNumber(row.risk_score, 1),

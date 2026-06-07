@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 import { useState } from "react";
 
 import { ActionButton } from "@/components/action-button";
@@ -8,7 +9,6 @@ import { useAssetContext } from "@/components/asset-provider";
 import { DispatchChart } from "@/components/charts/dispatch-chart";
 import { CommandCenterHeader } from "@/components/cockpit/command-center-header";
 import {
-  EngineCard,
   EnterpriseMaturityPanel,
   EvidenceList,
   StatusRow,
@@ -61,28 +61,28 @@ import type {
 const controlRoomTabs = [
   {
     id: "trading",
-    label: "Trading Status",
-    helper: "Latest signal, engine state, and current trade recommendation.",
+    label: "Trade Decision",
+    helper: "Recommendation, expected PnL, delivery window, and dispatch shape.",
   },
   {
     id: "readiness",
-    label: "Portfolio Readiness",
-    helper: "Data completeness, maturity, regulation, and automation blockers.",
+    label: "Trust & Evidence",
+    helper: "Forecast quality, data completeness, market eligibility, and proof gaps.",
   },
   {
     id: "commercial",
-    label: "Commercial Decision",
-    helper: "Revenue stack, hedging, allocation logic, and business value.",
+    label: "Owner Value",
+    helper: "Revenue stack, hedging, allocation logic, and commercial upside.",
   },
   {
     id: "execution",
-    label: "Execution Readiness",
+    label: "Automation Readiness",
     helper: "Approval, telemetry, guardrails, settlement, and audit linkage.",
   },
   {
     id: "actions",
-    label: "Next Actions",
-    helper: "The shortest list of operator actions that move the asset forward.",
+    label: "Action Queue",
+    helper: "Persona context, operator commands, and blocker-clearing work queue.",
   },
 ] as const;
 
@@ -351,32 +351,46 @@ export default function OverviewPage() {
         </div>
       ) : null}
 
-      <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard
-          accent={summary.signal === "ACTION" ? "emerald" : "slate"}
-          label="Trade signal"
-          value={String(summary.signal ?? "-")}
-          helper={String(summary.opportunity_level ?? "No opportunity level")}
-        />
-        <KpiCard
-          accent="emerald"
-          label="Expected PnL"
-          value={formatCurrency(summary.total_pnl_eur)}
-          helper={`${formatNumber(summary.profit_per_mw_day, 2)} EUR/MW-day`}
-        />
-        <KpiCard
-          accent="blue"
-          label="Revenue stack"
-          value={formatCurrency(totalRevenue)}
-          helper={`${revenueRows.length} market product(s) assessed`}
-        />
-        <KpiCard
-          accent={readiness.data?.readiness_status === "blocked" ? "red" : "blue"}
-          label="Execution readiness"
-          value={readiness.data?.readiness_status ?? "not evaluated"}
-          helper={`${readiness.data?.summary?.blocked ?? 0} blocked / ${readiness.data?.summary?.review ?? 0} review`}
-        />
-      </div>
+      <SectionCard
+        action={
+          <StatusPill tone={summary.signal === "ACTION" ? "emerald" : "amber"}>
+            {String(summary.signal ?? "No signal")}
+          </StatusPill>
+        }
+        className="mb-6"
+        title="Today's business value"
+      >
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <KpiCard
+            accent="emerald"
+            label="Expected trading value"
+            value={formatCurrency(summary.total_pnl_eur)}
+            helper={`${formatNumber(summary.profit_per_mw_day, 2)} EUR/MW-day from latest signal`}
+          />
+          <KpiCard
+            accent="blue"
+            label="Revenue stack"
+            value={formatCurrency(totalRevenue)}
+            helper={`${revenueRows.length} market product(s) assessed`}
+          />
+          <KpiCard
+            accent={readiness.data?.readiness_status === "blocked" ? "red" : "emerald"}
+            label="Automation readiness"
+            value={readiness.data?.readiness_status ?? "not evaluated"}
+            helper={`${readiness.data?.summary?.blocked ?? 0} blocked / ${readiness.data?.summary?.review ?? 0} review`}
+          />
+          <KpiCard
+            accent={activeDispatchRows.length ? "emerald" : "amber"}
+            label="Delivery shape"
+            value={`${activeDispatchRows.length} interval(s)`}
+            helper={
+              activeDispatchRows.length
+                ? "Dispatch is available for bid conversion."
+                : "Run optimization to create a dispatch schedule."
+            }
+          />
+        </div>
+      </SectionCard>
 
       <DecisionBrief
         blockers={personaDecision.blockers}
@@ -390,39 +404,35 @@ export default function OverviewPage() {
       />
 
       <SectionCard
-        action={<StatusPill tone="blue">{persona.defaultNavigationLabel}</StatusPill>}
+        action={<StatusPill tone="blue">Move asset forward</StatusPill>}
         className="mb-6"
-        title="Persona operating lens"
+        title="Priority actions"
       >
-        <div className="grid gap-5 xl:grid-cols-3">
-          <div>
-            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Decisions
-            </div>
-            <EvidenceList items={persona.priorityActions} tone="blue" />
-          </div>
-          <div>
-            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-              KPI lens
-            </div>
-            <EvidenceList
-              items={persona.priorityKpis.map((item) =>
-                item.replaceAll("_", " "),
-              )}
-              tone="emerald"
-            />
-          </div>
-          <div>
-            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Automation scope
-            </div>
-            <EvidenceList
-              items={persona.allowedAutomationActions.map((item) =>
-                item.replaceAll("_", " "),
-              )}
-              tone="blue"
-            />
-          </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <ActionButton
+            endpoint="/workflow/run-daily"
+            label="Run optimization"
+            refetch={refetchCockpit}
+            variant="primary"
+          />
+          <Link
+            className="rounded-lg border border-sky-400/25 bg-sky-400/10 px-4 py-3 text-sm font-semibold text-sky-100 transition hover:bg-sky-400/20"
+            href="/revenue"
+          >
+            Review owner value
+            <span className="mt-1 block text-xs font-normal text-slate-400">
+              Revenue stack, product eligibility, and commercial blockers.
+            </span>
+          </Link>
+          <Link
+            className="rounded-lg border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20"
+            href="/execution"
+          >
+            Clear automation blockers
+            <span className="mt-1 block text-xs font-normal text-slate-400">
+              Guardrails, approval, telemetry, and market submission readiness.
+            </span>
+          </Link>
         </div>
       </SectionCard>
 
@@ -434,42 +444,6 @@ export default function OverviewPage() {
 
       {activeTab === "trading" ? (
         <div className="space-y-5">
-          <div className="grid gap-4 xl:grid-cols-3">
-            <EngineCard
-              href="/forecasts"
-              label="Market Intelligence"
-              status={displayValue(
-                metadata.forecast_model ?? metadata.forecast_provider,
-                "Forecast source pending",
-              )}
-              title="Forecast workbench"
-              value={displayValue(
-                metadata.forecast_provider ?? metadata.source,
-                "No active forecast",
-              )}
-            />
-            <EngineCard
-              href="/revenue"
-              label="Commercial Optimization"
-              status={`${activeDispatchRows.length} active dispatch interval(s)`}
-              title="Revenue stack"
-              value={formatCurrency(totalRevenue)}
-            />
-            <EngineCard
-              href="/execution"
-              label="Trading Operations"
-              status={displayValue(
-                approval.data?.approval?.status ??
-                  executionProposal.data?.proposal?.approval_status,
-                "Approval evidence pending",
-              )}
-              title="Execution control"
-              value={displayValue(
-                readiness.data?.readiness_status ?? guardrails.data?.automation_status,
-                "Advisory mode",
-              )}
-            />
-          </div>
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
             <DecisionSummary metadata={metadata} summary={summary} />
             <SectionCard
@@ -487,6 +461,31 @@ export default function OverviewPage() {
               )}
             </SectionCard>
           </div>
+          <SectionCard title="Decision inputs">
+            <div className="grid gap-3 xl:grid-cols-3">
+              <StatusRow
+                label="Forecast source"
+                tone={metadata.forecast_provider || metadata.source ? "emerald" : "amber"}
+                value={displayValue(
+                  metadata.forecast_provider ?? metadata.source,
+                  "Forecast source pending",
+                )}
+              />
+              <StatusRow
+                label="Commercial value"
+                tone={totalRevenue > 0 ? "emerald" : "amber"}
+                value={`${formatCurrency(totalRevenue)} across ${revenueRows.length} product(s)`}
+              />
+              <StatusRow
+                label="Automation gate"
+                tone={readiness.data?.readiness_status === "blocked" ? "red" : "emerald"}
+                value={displayValue(
+                  readiness.data?.readiness_status ?? guardrails.data?.automation_status,
+                  "Not evaluated",
+                )}
+              />
+            </div>
+          </SectionCard>
         </div>
       ) : null}
 
@@ -602,7 +601,43 @@ export default function OverviewPage() {
       ) : null}
 
       {activeTab === "actions" ? (
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <div className="space-y-5">
+          <SectionCard
+            action={<StatusPill tone="blue">{persona.defaultNavigationLabel}</StatusPill>}
+            title="Persona operating lens"
+          >
+            <div className="grid gap-5 xl:grid-cols-3">
+              <div>
+                <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Decisions
+                </div>
+                <EvidenceList items={persona.priorityActions} tone="blue" />
+              </div>
+              <div>
+                <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  KPI lens
+                </div>
+                <EvidenceList
+                  items={persona.priorityKpis.map((item) =>
+                    item.replaceAll("_", " "),
+                  )}
+                  tone="emerald"
+                />
+              </div>
+              <div>
+                <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Automation scope
+                </div>
+                <EvidenceList
+                  items={persona.allowedAutomationActions.map((item) =>
+                    item.replaceAll("_", " "),
+                  )}
+                  tone="blue"
+                />
+              </div>
+            </div>
+          </SectionCard>
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <SectionCard title="Operator actions">
             <div className="grid gap-3 md:grid-cols-2">
               <ActionButton
@@ -636,6 +671,7 @@ export default function OverviewPage() {
               tone="blue"
             />
           </SectionCard>
+          </div>
         </div>
       ) : null}
     </>

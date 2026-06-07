@@ -30,8 +30,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-[#080b10] text-slate-100">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 border-r border-slate-800 bg-slate-950/95 px-4 py-5 xl:block">
-        <div className="mb-8 flex items-center gap-3 px-2">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 flex-col overflow-hidden border-r border-slate-800 bg-slate-950/95 px-4 py-5 xl:flex">
+        <div className="mb-6 flex shrink-0 items-center gap-3 px-2">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-emerald-400/30 bg-emerald-400/10">
             <Zap className="h-5 w-5 text-emerald-300" />
           </div>
@@ -45,7 +45,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        <div className="mb-5 rounded-lg border border-slate-800 bg-slate-900/45 p-3">
+        <div className="mb-4 shrink-0 rounded-lg border border-slate-800 bg-slate-900/45 p-3">
           <div className="text-xs font-semibold text-sky-200">
             {persona.label}
           </div>
@@ -60,7 +60,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
         </div>
 
-        <nav className="space-y-5">
+        <nav className="sidebar-nav-scroll -mr-2 min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain pr-2 pb-5">
           {visibleNavigationGroups.map((group) => (
             <div key={group.id}>
               <div className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">

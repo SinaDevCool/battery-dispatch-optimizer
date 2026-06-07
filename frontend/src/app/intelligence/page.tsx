@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { ActionButton } from "@/components/action-button";
 import { useAssetContext } from "@/components/asset-provider";
+import { DataTable } from "@/components/data-table";
 import { DecisionBrief } from "@/components/decision-brief";
 import { ErrorState } from "@/components/error-state";
 import {
@@ -16,6 +17,8 @@ import {
 } from "@/components/intelligence/decision-intelligence-panels";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
+import { SectionCard } from "@/components/section-card";
+import { StatusPill } from "@/components/status-pill";
 import { apiGet } from "@/lib/api";
 import { formatCurrency, formatDateTime, formatNumber } from "@/lib/format";
 import type {
@@ -109,6 +112,23 @@ export default function DecisionIntelligencePage() {
     latestRun,
     reviewCount,
   });
+  const evidenceScorecard = buildEvidenceScorecard({
+    blockedCount,
+    eligibleCount,
+    latestDecision,
+    latestPerformance,
+    latestRun,
+    productCount: productRows.length,
+    reviewCount,
+  });
+  const evidenceGapRows = buildEvidenceGapRows({
+    blockedCount,
+    latestDecision,
+    latestPerformance,
+    latestRun,
+    productRows,
+    reviewCount,
+  });
 
   const refetchIntelligence = () =>
     Promise.all([
@@ -122,9 +142,9 @@ export default function DecisionIntelligencePage() {
   return (
     <>
       <PageHeading
-        description="Trace every commercial recommendation back to forecast, optimizer, revenue stack, regulation, product eligibility, and forecast performance evidence."
+        description="Prove whether a trading recommendation is client-defensible by linking forecast, dispatch, revenue, product eligibility, and audit evidence."
         eyebrow="Decision intelligence"
-        title="Audit and business evidence"
+        title="Decision evidence"
       />
 
       <div className="mb-6 flex flex-wrap gap-3">
@@ -153,40 +173,64 @@ export default function DecisionIntelligencePage() {
         tone={evidenceDecision.tone}
       />
 
-      <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard
-          accent={latestRun?.status === "ok" ? "emerald" : "slate"}
-          label="Latest workflow"
-          value={latestRun?.workflow_run_id ?? "-"}
-          helper={latestRun?.completed_at ? formatDateTime(latestRun.completed_at) : "No completed audit run"}
+      <SectionCard
+        action={<StatusPill tone={evidenceDecision.tone}>{evidenceDecision.tone === "emerald" ? "Client-ready" : "Needs evidence"}</StatusPill>}
+        className="mb-6"
+        title="Client defensibility scorecard"
+      >
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <KpiCard
+            accent={latestRun?.status === "ok" ? "emerald" : "amber"}
+            label="Evidence chain"
+            value={evidenceScorecard.evidenceChain}
+            helper={latestRun?.completed_at ? `Audited ${formatDateTime(latestRun.completed_at)}` : "No completed audit run"}
+          />
+          <KpiCard
+            accent={latestDecision?.recommendation_status === "advisory_ready" ? "emerald" : "amber"}
+            label="Commercial posture"
+            value={latestDecision?.readiness ?? "-"}
+            helper={latestDecision?.recommendation_status ?? "No decision history"}
+          />
+          <KpiCard
+            accent="emerald"
+            label="Defensible value"
+            value={formatCurrency(latestDecision?.expected_pnl_eur)}
+            helper={`${formatNumber(latestDecision?.profit_per_mw_day, 2)} EUR/MW-day`}
+          />
+          <KpiCard
+            accent={latestPerformance ? "blue" : "amber"}
+            label="Forecast proof"
+            value={
+              latestPerformance
+                ? `${formatNumber(latestPerformance.mae_eur_per_mwh, 2)} MAE`
+                : "Not tested"
+            }
+            helper={
+              latestPerformance
+                ? `${formatCurrency(latestPerformance.revenue_delta_eur)} revenue delta`
+                : "Run forecast-vs-actual when actual prices exist"
+            }
+          />
+        </div>
+      </SectionCard>
+
+      <SectionCard
+        action={<StatusPill tone={evidenceGapRows.length ? "amber" : "emerald"}>{evidenceGapRows.length} gap(s)</StatusPill>}
+        className="mb-6"
+        title="Evidence gaps to close"
+      >
+        <DataTable
+          columns={[
+            "product_id",
+            "product_name",
+            "market",
+            "eligibility_status",
+            "automation_gate",
+            "blocking_reasons",
+          ]}
+          rows={evidenceGapRows}
         />
-        <KpiCard
-          accent={latestDecision?.recommendation_status === "advisory_ready" ? "emerald" : "amber"}
-          label="Decision posture"
-          value={latestDecision?.readiness ?? "-"}
-          helper={latestDecision?.recommendation_status ?? "No decision history"}
-        />
-        <KpiCard
-          accent="emerald"
-          label="Expected PnL"
-          value={formatCurrency(latestDecision?.expected_pnl_eur)}
-          helper={`${formatNumber(latestDecision?.profit_per_mw_day, 2)} EUR/MW-day`}
-        />
-        <KpiCard
-          accent={latestPerformance ? "blue" : "amber"}
-          label="Forecast trust"
-          value={
-            latestPerformance
-              ? `${formatNumber(latestPerformance.mae_eur_per_mwh, 2)} MAE`
-              : "Not tested"
-          }
-          helper={
-            latestPerformance
-              ? `${formatCurrency(latestPerformance.revenue_delta_eur)} revenue delta`
-              : "Run forecast-vs-actual when actual prices exist"
-          }
-        />
-      </div>
+      </SectionCard>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(420px,0.75fr)]">
         <WorkflowAuditTrailPanel workflowRows={workflowAuditRows} />
@@ -199,7 +243,17 @@ export default function DecisionIntelligencePage() {
 
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
         <DecisionHistoryPanel decisionTrend={decisionTrend} />
-        <ForecastPerformanceEvidencePanel performanceRows={performanceRows} />
+        <ForecastPerformanceEvidencePanel
+          emptyAction={
+            <ActionButton
+              endpoint={`/backtesting/forecast-actual/run?asset_id=${selectedAssetId}`}
+              label="Run forecast backtest"
+              refetch={refetchIntelligence}
+              variant="secondary"
+            />
+          }
+          performanceRows={performanceRows}
+        />
       </div>
 
       <div className="mt-5">
@@ -217,15 +271,39 @@ function buildWorkflowAuditRows(rows: TableRow[]) {
 }
 
 function buildDecisionTrend(rows: BusinessDecision[]) {
-  return rows.map((row) => ({
-    expected_pnl_eur: row.expected_pnl_eur,
-    forecast_provider: row.forecast_provider,
-    generated_at: formatDateTime(row.generated_at),
-    hedged_revenue_eur: row.hedged_revenue_eur,
-    readiness: row.readiness,
-    recommendation_status: row.recommendation_status,
-    residual_exposure_eur: row.residual_exposure_eur,
-  }));
+  const grouped = new Map<string, TableRow>();
+
+  rows.forEach((row) => {
+    const key = [
+      row.readiness ?? "-",
+      row.recommendation_status ?? "-",
+      row.expected_pnl_eur ?? "-",
+      row.residual_exposure_eur ?? "-",
+      row.forecast_provider ?? "-",
+      row.forecast_model ?? "-",
+    ].join("|");
+    const existing = grouped.get(key);
+
+    if (existing) {
+      existing.repeated_runs = Number(existing.repeated_runs ?? 1) + 1;
+      existing.first_at = formatDateTime(row.generated_at);
+      return;
+    }
+
+    grouped.set(key, {
+      expected_pnl_eur: row.expected_pnl_eur,
+      first_at: formatDateTime(row.generated_at),
+      forecast_provider: row.forecast_provider,
+      hedged_revenue_eur: row.hedged_revenue_eur,
+      latest_at: formatDateTime(row.generated_at),
+      readiness: row.readiness,
+      recommendation_status: row.recommendation_status,
+      repeated_runs: 1,
+      residual_exposure_eur: row.residual_exposure_eur,
+    });
+  });
+
+  return Array.from(grouped.values());
 }
 
 function buildProductMatrix(rows: EligibleProductResult[]) {
@@ -245,6 +323,114 @@ function buildProductMatrix(rows: EligibleProductResult[]) {
   }));
 }
 
+function buildEvidenceScorecard({
+  blockedCount,
+  eligibleCount,
+  latestDecision,
+  latestPerformance,
+  latestRun,
+  productCount,
+  reviewCount,
+}: {
+  blockedCount: number;
+  eligibleCount: number;
+  latestDecision?: BusinessDecision;
+  latestPerformance?: TableRow;
+  latestRun?: TableRow | null;
+  productCount: number;
+  reviewCount: number;
+}) {
+  const linkedEvidenceCount = latestRun ? countLinkedEvidence(latestRun) : 0;
+
+  return {
+    evidenceChain: latestRun
+      ? `${linkedEvidenceCount}/4 linked`
+      : "not linked",
+    posture: latestDecision?.recommendation_status ?? "not generated",
+    productCoverage: `${eligibleCount}/${productCount} eligible`,
+    trustState:
+      blockedCount || reviewCount || !latestPerformance
+        ? "needs evidence"
+        : "client-ready",
+  };
+}
+
+function buildEvidenceGapRows({
+  blockedCount,
+  latestDecision,
+  latestPerformance,
+  latestRun,
+  productRows,
+  reviewCount,
+}: {
+  blockedCount: number;
+  latestDecision?: BusinessDecision;
+  latestPerformance?: TableRow;
+  latestRun?: TableRow | null;
+  productRows: EligibleProductResult[];
+  reviewCount: number;
+}) {
+  const rows: TableRow[] = [];
+
+  if (!latestRun) {
+    rows.push({
+      automation_gate: "Run audited workflow",
+      blocking_reasons: "No workflow links forecast, dispatch, revenue, and decision evidence.",
+      eligibility_status: "missing",
+      market: "audit",
+      product_id: "workflow_chain",
+      product_name: "Evidence chain",
+    });
+  }
+
+  if (!latestPerformance) {
+    rows.push({
+      automation_gate: "Add actual price evidence",
+      blocking_reasons: "Forecast-vs-actual performance has not been tested.",
+      eligibility_status: "missing",
+      market: "forecast",
+      product_id: "forecast_performance",
+      product_name: "Forecast proof",
+    });
+  }
+
+  if (!latestDecision) {
+    rows.push({
+      automation_gate: "Generate business decision",
+      blocking_reasons: "No commercial recommendation is available for audit.",
+      eligibility_status: "missing",
+      market: "commercial",
+      product_id: "business_decision",
+      product_name: "Decision evidence",
+    });
+  }
+
+  if (blockedCount || reviewCount) {
+    productRows
+      .filter((row) => row.eligibility_status !== "eligible")
+      .slice(0, 6)
+      .forEach((row) => {
+        rows.push({
+          automation_gate:
+            row.eligibility_status === "review_required"
+              ? "Commercial review"
+              : "Product blocked",
+          blocking_reasons: summarizeIssues(
+            row.blocking_reasons?.length
+              ? row.blocking_reasons
+              : row.review_warnings,
+          ),
+          eligibility_status: row.eligibility_status,
+          market: row.product?.market ?? "-",
+          product_id: row.product?.product_id ?? "-",
+          product_name: row.product?.product_name ?? "-",
+        });
+      });
+  }
+
+  return rows;
+}
+
 function summarizeIssues(value: unknown) {
   if (!Array.isArray(value) || value.length === 0) {
     return "-";
@@ -259,6 +445,15 @@ function summarizeIssues(value: unknown) {
       return String(item);
     })
     .join(" | ");
+}
+
+function countLinkedEvidence(row: TableRow) {
+  return [
+    row.forecast_snapshot_id,
+    row.signal_id,
+    row.revenue_stack_id,
+    row.decision_id,
+  ].filter((value) => value !== null && value !== undefined && value !== "-").length;
 }
 
 function buildEvidenceDecision({

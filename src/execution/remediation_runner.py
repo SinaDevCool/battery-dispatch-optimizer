@@ -3,6 +3,7 @@ from datetime import datetime
 from src.db.repositories.execution_repository import save_automation_event
 from src.execution.approval_workflow import request_execution_approval
 from src.execution.automation_control import automation_control_status
+from src.execution.execution_recovery_engine import build_execution_recovery_plan
 from src.execution.market_submission import run_demo_market_submission
 from src.execution.paper_trading import run_execution_paper_trade
 from src.execution.pretrade_proposal import build_execution_proposal
@@ -14,7 +15,11 @@ from src.telemetry.asset_telemetry import save_demo_asset_telemetry
 def run_next_remediation(asset_id):
     before_control = automation_control_status(asset_id)
     before_strategy = build_strategy_intent(asset_id)
-    remediation_item = next_auto_remediation(before_control)
+    recovery_plan = build_execution_recovery_plan(asset_id)
+    remediation_item = next_auto_remediation(
+        before_control,
+        recovery_plan=recovery_plan,
+    )
 
     if remediation_item is None:
         after_control = automation_control_status(asset_id)
@@ -31,6 +36,7 @@ def run_next_remediation(asset_id):
             before_control=before_control,
             before_strategy=before_strategy,
             remediation_item=None,
+            recovery_plan=recovery_plan,
             status="blocked" if after_control.get("blockers") else "ok",
         )
         persist_automation_event(result)
@@ -58,13 +64,30 @@ def run_next_remediation(asset_id):
         before_control=before_control,
         before_strategy=before_strategy,
         remediation_item=remediation_item,
+        recovery_plan=recovery_plan,
         status=classify_runner_status(action_result, after_control),
     )
     persist_automation_event(result)
     return result
 
 
-def next_auto_remediation(control):
+def next_auto_remediation(control, recovery_plan=None):
+    recovery_action = (recovery_plan or {}).get("primary_action") or {}
+    if recovery_action.get("auto_resolvable") and recovery_action.get(
+        "resolution_endpoint"
+    ):
+        return {
+            "auto_resolvable": True,
+            "blocker_id": recovery_action.get("action"),
+            "category": recovery_action.get("category"),
+            "evidence_link": "/execution/audit",
+            "message": recovery_action.get("message"),
+            "required_action": recovery_action.get("label"),
+            "resolution_endpoint": recovery_action.get("resolution_endpoint"),
+            "severity": recovery_action.get("severity", "medium"),
+            "source": "execution_recovery_engine",
+        }
+
     for item in control.get("remediation_queue", []):
         if item.get("auto_resolvable") and item.get("resolution_endpoint"):
             return item
@@ -158,6 +181,7 @@ def remediation_result(
     before_control,
     before_strategy,
     remediation_item,
+    recovery_plan,
     status,
 ):
     return {
@@ -167,6 +191,7 @@ def remediation_result(
         "event_type": "remediation_run_next",
         "message": action_result.get("message"),
         "remediation_item": remediation_item,
+        "recovery_plan": recovery_plan,
         "action_result": action_result,
         "before": state_snapshot(
             control=before_control,
@@ -197,6 +222,7 @@ def persist_automation_event(result):
         "after": result["after"],
         "action_result": result["action_result"],
         "remediation_item": result.get("remediation_item"),
+        "recovery_plan": result.get("recovery_plan"),
         "remaining_blocker_count": len(result.get("remaining_blockers", [])),
         "remaining_remediation_count": len(
             result.get("remaining_remediation_queue", [])

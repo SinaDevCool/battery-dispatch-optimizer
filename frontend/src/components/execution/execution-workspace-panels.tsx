@@ -12,9 +12,11 @@ import type {
   AssetTelemetryResponse,
   AutomationEvent,
   ExecutionApproval,
+  ExecutionPaperTrade,
   ExecutionProposal,
   ExecutionReadinessResponse,
   JsonObject,
+  MarketSubmissionLifecycleResponse,
   TableRow,
 } from "@/types/api";
 
@@ -256,39 +258,76 @@ export function ExecutionRiskApprovalPanel({
 export function ExecutionSimulationPanel({
   paperFills,
   paperHistoryRows,
+  paperTrade,
   paperTradeRunCount,
   refetchExecution,
   selectedAssetId,
   submission,
+  submissionLifecycle,
   submissionSummary,
 }: {
   paperFills: TableRow[];
   paperHistoryRows: TableRow[];
+  paperTrade?: ExecutionPaperTrade | null;
   paperTradeRunCount: number;
   refetchExecution: RefetchExecution;
   selectedAssetId: string;
   submission?: TableRow | null;
+  submissionLifecycle?: MarketSubmissionLifecycleResponse;
   submissionSummary: JsonObject;
 }) {
+  const lifecycleSteps = submissionLifecycle?.steps ?? [];
+
   return (
     <div className="grid gap-5 xl:grid-cols-2">
       <div className="space-y-5">
         <SectionCard
           action={<ActionButton endpoint={`/assets/${selectedAssetId}/execution/paper-trade/run`} label="Run paper trade" refetch={refetchExecution} variant="primary" />}
-          title="Latest automatic paper trade"
+          title="Market-specific paper execution"
         >
+          <div className="mb-4 grid gap-3 md:grid-cols-3">
+            <ExecutionMetric
+              label="Execution model"
+              value={String(paperTrade?.market_execution_model ?? "-").replaceAll("_", " ")}
+            />
+            <ExecutionMetric
+              label="Settlement basis"
+              value={String(paperTrade?.settlement_basis ?? "-").replaceAll("_", " ")}
+            />
+            <ExecutionMetric
+              label="Validation"
+              value={String(paperTrade?.validation?.status ?? "-")}
+            />
+          </div>
           <DataTable
             columns={[
               "delivery_time",
               "market_product_id",
+              "execution_detail",
               "side",
               "filled_volume_mwh",
+              "capacity_mw",
               "fill_price_eur_mwh",
               "notional_eur",
               "status",
             ]}
             rows={paperFills.slice(0, 8)}
           />
+        </SectionCard>
+        <SectionCard
+          action={<StatusPill tone={paperTrade?.awards?.length ? "emerald" : "slate"}>{paperTrade?.awards?.length ?? 0}</StatusPill>}
+          title="Market awards and validation"
+        >
+          <div className="mb-4 grid gap-5 xl:grid-cols-2">
+            <DataTable
+              columns={["award_id", "bid_id", "status", "capacity_mw", "clearing_price_eur_mwh", "fill_ratio"]}
+              rows={(paperTrade?.awards ?? []).slice(0, 6)}
+            />
+            <DataTable
+              columns={["check", "status", "message"]}
+              rows={(paperTrade?.validation?.checks ?? []).slice(0, 6)}
+            />
+          </div>
         </SectionCard>
         <SectionCard
           action={<StatusPill tone={paperTradeRunCount ? "emerald" : "slate"}>{paperTradeRunCount} run(s)</StatusPill>}
@@ -311,12 +350,30 @@ export function ExecutionSimulationPanel({
         action={<ActionButton endpoint={`/assets/${selectedAssetId}/execution/demo-submit`} label="Simulate bid submission" refetch={refetchExecution} variant="primary" />}
         title="Simulated market submission"
       >
-        <div className="mb-4 grid gap-3 md:grid-cols-3">
+        <div className="mb-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <ExecutionMetric
+            label="Lifecycle"
+            value={String(submissionLifecycle?.lifecycle_status ?? "-").replaceAll("_", " ")}
+          />
+          <ExecutionMetric
+            label="Current step"
+            value={submissionLifecycle?.current_step?.label ?? "-"}
+          />
+          <ExecutionMetric
+            label="Route gate"
+            value={String(submissionLifecycle?.market_route_status ?? "-").replaceAll("_", " ")}
+          />
           <ExecutionMetric label="Submitted" value={formatNumber(submissionSummary.submitted_bid_count, 0)} />
           <ExecutionMetric label="Accepted" value={formatNumber(submissionSummary.accepted_bid_count, 0)} />
           <ExecutionMetric label="Awarded notional" value={formatCurrency(submissionSummary.notional_eur)} />
         </div>
-        <DataTable columns={["step", "label", "status", "owner"]} rows={((submission?.lifecycle as TableRow[]) ?? []).slice(0, 6)} />
+        <div className="mb-4 rounded-lg border border-slate-800 bg-slate-900/45 p-4 text-sm leading-6 text-slate-300">
+          {submissionLifecycle?.next_action ?? "Lifecycle evidence is not available yet."}
+        </div>
+        <DataTable
+          columns={["step", "label", "status", "owner", "message"]}
+          rows={(lifecycleSteps.length ? lifecycleSteps : ((submission?.lifecycle as TableRow[]) ?? [])).slice(0, 10)}
+        />
       </SectionCard>
     </div>
   );
@@ -325,11 +382,13 @@ export function ExecutionSimulationPanel({
 export function ExecutionSettlementPanel({
   refetchExecution,
   selectedAssetId,
+  settlementData,
   settlementSummary,
   varianceDrivers,
 }: {
   refetchExecution: RefetchExecution;
   selectedAssetId: string;
+  settlementData?: JsonObject | null;
   settlementSummary: JsonObject;
   varianceDrivers: TableRow[];
 }) {
@@ -344,6 +403,20 @@ export function ExecutionSettlementPanel({
           <ExecutionMetric label="Paper PnL" value={formatCurrency(settlementSummary.paper_pnl_eur)} />
           <ExecutionMetric label="Realized PnL" value={formatCurrency(settlementSummary.realized_pnl_eur)} />
         </div>
+        <div className="mb-4 grid gap-3 md:grid-cols-3">
+          <ExecutionMetric
+            label="Execution model"
+            value={String(settlementData?.market_execution_model ?? "-").replaceAll("_", " ")}
+          />
+          <ExecutionMetric
+            label="Settlement basis"
+            value={String(settlementData?.settlement_basis ?? "-").replaceAll("_", " ")}
+          />
+          <ExecutionMetric
+            label="Reserve awarded"
+            value={`${formatNumber(settlementSummary.awarded_capacity_mw, 2)} MW`}
+          />
+        </div>
         <DataTable columns={["driver", "severity", "delta_eur", "message"]} rows={varianceDrivers.slice(0, 8)} />
       </SectionCard>
     </div>
@@ -354,19 +427,30 @@ export function ExecutionAuditPanel({
   auditRows,
   automationEvents,
   lifecycleRows,
+  submissionLifecycle,
   riskChecks,
   telemetryData,
 }: {
   auditRows: TableRow[];
   automationEvents: AutomationEvent[];
   lifecycleRows: TableRow[];
+  submissionLifecycle?: MarketSubmissionLifecycleResponse;
   riskChecks: TableRow[];
   telemetryData: AssetTelemetryResponse["telemetry"];
 }) {
   return (
     <div className="grid gap-5 xl:grid-cols-2">
-      <SectionCard title="Bid lifecycle">
-        <DataTable columns={["step", "label", "status", "owner"]} rows={lifecycleRows.slice(0, 6)} />
+      <SectionCard
+        action={<StatusPill tone={lifecycleTone(submissionLifecycle?.lifecycle_status)}>{submissionLifecycle?.lifecycle_status ?? "not evaluated"}</StatusPill>}
+        title="Submission lifecycle"
+      >
+        <div className="mb-4 grid gap-3 md:grid-cols-4">
+          <ExecutionMetric label="Current step" value={submissionLifecycle?.current_step?.label ?? "-"} />
+          <ExecutionMetric label="Adapter" value={submissionLifecycle?.adapter_id ?? "-"} />
+          <ExecutionMetric label="Complete" value={formatNumber(submissionLifecycle?.summary?.complete, 0)} />
+          <ExecutionMetric label="Blocked" value={formatNumber(submissionLifecycle?.summary?.blocked, 0)} />
+        </div>
+        <DataTable columns={["step", "label", "status", "owner", "message"]} rows={lifecycleRows.slice(0, 10)} />
       </SectionCard>
       <SectionCard title="Backend risk checks">
         <DataTable columns={["check", "status", "message"]} rows={riskChecks.slice(0, 8)} />
@@ -489,6 +573,22 @@ function readinessTone(value: unknown) {
   }
 
   if (value === "operator_review_required" || value === "review") {
+    return "blue";
+  }
+
+  if (value === "blocked") {
+    return "red";
+  }
+
+  return "slate";
+}
+
+function lifecycleTone(value: unknown) {
+  if (value === "complete") {
+    return "emerald";
+  }
+
+  if (value === "in_progress" || value === "review") {
     return "blue";
   }
 

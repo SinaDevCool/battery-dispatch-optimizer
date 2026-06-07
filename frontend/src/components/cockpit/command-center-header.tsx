@@ -6,7 +6,6 @@ import { ActionButton } from "@/components/action-button";
 import { AssetSelector } from "@/components/asset-selector";
 import { StatusPill } from "@/components/status-pill";
 import { formatDateTime } from "@/lib/format";
-import { useApiBaseUrl } from "@/hooks/use-api-base-url";
 import type { Asset, SignalMetadata, SignalSummary } from "@/types/api";
 
 export function CommandCenterHeader({
@@ -24,7 +23,6 @@ export function CommandCenterHeader({
   onRun: () => Promise<unknown>;
   summary: SignalSummary;
 }) {
-  const apiBaseUrl = useApiBaseUrl();
   const market = asset?.market ?? "DE-LU day-ahead";
   const country = asset?.country ?? "Germany";
   const signal = String(summary.signal ?? "No signal");
@@ -35,18 +33,18 @@ export function CommandCenterHeader({
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <StatusPill tone="blue">Operations cockpit</StatusPill>
+              <StatusPill tone="blue">Value cockpit</StatusPill>
               <StatusPill tone={healthStatus === "ok" ? "emerald" : "amber"}>
                 API {healthStatus ?? "checking"}
               </StatusPill>
-              <StatusPill tone="slate">Auto-trading disabled</StatusPill>
+              <StatusPill tone="slate">Fail-closed automation</StatusPill>
             </div>
             <h1 className="mt-4 text-2xl font-semibold tracking-tight text-white md:text-3xl">
-              Battery trading control room
+              Battery value control room
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-              Asset-level optimization, commercial risk, regulatory readiness,
-              and execution status for bankable battery operations.
+              One place to see owner value, trade confidence, evidence quality,
+              and the blockers that prevent safe automated execution.
             </p>
           </div>
 
@@ -90,9 +88,6 @@ export function CommandCenterHeader({
         />
       </div>
 
-      <div className="border-t border-slate-800 px-5 py-3 text-xs text-slate-500">
-        API target: <span className="font-mono text-slate-300">{apiBaseUrl}</span>
-      </div>
     </section>
   );
 }

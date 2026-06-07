@@ -358,6 +358,28 @@ def initialize_database(db_file=DATABASE_FILE):
 
             CREATE INDEX IF NOT EXISTS idx_automation_events_created_at
                 ON automation_events(created_at);
+
+            CREATE TABLE IF NOT EXISTS official_api_evidence (
+                evidence_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                adapter_id TEXT NOT NULL,
+                requirement_id TEXT NOT NULL,
+                evidence_type TEXT,
+                evidence_status TEXT NOT NULL,
+                evidence_owner TEXT,
+                evidence_reference TEXT,
+                recorded_at TEXT NOT NULL,
+                expires_at TEXT,
+                review_at TEXT,
+                unlocks_mode TEXT,
+                payload_json TEXT NOT NULL,
+                UNIQUE(adapter_id, requirement_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_official_api_evidence_adapter
+                ON official_api_evidence(adapter_id);
+
+            CREATE INDEX IF NOT EXISTS idx_official_api_evidence_requirement
+                ON official_api_evidence(requirement_id);
             """
             )
         except sqlite3.OperationalError as error:

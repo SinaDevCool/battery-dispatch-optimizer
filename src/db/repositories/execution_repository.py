@@ -634,3 +634,51 @@ def list_automation_events(asset_id, limit=25, db_file=DATABASE_FILE):
             raise
 
     return [row_to_dict(row) for row in rows]
+
+
+def list_automation_event_payloads(
+    asset_id,
+    event_type=None,
+    action=None,
+    limit=25,
+    db_file=DATABASE_FILE,
+):
+    initialize_database(db_file=db_file)
+    filters = ["asset_id = ?"]
+    values = [asset_id]
+
+    if event_type:
+        filters.append("event_type = ?")
+        values.append(event_type)
+
+    if action:
+        filters.append("action = ?")
+        values.append(action)
+
+    values.append(limit)
+
+    with get_connection(db_file=db_file) as connection:
+        try:
+            rows = connection.execute(
+                f"""
+                SELECT *
+                FROM automation_events
+                WHERE {' AND '.join(filters)}
+                ORDER BY automation_event_id DESC
+                LIMIT ?
+                """,
+                values,
+            ).fetchall()
+        except sqlite3.OperationalError as error:
+            if "no such table" in str(error).lower():
+                return []
+
+            raise
+
+    events = []
+    for row in rows:
+        event = row_to_dict(row)
+        event["payload"] = json.loads(event.pop("payload_json"))
+        events.append(event)
+
+    return events

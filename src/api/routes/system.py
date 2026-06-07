@@ -15,6 +15,12 @@ from src.config.paths import (
     OUTPUT_DATA_DIR,
     SCENARIO_RESULTS_FILE,
 )
+from src.execution.credential_readiness import build_credential_readiness
+from src.execution.live_adapter_handshake import (
+    build_live_adapter_handshake_readiness,
+    list_live_adapter_handshake_drills,
+    run_live_adapter_handshake_drill,
+)
 from src.services.persistence_readiness import build_persistence_readiness
 
 
@@ -94,6 +100,97 @@ def persistence_readiness():
             "recommended_actions": [
                 "Resolve backend persistence readiness evaluation before automated trading.",
             ],
+        }
+
+
+@router.get("/system/credential-readiness")
+def credential_readiness():
+    try:
+        return build_credential_readiness()
+    except Exception as error:
+        return {
+            "status": "error",
+            "credential_readiness_status": "blocked",
+            "message": f"Could not evaluate credential readiness: {error}",
+            "credentials": [],
+            "route_requirements": [],
+            "summary": {
+                "credential_count": 0,
+                "configured_credential_count": 0,
+                "missing_credential_count": 1,
+                "route_count": 0,
+                "credential_ready_route_count": 0,
+                "credential_blocked_route_count": 0,
+            },
+            "recommended_actions": [
+                "Resolve credential readiness evaluation before supervised live trading.",
+            ],
+        }
+
+
+@router.get("/system/live-adapter-handshake")
+def live_adapter_handshake_readiness(country: str = "Germany", asset_id: str = "default_site"):
+    try:
+        return build_live_adapter_handshake_readiness(country=country, asset_id=asset_id)
+    except Exception as error:
+        return {
+            "status": "error",
+            "handshake_readiness_status": "blocked",
+            "message": f"Could not evaluate live adapter handshake readiness: {error}",
+            "targets": [],
+            "routes": [],
+            "summary": {
+                "handshake_target_count": 0,
+                "handshake_ready_count": 0,
+                "handshake_blocked_count": 1,
+                "handshake_disabled_count": 0,
+                "route_handshake_count": 0,
+                "route_handshake_ready_count": 0,
+                "route_handshake_blocked_count": 0,
+                "route_handshake_disabled_count": 0,
+            },
+            "recommended_actions": [
+                "Resolve live adapter handshake readiness before supervised live trading.",
+            ],
+        }
+
+
+@router.post("/system/live-adapter-handshake/run")
+def run_live_adapter_handshake(
+    country: str = "Germany",
+    asset_id: str = "default_site",
+    target_id: str | None = None,
+    route_id: str | None = None,
+):
+    try:
+        return run_live_adapter_handshake_drill(
+            asset_id=asset_id,
+            target_id=target_id,
+            route_id=route_id,
+            country=country,
+        )
+    except ValueError as error:
+        return {
+            "status": "invalid",
+            "message": str(error),
+        }
+    except Exception as error:
+        return {
+            "status": "error",
+            "message": f"Could not run live adapter handshake drill: {error}",
+        }
+
+
+@router.get("/system/live-adapter-handshake/history")
+def live_adapter_handshake_history(asset_id: str = "default_site", limit: int = 10):
+    try:
+        return list_live_adapter_handshake_drills(asset_id=asset_id, limit=limit)
+    except Exception as error:
+        return {
+            "status": "error",
+            "asset_id": asset_id,
+            "message": f"Could not load live adapter handshake drill history: {error}",
+            "drills": [],
         }
 
 

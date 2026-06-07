@@ -439,21 +439,35 @@ export type WorkflowRunHistoryResponse = ApiEnvelope<{
 }>;
 
 export type ExecutionOrder = TableRow & {
+  adapter_id?: string;
+  activation_mode?: string;
+  activation_policy?: string;
   approval_status?: string;
+  automation_lane?: string;
   automation_eligibility?: string;
+  bid_granularity?: string;
   bid_id?: string;
   bid_status?: string;
   bid_type?: string;
+  capacity_mw?: number;
   confidence_reason?: string;
   delivery_end?: string;
   delivery_start?: string;
   delivery_time?: string;
   energy_mwh?: number;
+  gate_closure_label?: string;
   lifecycle_status?: string;
   limit_price_eur_mwh?: number;
   market?: string;
+  market_lifecycle_status?: string;
+  market_product?: string;
   market_product_id?: string;
+  market_segment?: string;
+  next_gate_closure_at?: string;
   order_id?: string;
+  order_style?: string;
+  package_order_type?: string;
+  package_schema_version?: string;
   price_limit_eur_mwh?: number;
   risk_status?: string;
   risk_adjusted_limit_price_eur_mwh?: number;
@@ -467,6 +481,32 @@ export type ExecutionOrder = TableRow & {
   submission_status?: string;
   volume_mw?: number;
   volume_mwh?: number;
+};
+
+export type ExecutionBidPackage = JsonObject & {
+  adapter_id?: string;
+  bid_package_id?: string;
+  generated_at?: string;
+  market?: string;
+  market_segment?: string;
+  order_style?: string;
+  orders?: ExecutionOrder[];
+  package_status?: string;
+  submission_mode?: string;
+  summary?: JsonObject & {
+    buy_order_count?: number;
+    order_count?: number;
+    reserve_order_count?: number;
+    sell_order_count?: number;
+    total_buy_mwh?: number;
+    total_reserve_mw?: number;
+    total_sell_mwh?: number;
+    validation_status?: string;
+  };
+  validation?: JsonObject & {
+    checks?: TableRow[];
+    status?: string;
+  };
 };
 
 export type ExecutionLifecycleStep = TableRow & {
@@ -496,8 +536,12 @@ export type ExecutionProposal = JsonObject & {
   forecast_confidence?: ForecastConfidenceResponse;
   generated_at?: string;
   bid_lifecycle?: ExecutionLifecycleStep[];
+  bid_package?: ExecutionBidPackage;
+  bid_package_status?: string;
   bids?: ExecutionOrder[];
   market?: string;
+  market_allocation_status?: string;
+  market_lifecycle?: JsonObject;
   market_submission_enabled?: boolean;
   orders?: ExecutionOrder[];
   risk_checks?: ExecutionRiskCheck[];
@@ -506,8 +550,13 @@ export type ExecutionProposal = JsonObject & {
   summary?: JsonObject & {
     expected_pnl_eur?: number;
     max_daily_loss_eur?: number;
+    market_gate_closure?: string;
+    order_style?: string;
     order_count?: number;
+    package_status?: string;
+    package_validation_status?: string;
     profit_per_mw_day?: number;
+    reserve_order_count?: number;
     total_buy_mwh?: number;
     total_sell_mwh?: number;
   };
@@ -526,6 +575,7 @@ export type ExecutionProposalHistoryResponse = ApiEnvelope<{
 }>;
 
 export type ExecutionPaperFill = TableRow & {
+  capacity_mw?: number;
   bid_id?: string;
   delivery_end?: string;
   delivery_start?: string;
@@ -543,28 +593,52 @@ export type ExecutionPaperFill = TableRow & {
   status?: string;
 };
 
+export type ExecutionPaperAward = TableRow & {
+  award_id?: string;
+  bid_id?: string;
+  capacity_mw?: number;
+  clearing_price_eur_mwh?: number;
+  direction?: string;
+  execution_style?: string;
+  fill_ratio?: number;
+  product?: string;
+  status?: string;
+};
+
 export type ExecutionPaperTrade = TableRow & {
   adapter_id?: string;
   asset_id?: string;
   audit?: TableRow[];
+  awards?: ExecutionPaperAward[];
   bid_lifecycle?: ExecutionLifecycleStep[];
   bids?: ExecutionOrder[];
   execution_proposal_id?: number;
   fills?: ExecutionPaperFill[];
   generated_at?: string;
   lifecycle_status?: string;
+  market_execution_model?: string;
   mode?: string;
   paper_trade_id?: number;
   proposal_generated_at?: string;
   status?: string;
+  settlement_basis?: string;
   summary?: TableRow & {
+    accepted_order_count?: number;
+    awarded_capacity_mw?: number;
     buy_cost_eur?: number;
     expected_pnl_eur?: number;
     filled_order_count?: number;
     order_count?: number;
     paper_pnl_eur?: number;
     paper_vs_expected_delta_eur?: number;
+    rejected_order_count?: number;
+    reserve_revenue_eur?: number;
     sell_revenue_eur?: number;
+    total_filled_mwh?: number;
+  };
+  validation?: JsonObject & {
+    checks?: TableRow[];
+    status?: string;
   };
 };
 
@@ -579,19 +653,24 @@ export type ExecutionPaperTradeHistoryResponse = ApiEnvelope<{
 }>;
 
 export type SettlementSummary = JsonObject & {
+  awarded_capacity_mw?: number | null;
   expected_pnl_eur?: number;
   paper_delta_eur?: number | null;
   paper_pnl_eur?: number | null;
   realized_delta_eur?: number | null;
   realized_pnl_eur?: number | null;
+  reserve_revenue_eur?: number | null;
+  total_filled_mwh?: number | null;
 };
 
 export type SettlementReconciliation = JsonObject & {
   asset_id?: string;
   evidence_status?: JsonObject;
   generated_at?: string;
+  market_execution_model?: string;
   primary_variance_driver?: string;
   recommended_actions?: string[];
+  settlement_basis?: string;
   settlement_reconciliation_id?: number;
   status?: string;
   summary?: SettlementSummary;
@@ -773,6 +852,89 @@ export type AutomationControlStatusResponse = ApiEnvelope<{
   supervised_trading_allowed?: boolean;
 }>;
 
+export type LiveTradingRouteReadiness = TableRow & {
+  adapter_id?: string;
+  allocated_power_mw?: number;
+  blocker_count?: number;
+  blocking_reasons?: string[];
+  commercial_product_id?: string;
+  connector_tier?: string;
+  expected_revenue_eur?: number;
+  live_submission?: boolean;
+  market_gate_status?: string;
+  market_name?: string;
+  market_segment?: string;
+  mode?: string;
+  next_action?: string;
+  next_gate_closure_at?: string;
+  readiness_score?: number;
+  recommendation_status?: string;
+  trading_clock_status?: string;
+  unlock_action?: JsonObject & {
+    adapter_id?: string;
+    auto_resolvable?: boolean;
+    category?: string;
+    href?: string;
+    label?: string;
+    message?: string;
+    owner?: string;
+    resolution_endpoint?: string | null;
+    severity?: string;
+  };
+  unlock_category?: string;
+  unlock_label?: string;
+  unlock_owner?: string;
+  unlock_severity?: string;
+  venue?: string;
+};
+
+export type LiveTradingRunbookStep = TableRow & {
+  href?: string;
+  label?: string;
+  next_action?: string;
+  status?: string;
+  step_id?: string;
+};
+
+export type LiveTradingReadinessResponse = ApiEnvelope<{
+  asset_id?: string;
+  country?: string;
+  evidence?: JsonObject;
+  generated_at?: string;
+  go_live_status?: string;
+  live_trading_readiness_score?: number;
+  mode_recommendation?: string;
+  next_best_action?: JsonObject & {
+    auto_resolvable?: boolean;
+    href?: string;
+    label?: string;
+    owner?: string;
+    resolution_endpoint?: string | null;
+  };
+  route_readiness?: LiveTradingRouteReadiness[];
+  runbook?: JsonObject & {
+    blockers?: TableRow[];
+    remediation_queue?: AutomationRemediationItem[];
+    steps?: LiveTradingRunbookStep[];
+  };
+  summary?: JsonObject & {
+    advisory_route_count?: number;
+    best_route?: string | null;
+    best_route_mode?: string | null;
+    blocked_route_count?: number;
+    control_blocker_count?: number;
+    forecast_confidence_band?: string;
+    forecast_confidence_score?: number;
+    handshake_ready_count?: number;
+    handshake_target_count?: number;
+    live_ready_route_count?: number;
+    paper_ready_route_count?: number;
+    route_count?: number;
+    strategy_mode?: string;
+    supervised_ready_route_count?: number;
+  };
+}>;
+
 export type PersistenceReadinessCheck = TableRow & {
   check?: string;
   evidence?: JsonObject;
@@ -945,22 +1107,196 @@ export type MarketAdapterRegistryResponse = ApiEnvelope<{
 }>;
 
 export type MarketConnectorReadiness = MarketAdapterStatus & {
+  automation_lane?: string;
   automation_blocking_level?: string;
+  bid_granularity?: string;
   credential_keys?: string[];
   family?: string;
+  gate_closure_label?: string;
+  connector_contract_status?: string;
+  connector_family?: string;
+  connector_methods?: string[];
+  audit_event_count?: number;
+  blocked_reasons?: string[];
+  certified_for_live?: boolean;
+  certified_for_paper?: boolean;
+  certified_for_supervised_live?: boolean;
   integration_type?: string;
+  implemented_methods?: string[];
+  lifecycle_status?: string;
+  live_enabled_methods?: string[];
+  live_method_count?: number;
+  market_lifecycle?: JsonObject;
+  method_coverage?: number;
+  method_count?: number;
+  minutes_to_gate_closure?: number;
+  missing_methods?: string[];
   missing_controls?: string[];
   missing_credentials?: string[];
+  next_certification_action?: string;
+  next_deadline_action?: string;
+  next_gate_closure_at?: string;
   next_integration_action?: string;
+  order_style?: string;
+  official_api_blockers?: string[];
+  official_api_check_count?: number;
+  official_api_checks?: TableRow[];
+  official_api_compliance_score?: number;
+  official_api_compliance_status?: string;
+  official_api_next_action?: string;
+  official_api_passed_count?: number;
+  official_system?: string;
   paper_supported?: boolean;
+  passed_method_count?: number;
+  preview_methods?: string[];
   preview_available?: boolean;
   priority?: number;
   production_readiness_tier?: string;
   readiness_score?: number;
+  required_evidence?: string[];
+  raw_reference_fields?: string[];
+  route_credential_status?: string;
+  route_missing_credentials?: string[];
+  route_missing_env_keys?: string[];
+  route_onboarding_next_action?: string;
+  route_handshake_blockers?: string[];
+  route_handshake_next_action?: string;
+  route_handshake_ready?: boolean;
+  route_handshake_status?: string;
+  route_handshake_target_count?: number;
+  route_handshake_targets?: string[];
+  route_certification_blockers?: string[];
+  route_certification_evidence?: JsonObject;
+  route_certification_next_action?: string;
+  route_certification_rank?: number;
+  route_certification_score?: number;
+  route_certification_stage?: string;
+  route_certification_status?: string;
+  sandbox_certification_status?: string;
+  sandbox_results?: TableRow[];
+  supervised_live_blockers?: string[];
+  supervised_live_candidate?: boolean;
+  supervised_live_checks?: TableRow[];
+  supervised_live_gate_status?: string;
+  supervised_live_next_action?: string;
+  synthetic_order_count?: number;
+  gate_check_count?: number;
+  gate_passed_count?: number;
+  gate_score?: number;
+  paper_ready_live_blocked?: boolean;
+  supported_order_types?: string[];
+  trading_clock_status?: string;
+  contract_next_action?: string;
 };
+
+export type RouteAutomationCertification = TableRow & {
+  adapter_id?: string;
+  adapter_name?: string;
+  certified_for_live?: boolean;
+  certified_for_paper?: boolean;
+  certified_for_supervised?: boolean;
+  latest_route_drill_at?: string;
+  latest_route_drill_event_id?: number;
+  latest_route_drill_status?: string;
+  latest_route_drill_target_count?: number;
+  market_segment?: string;
+  official_api_compliance_status?: string;
+  official_system?: string;
+  route_certification_blockers?: string[];
+  route_certification_evidence?: JsonObject;
+  route_certification_next_action?: string;
+  route_certification_rank?: number;
+  route_certification_score?: number;
+  route_certification_stage?: string;
+  route_certification_status?: string;
+  venue?: string;
+};
+
+export type OfficialApiComplianceRoute = TableRow & {
+  access_model?: string;
+  adapter_id?: string;
+  fail_closed?: boolean;
+  official_api_blockers?: string[];
+  official_api_check_count?: number;
+  official_api_checks?: TableRow[];
+  official_api_compliance_score?: number;
+  official_api_compliance_status?: string;
+  official_api_next_action?: string;
+  official_api_passed_count?: number;
+  official_system?: string;
+  public_download_reference?: string;
+  public_reference?: string;
+  required_access_modes?: string[];
+};
+
+export type OfficialApiEvidenceRequirement = TableRow & {
+  access_model?: string;
+  adapter_id?: string;
+  evidence_expired?: boolean;
+  evidence_owner?: string | null;
+  evidence_readiness?: string;
+  evidence_reference?: string | null;
+  evidence_status?: string;
+  evidence_type?: string | null;
+  evidence_valid?: boolean;
+  expires_at?: string | null;
+  label?: string;
+  next_action?: string;
+  official_system?: string;
+  public_download_reference?: string;
+  public_reference?: string;
+  recorded_at?: string | null;
+  requirement_id?: string;
+  required_env_keys?: string[];
+  required_value?: string;
+  review_at?: string | null;
+  unlocks_mode?: string | null;
+};
+
+export type OfficialApiEvidenceRecord = TableRow & {
+  adapter_id?: string;
+  evidence_owner?: string | null;
+  evidence_reference?: string | null;
+  evidence_status?: string;
+  evidence_type?: string | null;
+  expires_at?: string | null;
+  label?: string;
+  official_system?: string;
+  recorded_at?: string;
+  requirement_id?: string;
+  review_at?: string | null;
+  unlocks_mode?: string | null;
+};
+
+export type OfficialApiEvidenceVaultResponse = ApiEnvelope<{
+  country?: string;
+  evidence_records?: OfficialApiEvidenceRecord[];
+  evidence_vault_status?: string;
+  generated_at?: string;
+  recommended_actions?: string[];
+  requirements?: OfficialApiEvidenceRequirement[];
+  summary?: JsonObject & {
+    approved_evidence_count?: number;
+    expired_evidence_count?: number;
+    missing_evidence_count?: number;
+    required_evidence_count?: number;
+    review_evidence_count?: number;
+  };
+}>;
 
 export type MarketConnectorReadinessResponse = ApiEnvelope<{
   connector_status?: string;
+  connector_contract_status?: string;
+  credential_readiness_status?: string;
+  handshake_readiness_status?: string;
+  handshake_env_checklist?: LiveAdapterHandshakeEnvItem[];
+  handshake_env_activation_guide?: LiveAdapterHandshakeEnvActivationGuide[];
+  official_api_compliance_status?: string;
+  official_api_compliance?: OfficialApiComplianceRoute[];
+  route_certification_status?: string;
+  route_certifications?: RouteAutomationCertification[];
+  sandbox_certification_status?: string;
+  supervised_live_gate_status?: string;
   connectors?: MarketConnectorReadiness[];
   country?: string;
   generated_at?: string;
@@ -968,17 +1304,246 @@ export type MarketConnectorReadinessResponse = ApiEnvelope<{
   recommended_actions?: string[];
   summary?: JsonObject & {
     ancillary_count?: number;
+    average_passed_method_count?: number;
+    average_gate_score?: number;
+    average_official_api_compliance_score?: number;
     average_readiness_score?: number;
+    closed_gate_count?: number;
     connector_count?: number;
+    connector_contract_count?: number;
+    credential_blocked_route_count?: number;
+    credential_count?: number;
+    credential_ready_route_count?: number;
+    handshake_blocked_count?: number;
+    handshake_disabled_count?: number;
+    env_checklist_count?: number;
+    env_configured_count?: number;
+    env_endpoint_count?: number;
+    env_missing_count?: number;
+    env_mode_count?: number;
+    env_secret_count?: number;
+    env_activation_route_count?: number;
+    env_activation_configured_route_count?: number;
+    env_activation_setup_required_route_count?: number;
+    handshake_ready_count?: number;
+    handshake_target_count?: number;
+    route_handshake_blocked_count?: number;
+    route_handshake_count?: number;
+    route_handshake_disabled_count?: number;
+    route_handshake_ready_count?: number;
+    configured_credential_count?: number;
+    configured_market_lifecycle_count?: number;
     credentials_required_count?: number;
     data_feed_count?: number;
     epex_count?: number;
     live_auto_blocking_count?: number;
+    live_certified_count?: number;
+    live_contract_ready_count?: number;
     live_submission_count?: number;
+    missing_credential_count?: number;
+    missing_method_count?: number;
+    official_api_blocked_route_count?: number;
+    official_api_check_count?: number;
+    official_api_compliant_route_count?: number;
+    official_api_passed_check_count?: number;
+    official_api_route_count?: number;
+    partial_contract_count?: number;
+    paper_certified_count?: number;
     preview_ready_count?: number;
+    preview_contract_ready_count?: number;
     production_ready_count?: number;
+    ready_for_drill_count?: number;
+    route_certification_count?: number;
+    average_route_certification_score?: number;
+    certified_route_count?: number;
+    drill_failed_count?: number;
+    live_certified_route_count?: number;
+    not_configured_count?: number;
+    paper_certified_route_count?: number;
+    supervised_certified_route_count?: number;
+    sandbox_certification_count?: number;
+    supervised_live_blocked_count?: number;
+    supervised_live_candidate_count?: number;
+    supervised_live_gate_count?: number;
+    paper_ready_live_blocked_count?: number;
+    supervised_live_certified_count?: number;
     supervised_auto_blocking_count?: number;
+    urgent_gate_count?: number;
+    next_gate_closure_at?: string;
   };
+}>;
+
+export type CredentialReadinessItem = TableRow & {
+  accepted_env_keys?: string[];
+  blocks_mode?: string;
+  configured?: boolean;
+  configured_env_key?: string;
+  credential_id?: string;
+  group?: string;
+  label?: string;
+  missing_env_keys?: string[];
+  next_action?: string;
+  required_for?: string[];
+  secret_value_exposed?: boolean;
+  status?: string;
+};
+
+export type CredentialRouteRequirement = TableRow & {
+  adapter_id?: string;
+  configured_credential_count?: number;
+  credential_status?: string;
+  missing_credential_count?: number;
+  missing_credentials?: string[];
+  missing_env_keys?: string[];
+  onboarding_next_action?: string;
+  required_credential_count?: number;
+  required_credentials?: string[];
+};
+
+export type CredentialReadinessResponse = ApiEnvelope<{
+  credential_readiness_status?: string;
+  credentials?: CredentialReadinessItem[];
+  generated_at?: string;
+  recommended_actions?: string[];
+  route_requirements?: CredentialRouteRequirement[];
+  summary?: JsonObject & {
+    credential_blocked_route_count?: number;
+    credential_count?: number;
+    credential_ready_route_count?: number;
+    configured_credential_count?: number;
+    missing_credential_count?: number;
+    route_count?: number;
+  };
+}>;
+
+export type LiveAdapterHandshakeTarget = TableRow & {
+  audit_event_captured?: boolean;
+  auth_attempt_mode?: string;
+  blockers?: string[];
+  configured_endpoint_key?: string;
+  credential_status?: string;
+  default_endpoint_used?: boolean;
+  endpoint_env_keys?: string[];
+  endpoint_status?: string;
+  expected_response_schema?: string[];
+  group?: string;
+  handshake_mode?: string;
+  handshake_status?: string;
+  label?: string;
+  last_successful_handshake_at?: string | null;
+  latest_drill_at?: string;
+  latest_drill_event_id?: number;
+  latest_drill_status?: string;
+  missing_credentials?: string[];
+  missing_env_keys?: string[];
+  next_handshake_action?: string;
+  no_order_submission?: boolean;
+  order_submission_performed?: boolean;
+  required_for?: string[];
+  response_schema_status?: string;
+  target_id?: string;
+};
+
+export type LiveAdapterHandshakeEnvItem = TableRow & {
+  blocks_routes?: string[];
+  configured_env_key?: string;
+  credential_id?: string;
+  env_keys?: string[];
+  group?: string;
+  item_type?: string;
+  next_action?: string;
+  required_value?: string;
+  secret?: boolean;
+  status?: string;
+  target?: string;
+  target_id?: string;
+  value_exposed?: boolean;
+};
+
+export type LiveAdapterHandshakeEnvActivationGuide = TableRow & {
+  activation_status?: string;
+  adapter_id?: string;
+  configured_count?: number;
+  configured_env_keys?: string[];
+  endpoint_status?: string;
+  handshake_drill_enabled_after_setup?: boolean;
+  market_family?: string;
+  missing_count?: number;
+  missing_env_keys?: string[];
+  mode_status?: string;
+  next_action?: string;
+  next_unlock_category?: string;
+  next_unlock_label?: string;
+  required_count?: number;
+  required_env_keys?: string[];
+  required_mode?: string;
+  route_label?: string;
+  route_drill_endpoint?: string | null;
+  run_drill_endpoint?: string | null;
+  safe_deployment_steps?: string[];
+  secret_count?: number;
+  secret_env_keys?: string[];
+  secret_values_exposed?: boolean;
+  system_route_drill_endpoint?: string | null;
+};
+
+export type LiveAdapterHandshakeDrill = TableRow & {
+  action?: string;
+  asset_id?: string;
+  automation_event_id?: number;
+  blocked_count?: number;
+  created_at?: string;
+  order_submission_performed?: boolean;
+  passed_count?: number;
+  results?: TableRow[];
+  route_id?: string;
+  status?: string;
+  target_count?: number;
+  target_id?: string;
+};
+
+export type LiveAdapterRouteHandshake = TableRow & {
+  adapter_id?: string;
+  route_handshake_blockers?: string[];
+  route_handshake_next_action?: string;
+  route_handshake_ready?: boolean;
+  route_handshake_ready_count?: number;
+  route_handshake_status?: string;
+  route_handshake_target_count?: number;
+  route_handshake_targets?: string[];
+};
+
+export type LiveAdapterHandshakeResponse = ApiEnvelope<{
+  country?: string;
+  generated_at?: string;
+  handshake_readiness_status?: string;
+  env_checklist?: LiveAdapterHandshakeEnvItem[];
+  env_activation_guide?: LiveAdapterHandshakeEnvActivationGuide[];
+  recommended_actions?: string[];
+  routes?: LiveAdapterRouteHandshake[];
+  summary?: JsonObject & {
+    handshake_blocked_count?: number;
+    handshake_disabled_count?: number;
+    env_checklist_count?: number;
+    env_configured_count?: number;
+    env_endpoint_count?: number;
+    env_missing_count?: number;
+    env_mode_count?: number;
+    env_secret_count?: number;
+    handshake_ready_count?: number;
+    handshake_target_count?: number;
+    route_handshake_blocked_count?: number;
+    route_handshake_count?: number;
+    route_handshake_disabled_count?: number;
+    route_handshake_ready_count?: number;
+  };
+  targets?: LiveAdapterHandshakeTarget[];
+}>;
+
+export type LiveAdapterHandshakeHistoryResponse = ApiEnvelope<{
+  asset_id?: string;
+  drills?: LiveAdapterHandshakeDrill[];
+  event_type?: string;
 }>;
 
 export type AssetMarketAdapterStatusResponse = ApiEnvelope<{
@@ -1073,6 +1638,8 @@ export type MultiMarketAllocationCandidate = TableRow & {
   allocated_power_mw?: number;
   allocation_score?: number;
   automation_blocking_level?: string;
+  automation_lane?: string;
+  bid_granularity?: string;
   blocking_reasons?: string[];
   commercial_product_id?: string;
   connector_family?: string;
@@ -1081,16 +1648,31 @@ export type MultiMarketAllocationCandidate = TableRow & {
   data_dependencies?: string[];
   expected_revenue_eur?: number;
   execution_role?: string;
+  gate_closure_label?: string;
+  lifecycle_status?: string;
   live_submission?: boolean;
+  market_lifecycle?: JsonObject;
+  market_gate_missing_controls?: string[];
+  market_gate_next_action?: string;
+  market_gate_score?: number;
+  market_gate_settlement_basis?: string;
+  market_gate_status?: string;
   market_name?: string;
   market_segment?: string;
+  minutes_to_gate_closure?: number;
   missing_connector_controls?: string[];
   missing_credentials?: string[];
+  next_deadline_action?: string;
+  next_gate_closure_at?: string;
   operator_next_action?: string;
+  order_style?: string;
   preview_status?: string;
   preview_validation_status?: string;
   recommendation_status?: string;
   risk_score?: number;
+  required_evidence?: string[];
+  supported_order_types?: string[];
+  trading_clock_status?: string;
   venue?: string;
 };
 
@@ -1111,10 +1693,53 @@ export type MultiMarketAllocationResponse = ApiEnvelope<{
     excluded_market_count?: number;
     forecast_confidence_band?: string;
     forecast_confidence_score?: number;
+    live_ready_route_count?: number;
+    market_gate_status?: string;
+    paper_only_route_count?: number;
     readiness_score?: number;
     readiness_status?: string;
+    supervised_ready_route_count?: number;
     total_allocated_power_mw?: number;
     total_expected_revenue_eur?: number;
+  };
+}>;
+
+export type MarketAdapterRouteGate = TableRow & {
+  adapter_id?: string;
+  adapter_name?: string;
+  automation_lane?: string;
+  blocking_levels?: string[];
+  checks?: TableRow[];
+  gate_closure_label?: string;
+  gate_status?: string;
+  live_submission?: boolean;
+  market_family?: string;
+  missing_controls?: string[];
+  next_action?: string;
+  order_style?: string;
+  readiness_score?: number;
+  required_controls?: JsonObject;
+  settlement_basis?: string;
+  trading_clock_status?: string;
+};
+
+export type MarketAdapterReadinessGateResponse = ApiEnvelope<{
+  asset_id?: string;
+  country?: string;
+  evidence?: JsonObject;
+  gate_status?: string;
+  generated_at?: string;
+  recommended_actions?: string[];
+  route_gates?: MarketAdapterRouteGate[];
+  summary?: JsonObject & {
+    ancillary_ready_count?: number;
+    average_readiness_score?: number;
+    blocked_count?: number;
+    epex_ready_count?: number;
+    live_ready_count?: number;
+    paper_only_count?: number;
+    route_count?: number;
+    supervised_ready_count?: number;
   };
 }>;
 
@@ -1187,6 +1812,69 @@ export type MarketSubmission = JsonObject & {
 export type MarketSubmissionResponse = ApiEnvelope<{
   asset_id?: string;
   submission?: MarketSubmission | null;
+}>;
+
+export type MarketSubmissionLifecycleStep = TableRow & {
+  evidence?: JsonObject;
+  label?: string;
+  message?: string;
+  owner?: string;
+  status?: string;
+  step?: string;
+};
+
+export type MarketSubmissionLifecycleResponse = ApiEnvelope<{
+  adapter_id?: string;
+  asset_id?: string;
+  blockers?: TableRow[];
+  current_step?: MarketSubmissionLifecycleStep | null;
+  evidence?: JsonObject;
+  generated_at?: string;
+  lifecycle_status?: string;
+  market_route_status?: string;
+  next_action?: string;
+  settlement_basis?: string;
+  steps?: MarketSubmissionLifecycleStep[];
+  summary?: JsonObject & {
+    blocked?: number;
+    complete?: number;
+    review?: number;
+    total?: number;
+    waiting?: number;
+  };
+}>;
+
+export type ExecutionRecoveryAction = TableRow & {
+  action?: string;
+  auto_resolvable?: boolean;
+  category?: string;
+  label?: string;
+  message?: string;
+  requires_human_approval?: boolean;
+  resolution_endpoint?: string | null;
+  safe_to_auto_run?: boolean;
+  severity?: string;
+  source?: string;
+};
+
+export type ExecutionRecoveryPlanResponse = ApiEnvelope<{
+  asset_id?: string;
+  evidence?: JsonObject;
+  generated_at?: string;
+  primary_action?: ExecutionRecoveryAction;
+  recovery_queue?: ExecutionRecoveryAction[];
+  recovery_status?: string;
+  root_cause?: JsonObject & {
+    category?: string;
+    message?: string;
+  };
+  stuck_step?: MarketSubmissionLifecycleStep;
+  summary?: JsonObject & {
+    auto_resolvable_count?: number;
+    lifecycle_status?: string;
+    manual_review_count?: number;
+    market_route_status?: string;
+  };
 }>;
 
 export type MarketSubmissionHistoryResponse = ApiEnvelope<{

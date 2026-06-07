@@ -2,7 +2,39 @@ import os
 from datetime import datetime
 
 from src.config.paths import ACTUAL_PRICE_FILE, FORECAST_FILE
+from src.execution.credential_readiness import (
+    build_credential_readiness,
+    get_route_credential_readiness,
+)
+from src.execution.live_adapter_handshake import (
+    build_live_adapter_handshake_readiness,
+    get_route_handshake_readiness,
+)
 from src.execution.market_adapters.registry import list_market_adapters
+from src.execution.market_connector_contract import (
+    build_connector_contract_readiness,
+    get_connector_contract_summary,
+)
+from src.execution.market_connector_sandbox_certification import (
+    build_connector_sandbox_certification,
+    get_connector_sandbox_certification,
+)
+from src.execution.market_lifecycle import (
+    enrich_with_market_lifecycle,
+    summarize_market_lifecycles,
+)
+from src.execution.route_automation_certification import (
+    build_route_automation_certification,
+    get_route_automation_certification,
+)
+from src.execution.official_api_compliance import (
+    build_official_api_compliance,
+    get_route_official_api_compliance,
+)
+from src.execution.supervised_live_readiness_gate import (
+    build_supervised_live_readiness_gate,
+    get_route_supervised_live_gate,
+)
 from src.storage import get_storage_client
 
 
@@ -170,22 +202,71 @@ DATA_INTEGRATION_REQUIREMENTS = [
 ]
 
 
-def market_connector_readiness(country="Germany"):
+def market_connector_readiness(country="Germany", asset_id="default_site"):
     adapters = [
         adapter
         for adapter in list_market_adapters(country=country)
         if adapter.get("environment") not in ["paper", "demo"]
     ]
-    connectors = [build_connector_readiness(adapter) for adapter in adapters]
+    connectors = [
+        build_connector_readiness(adapter, asset_id=asset_id)
+        for adapter in adapters
+    ]
     integrations = [build_data_integration_readiness(item) for item in DATA_INTEGRATION_REQUIREMENTS]
     all_integrations = integrations + connectors
-    summary = summarize_connectors(all_integrations)
+    connector_contracts = build_connector_contract_readiness(country=country)
+    sandbox_certification = build_connector_sandbox_certification(country=country)
+    supervised_live_gate = build_supervised_live_readiness_gate(country=country)
+    route_certification = build_route_automation_certification(
+        asset_id=asset_id,
+        country=country,
+    )
+    official_api_compliance = build_official_api_compliance(country=country)
+    credential_readiness = build_credential_readiness()
+    handshake_readiness = build_live_adapter_handshake_readiness(country=country)
+    summary = {
+        **summarize_connectors(all_integrations),
+        **summarize_market_lifecycles(all_integrations),
+        **connector_contracts.get("summary", {}),
+        **sandbox_certification.get("summary", {}),
+        **supervised_live_gate.get("summary", {}),
+        **route_certification.get("summary", {}),
+        **official_api_compliance.get("summary", {}),
+        **credential_readiness.get("summary", {}),
+        **handshake_readiness.get("summary", {}),
+    }
 
     return {
         "status": "ok",
         "country": country,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "connector_status": classify_portfolio_status(summary),
+        "connector_contract_status": connector_contracts.get("contract_status"),
+        "sandbox_certification_status": sandbox_certification.get(
+            "sandbox_certification_status"
+        ),
+        "supervised_live_gate_status": supervised_live_gate.get(
+            "supervised_live_gate_status"
+        ),
+        "route_certification_status": route_certification.get(
+            "route_certification_status"
+        ),
+        "route_certifications": route_certification.get("routes", []),
+        "official_api_compliance_status": official_api_compliance.get(
+            "official_api_compliance_status"
+        ),
+        "official_api_compliance": official_api_compliance.get("routes", []),
+        "credential_readiness_status": credential_readiness.get(
+            "credential_readiness_status"
+        ),
+        "handshake_readiness_status": handshake_readiness.get(
+            "handshake_readiness_status"
+        ),
+        "handshake_env_checklist": handshake_readiness.get("env_checklist", []),
+        "handshake_env_activation_guide": handshake_readiness.get(
+            "env_activation_guide",
+            [],
+        ),
         "summary": summary,
         "connectors": sorted(
             connectors,
@@ -199,14 +280,26 @@ def market_connector_readiness(country="Germany"):
     }
 
 
-def build_connector_readiness(adapter):
+def build_connector_readiness(adapter, asset_id="default_site"):
     requirements = CONNECTOR_REQUIREMENTS.get(adapter["adapter_id"], {})
+    connector_contract = get_connector_contract_summary(adapter["adapter_id"])
+    sandbox_certification = get_connector_sandbox_certification(adapter["adapter_id"])
+    supervised_live_gate = get_route_supervised_live_gate(adapter["adapter_id"])
+    route_certification = get_route_automation_certification(
+        adapter["adapter_id"],
+        asset_id=asset_id,
+    )
+    official_api_compliance = get_route_official_api_compliance(adapter["adapter_id"])
+    route_handshake = get_route_handshake_readiness(adapter["adapter_id"])
+    route_credentials = get_route_credential_readiness(adapter["adapter_id"])
     credential_keys = requirements.get("credential_keys", [])
-    missing_credentials = [
+    missing_credentials = route_credentials.get("missing_env_keys") or [
         key for key in credential_keys if not os.getenv(key)
     ]
     credential_status = (
         "configured"
+        if route_credentials.get("credential_status") == "configured"
+        else "configured"
         if credential_keys and not missing_credentials
         else adapter.get("credential_status")
     )
@@ -234,7 +327,7 @@ def build_connector_readiness(adapter):
         live_submission=live_submission,
     )
 
-    return {
+    return enrich_with_market_lifecycle({
         **adapter,
         "automation_blocking_level": requirements.get(
             "automation_blocking_level",
@@ -258,16 +351,34 @@ def build_connector_readiness(adapter):
         "priority": requirements.get("priority", 99),
         "next_integration_action": next_integration_action(
             adapter=adapter,
+            connector_contract=connector_contract,
+            sandbox_certification=sandbox_certification,
+            supervised_live_gate=supervised_live_gate,
+            route_handshake=route_handshake,
             missing_credentials=missing_credentials,
             live_submission=live_submission,
             readiness_tier=readiness_tier,
         ),
-    }
+        **connector_contract,
+        **sandbox_certification,
+        **supervised_live_gate,
+        **route_certification,
+        **official_api_compliance,
+        **route_handshake,
+        "route_credential_status": route_credentials.get("credential_status"),
+        "route_missing_credentials": route_credentials.get("missing_credentials", []),
+        "route_missing_env_keys": route_credentials.get("missing_env_keys", []),
+        "route_onboarding_next_action": route_credentials.get(
+            "onboarding_next_action"
+        ),
+    })
 
 
 def build_data_integration_readiness(integration):
     credential_keys = integration.get("credential_keys", [])
-    missing_credentials = [
+    route_credentials = get_route_credential_readiness(integration["adapter_id"])
+    route_handshake = get_route_handshake_readiness(integration["adapter_id"])
+    missing_credentials = route_credentials.get("missing_env_keys") or [
         key for key in credential_keys if not os.getenv(key)
     ]
     storage_file = integration.get("storage_file")
@@ -275,6 +386,8 @@ def build_data_integration_readiness(integration):
     local_evidence_available = bool(storage_file and storage.exists(storage_file))
     credential_status = (
         "configured"
+        if route_credentials.get("credential_status") == "configured"
+        else "configured"
         if credential_keys and not missing_credentials
         else "not_required"
         if not credential_keys
@@ -297,7 +410,7 @@ def build_data_integration_readiness(integration):
         production_controls=integration.get("production_controls", []),
     )
 
-    return {
+    return enrich_with_market_lifecycle({
         "adapter_id": integration["adapter_id"],
         "adapter_name": integration["adapter_name"],
         "automation_blocking_level": integration["automation_blocking_level"],
@@ -314,6 +427,13 @@ def build_data_integration_readiness(integration):
         "market_segment": integration["market_segment"],
         "missing_controls": dedupe(missing_controls),
         "missing_credentials": missing_credentials,
+        "route_credential_status": route_credentials.get("credential_status"),
+        "route_missing_credentials": route_credentials.get("missing_credentials", []),
+        "route_missing_env_keys": route_credentials.get("missing_env_keys", []),
+        "route_onboarding_next_action": route_credentials.get(
+            "onboarding_next_action"
+        ),
+        **route_handshake,
         "next_connection_action": integration["next_connection_action"],
         "next_integration_action": next_data_integration_action(
             integration=integration,
@@ -330,7 +450,7 @@ def build_data_integration_readiness(integration):
             production_controls=integration.get("production_controls", []),
         ),
         "venue": integration["venue"],
-    }
+    })
 
 
 def classify_data_readiness_tier(
@@ -485,6 +605,10 @@ def build_recommended_actions(connectors):
 
 def next_integration_action(
     adapter,
+    connector_contract,
+    sandbox_certification,
+    supervised_live_gate,
+    route_handshake,
     missing_credentials,
     live_submission,
     readiness_tier,
@@ -492,8 +616,26 @@ def next_integration_action(
     if missing_credentials:
         return f"Configure {', '.join(missing_credentials)} and validate member or TSO access."
 
+    if connector_contract.get("missing_methods"):
+        return connector_contract.get("contract_next_action")
+
+    if supervised_live_gate.get("supervised_live_next_action"):
+        return supervised_live_gate.get("supervised_live_next_action")
+
+    if route_handshake.get("route_handshake_next_action"):
+        return route_handshake.get("route_handshake_next_action")
+
+    if sandbox_certification.get("sandbox_certification_status") == "blocked":
+        return sandbox_certification.get("next_certification_action")
+
     if not live_submission:
-        return adapter.get("next_connection_action") or "Implement live submission adapter."
+        return (
+            sandbox_certification.get("next_certification_action")
+            or
+            connector_contract.get("contract_next_action")
+            or adapter.get("next_connection_action")
+            or "Implement live submission adapter."
+        )
 
     if readiness_tier == "production_ready":
         return "Run supervised live submission readiness drill."

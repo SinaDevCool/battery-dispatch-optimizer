@@ -40,6 +40,25 @@ body {
   border-radius: 999px;
 }
 
+.sidebar-nav-scroll {
+  scrollbar-color: #334155 transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.sidebar-nav-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-nav-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-nav-scroll::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 999px;
+}
+
 button,
 a,
 input,

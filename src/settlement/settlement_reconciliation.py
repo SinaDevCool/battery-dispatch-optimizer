@@ -53,6 +53,8 @@ def run_settlement_reconciliation(asset_id):
         "status": status,
         "asset_id": asset_id,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "market_execution_model": (paper_trade or {}).get("market_execution_model"),
+        "settlement_basis": (paper_trade or {}).get("settlement_basis"),
         "primary_variance_driver": primary_driver,
         "links": {
             "execution_proposal_id": proposal_record["execution_proposal_id"],
@@ -65,11 +67,24 @@ def run_settlement_reconciliation(asset_id):
             "realized_pnl_eur": realized_pnl,
             "paper_delta_eur": paper_delta,
             "realized_delta_eur": realized_delta,
+            "awarded_capacity_mw": ((paper_trade or {}).get("summary") or {}).get(
+                "awarded_capacity_mw"
+            ),
+            "reserve_revenue_eur": ((paper_trade or {}).get("summary") or {}).get(
+                "reserve_revenue_eur"
+            ),
+            "total_filled_mwh": ((paper_trade or {}).get("summary") or {}).get(
+                "total_filled_mwh"
+            ),
         },
         "variance_drivers": variance_drivers,
         "evidence_status": {
             "execution_proposal": "available",
             "paper_trade": "available" if paper_trade else "missing",
+            "paper_validation": ((paper_trade or {}).get("validation") or {}).get(
+                "status",
+                "missing",
+            ),
             "forecast_actual": forecast_actual.get("status", "not_found"),
             "realized_dispatch": realized_dispatch.get("status", "not_found"),
         },
@@ -148,7 +163,58 @@ def build_variance_drivers(
                 "message": "No paper trade is available for execution PnL comparison.",
             }
         )
-    elif abs(numeric(paper_delta)) > 1:
+    else:
+        validation_status = (paper_trade.get("validation") or {}).get("status")
+        settlement_basis = paper_trade.get("settlement_basis")
+
+        if validation_status not in ["passed", None]:
+            drivers.append(
+                {
+                    "driver": "paper_validation_review",
+                    "severity": "medium",
+                    "message": "Market-specific paper execution has validation items that need review.",
+                    "context": {
+                        "validation_status": validation_status,
+                        "market_execution_model": paper_trade.get("market_execution_model"),
+                    },
+                }
+            )
+
+        if settlement_basis == "reserve_capacity_award":
+            awarded_capacity = numeric(
+                paper_trade.get("summary", {}).get("awarded_capacity_mw")
+            )
+            drivers.append(
+                {
+                    "driver": "reserve_award_basis",
+                    "severity": "low" if awarded_capacity > 0 else "medium",
+                    "message": (
+                        "Settlement is based on simulated reserve capacity awards."
+                        if awarded_capacity > 0
+                        else "Reserve simulation did not award capacity above the minimum size."
+                    ),
+                    "context": {
+                        "awarded_capacity_mw": awarded_capacity,
+                        "reserve_revenue_eur": paper_trade.get("summary", {}).get(
+                            "reserve_revenue_eur"
+                        ),
+                    },
+                }
+            )
+        elif settlement_basis == "energy_partial_fill":
+            drivers.append(
+                {
+                    "driver": "continuous_partial_fill_basis",
+                    "severity": "low",
+                    "message": "Settlement is based on simulated continuous-market partial fills and slippage.",
+                    "context": {
+                        "total_filled_mwh": paper_trade.get("summary", {}).get(
+                            "total_filled_mwh"
+                        ),
+                    },
+                }
+            )
+    if paper_trade is not None and abs(numeric(paper_delta)) > 1:
         drivers.append(
             {
                 "driver": "paper_execution_delta",
@@ -240,6 +306,15 @@ def build_recommended_actions(status, variance_drivers):
 
     if "paper_execution_delta" in driver_ids:
         actions.append("Review bid price assumptions and simulated fill logic.")
+
+    if "paper_validation_review" in driver_ids:
+        actions.append("Resolve paper execution validation items before escalating automation mode.")
+
+    if "reserve_award_basis" in driver_ids:
+        actions.append("Attach reserve award evidence and prequalification status before client reporting.")
+
+    if "continuous_partial_fill_basis" in driver_ids:
+        actions.append("Use partial-fill and slippage feedback to tune intraday continuous order placement.")
 
     if not actions:
         actions.append("Keep reconciliation evidence attached to the trading audit packet.")

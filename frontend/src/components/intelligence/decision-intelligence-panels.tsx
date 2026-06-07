@@ -101,10 +101,14 @@ export function DecisionHistoryPanel({
   const latestRows = decisionTrend.slice(0, 8);
 
   return (
-    <SectionCard title="Decision history">
+    <SectionCard
+      action={<StatusPill tone="blue">{decisionTrend.length} decision state(s)</StatusPill>}
+      title="Decision history"
+    >
       <DataTable
         columns={[
-          "generated_at",
+          "latest_at",
+          "repeated_runs",
           "readiness",
           "recommendation_status",
           "expected_pnl_eur",
@@ -116,7 +120,7 @@ export function DecisionHistoryPanel({
         <div className="mt-5">
           <BarComparisonChart
             data={decisionTrend}
-            xKey="generated_at"
+            xKey="latest_at"
             yKey="expected_pnl_eur"
           />
         </div>
@@ -126,14 +130,31 @@ export function DecisionHistoryPanel({
 }
 
 export function ForecastPerformanceEvidencePanel({
+  emptyAction,
   performanceRows,
 }: {
+  emptyAction?: React.ReactNode;
   performanceRows: TableRow[];
 }) {
   const latestRows = performanceRows.slice(0, 8);
 
   return (
-    <SectionCard title="Forecast performance history">
+    <SectionCard
+      action={
+        <StatusPill tone={performanceRows.length ? "emerald" : "amber"}>
+          {performanceRows.length ? `${performanceRows.length} test(s)` : "Not tested"}
+        </StatusPill>
+      }
+      title="Forecast performance history"
+    >
+      {!performanceRows.length ? (
+        <div className="mb-4 rounded-lg border border-amber-400/25 bg-amber-400/10 p-4 text-sm leading-6 text-amber-100">
+          Forecast performance is empty because no forecast-vs-actual backtest
+          has been saved for this asset yet. Upload or provide actual prices,
+          then run the backtest to create MAE, bias, and revenue-delta evidence.
+          {emptyAction ? <div className="mt-3">{emptyAction}</div> : null}
+        </div>
+      ) : null}
       <DataTable
         columns={[
           "target_date",

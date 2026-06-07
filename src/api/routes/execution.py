@@ -18,6 +18,7 @@ from src.execution.automation_policy import (
     upsert_automation_policy,
 )
 from src.execution.execution_readiness import build_execution_readiness
+from src.execution.execution_recovery_engine import build_execution_recovery_plan
 from src.execution.epex_day_ahead_preview import latest_epex_day_ahead_preview
 from src.execution.epex_intraday_auction_preview import (
     latest_epex_intraday_auction_preview,
@@ -33,7 +34,34 @@ from src.execution.market_submission import (
     market_submission_history,
     run_demo_market_submission,
 )
+from src.execution.market_submission_lifecycle import (
+    latest_market_submission_lifecycle,
+)
 from src.execution.market_connector_readiness import market_connector_readiness
+from src.execution.market_connector_contract import build_connector_contract_readiness
+from src.execution.market_connector_sandbox_certification import (
+    build_connector_sandbox_certification,
+)
+from src.execution.route_automation_certification import (
+    build_route_automation_certification,
+)
+from src.execution.official_api_compliance import (
+    build_official_api_compliance,
+    build_official_api_evidence_vault,
+    upsert_official_api_evidence_record,
+)
+from src.execution.live_adapter_handshake import (
+    build_live_adapter_handshake_readiness,
+    list_live_adapter_handshake_drills,
+    run_live_adapter_handshake_drill,
+)
+from src.execution.live_trading_readiness import build_live_trading_readiness
+from src.execution.supervised_live_readiness_gate import (
+    build_supervised_live_readiness_gate,
+)
+from src.execution.market_adapter_readiness_gate import (
+    build_market_adapter_readiness_gate,
+)
 from src.execution.multi_market_allocator import build_multi_market_allocation
 from src.execution.market_adapters.registry import (
     get_asset_market_adapter_status,
@@ -80,9 +108,12 @@ def execution_market_adapters(country: str | None = None):
     "/execution/market-connectors/readiness",
     response_model=ApiResponse,
 )
-def execution_market_connectors_readiness(country: str = "Germany"):
+def execution_market_connectors_readiness(
+    country: str = "Germany",
+    asset_id: str = "default_site",
+):
     try:
-        return market_connector_readiness(country=country)
+        return market_connector_readiness(country=country, asset_id=asset_id)
     except Exception as error:
         return {
             "status": "error",
@@ -92,11 +123,212 @@ def execution_market_connectors_readiness(country: str = "Germany"):
 
 
 @router.get(
+    "/execution/market-connectors/route-certification",
+    response_model=ApiResponse,
+)
+def execution_market_connector_route_certification(
+    country: str = "Germany",
+    asset_id: str = "default_site",
+):
+    try:
+        return build_route_automation_certification(
+            asset_id=asset_id,
+            country=country,
+        )
+    except Exception as error:
+        return {
+            "status": "error",
+            "asset_id": asset_id,
+            "country": country,
+            "message": f"Could not evaluate route automation certification: {error}",
+        }
+
+
+@router.get(
+    "/execution/market-connectors/official-api-compliance",
+    response_model=ApiResponse,
+)
+def execution_market_connector_official_api_compliance(country: str = "Germany"):
+    try:
+        return build_official_api_compliance(country=country)
+    except Exception as error:
+        return {
+            "status": "error",
+            "country": country,
+            "message": f"Could not evaluate official API compliance: {error}",
+        }
+
+
+@router.get(
+    "/execution/market-connectors/official-api-evidence",
+    response_model=ApiResponse,
+)
+def execution_market_connector_official_api_evidence(country: str = "Germany"):
+    try:
+        return build_official_api_evidence_vault(country=country)
+    except Exception as error:
+        return {
+            "status": "error",
+            "country": country,
+            "message": f"Could not load official API evidence vault: {error}",
+        }
+
+
+@router.post(
+    "/execution/market-connectors/official-api-evidence",
+    response_model=ApiResponse,
+)
+def save_execution_market_connector_official_api_evidence(payload: dict):
+    try:
+        return upsert_official_api_evidence_record(payload)
+    except ValueError as error:
+        return {
+            "status": "invalid",
+            "message": str(error),
+        }
+    except Exception as error:
+        return {
+            "status": "error",
+            "message": f"Could not save official API evidence: {error}",
+        }
+
+
+@router.get(
+    "/execution/market-connectors/contracts",
+    response_model=ApiResponse,
+)
+def execution_market_connector_contracts(country: str = "Germany"):
+    try:
+        return build_connector_contract_readiness(country=country)
+    except Exception as error:
+        return {
+            "status": "error",
+            "country": country,
+            "message": f"Could not evaluate market connector contracts: {error}",
+        }
+
+
+@router.get(
+    "/execution/market-connectors/sandbox-certification",
+    response_model=ApiResponse,
+)
+def execution_market_connector_sandbox_certification(country: str = "Germany"):
+    try:
+        return build_connector_sandbox_certification(country=country)
+    except Exception as error:
+        return {
+            "status": "error",
+            "country": country,
+            "message": f"Could not run market connector sandbox certification: {error}",
+        }
+
+
+@router.get(
+    "/execution/market-connectors/supervised-live-gate",
+    response_model=ApiResponse,
+)
+def execution_market_connector_supervised_live_gate(country: str = "Germany"):
+    try:
+        return build_supervised_live_readiness_gate(country=country)
+    except Exception as error:
+        return {
+            "status": "error",
+            "country": country,
+            "message": f"Could not evaluate supervised live readiness gate: {error}",
+        }
+
+
+@router.get(
+    "/execution/market-connectors/live-handshake",
+    response_model=ApiResponse,
+)
+def execution_market_connector_live_handshake(country: str = "Germany"):
+    try:
+        return build_live_adapter_handshake_readiness(country=country)
+    except Exception as error:
+        return {
+            "status": "error",
+            "country": country,
+            "message": f"Could not evaluate live adapter handshake readiness: {error}",
+        }
+
+
+@router.post(
+    "/execution/market-connectors/live-handshake/run",
+    response_model=ApiResponse,
+)
+def run_execution_market_connector_live_handshake(
+    country: str = "Germany",
+    asset_id: str = "default_site",
+    target_id: str | None = None,
+    route_id: str | None = None,
+):
+    try:
+        return run_live_adapter_handshake_drill(
+            asset_id=asset_id,
+            target_id=target_id,
+            route_id=route_id,
+            country=country,
+        )
+    except ValueError as error:
+        return {
+            "status": "invalid",
+            "message": str(error),
+        }
+    except Exception as error:
+        return {
+            "status": "error",
+            "country": country,
+            "message": f"Could not run live adapter handshake drill: {error}",
+        }
+
+
+@router.get(
+    "/execution/market-connectors/live-handshake/history",
+    response_model=ApiResponse,
+)
+def execution_market_connector_live_handshake_history(
+    asset_id: str = "default_site",
+    limit: int = 10,
+):
+    try:
+        return list_live_adapter_handshake_drills(asset_id=asset_id, limit=limit)
+    except Exception as error:
+        return {
+            "status": "error",
+            "asset_id": asset_id,
+            "message": f"Could not load live adapter handshake drill history: {error}",
+            "drills": [],
+        }
+
+
+@router.get(
     "/assets/{asset_id}/execution/market-adapter/status",
     response_model=ApiResponse,
 )
 def asset_execution_market_adapter_status(asset_id: str):
     return get_asset_market_adapter_status(asset_id)
+
+
+@router.get(
+    "/assets/{asset_id}/execution/market-adapter/readiness-gate",
+    response_model=ApiResponse,
+)
+def asset_execution_market_adapter_readiness_gate(
+    asset_id: str,
+    country: str = "Germany",
+):
+    try:
+        return build_market_adapter_readiness_gate(
+            asset_id=asset_id,
+            country=country,
+        )
+    except Exception as error:
+        return {
+            "status": "error",
+            "asset_id": asset_id,
+            "message": f"Could not evaluate market adapter readiness gate: {error}",
+        }
 
 
 @router.get(
@@ -144,6 +376,36 @@ def asset_execution_orchestrator_status(asset_id: str):
             "status": "error",
             "asset_id": asset_id,
             "message": f"Could not evaluate trading orchestrator: {error}",
+        }
+
+
+@router.get(
+    "/assets/{asset_id}/execution/submission-lifecycle",
+    response_model=ApiResponse,
+)
+def asset_execution_submission_lifecycle(asset_id: str):
+    try:
+        return latest_market_submission_lifecycle(asset_id)
+    except Exception as error:
+        return {
+            "status": "error",
+            "asset_id": asset_id,
+            "message": f"Could not evaluate submission lifecycle: {error}",
+        }
+
+
+@router.get(
+    "/assets/{asset_id}/execution/recovery-plan",
+    response_model=ApiResponse,
+)
+def asset_execution_recovery_plan(asset_id: str):
+    try:
+        return build_execution_recovery_plan(asset_id)
+    except Exception as error:
+        return {
+            "status": "error",
+            "asset_id": asset_id,
+            "message": f"Could not build execution recovery plan: {error}",
         }
 
 
@@ -395,6 +657,30 @@ def asset_execution_automation_control_status(asset_id: str):
             "status": "error",
             "asset_id": asset_id,
             "message": f"Could not evaluate automation control status: {error}",
+        }
+
+
+@router.get(
+    "/assets/{asset_id}/execution/live-trading-readiness",
+    response_model=ApiResponse,
+)
+def asset_execution_live_trading_readiness(
+    asset_id: str,
+    country: str = "Germany",
+):
+    try:
+        return build_live_trading_readiness(asset_id=asset_id, country=country)
+    except ValueError as error:
+        return {
+            "status": "not_found",
+            "asset_id": asset_id,
+            "message": str(error),
+        }
+    except Exception as error:
+        return {
+            "status": "error",
+            "asset_id": asset_id,
+            "message": f"Could not evaluate live trading readiness: {error}",
         }
 
 
