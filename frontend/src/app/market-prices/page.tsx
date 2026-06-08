@@ -73,6 +73,23 @@ export default function MarketPricesPage() {
     () => buildActionablePriceRows(forecastRows),
     [forecastRows],
   );
+  const backendConnectionRows = useMemo(
+    () =>
+      buildMarketPriceBackendRows({
+        actualPriceStatus: actualPrices.data?.status,
+        forecastPreviewRows: forecastRows.length,
+        forecastStatus: forecastStatus.data?.status,
+        marketCount: markets.data?.market_count,
+        productCount: products.data?.product_count,
+      }),
+    [
+      actualPrices.data?.status,
+      forecastRows.length,
+      forecastStatus.data?.status,
+      markets.data?.market_count,
+      products.data?.product_count,
+    ],
+  );
   const decisionBrief = useMemo(
     () =>
       buildPriceDecisionBrief({
@@ -105,9 +122,9 @@ export default function MarketPricesPage() {
   return (
     <>
       <PageHeading
-        description="Inspect market price coverage, forecast regimes, negative-price windows, actual-price readiness, and German tradable product context."
+        description="Decide whether market-price evidence is reliable enough for automated bid creation, forecast backtesting, charge/discharge window selection, and settlement proof."
         eyebrow="Market intelligence"
-        title="Market prices"
+        title="Market price trust"
       />
 
       <div className="mb-6">
@@ -157,10 +174,50 @@ export default function MarketPricesPage() {
         />
       </div>
 
+      <SectionCard
+        action={
+          <StatusPill tone={decisionBrief.tone}>
+            {decisionBrief.blockers.length ? "Advisory prices" : "Automation-ready prices"}
+          </StatusPill>
+        }
+        className="mb-6"
+        title="Price-to-automation bridge"
+      >
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <DataTable
+            columns={["decision_input", "value"]}
+            rows={[
+              {
+                decision_input: "Automated use",
+                value: decisionBrief.blockers.length
+                  ? "Keep bid generation supervised until gaps clear."
+                  : "Feed price curve into signal, allocation, and proposal generation.",
+              },
+              {
+                decision_input: "Charge candidates",
+                value: `${priceStats.negativeHours + priceStats.lowHours} interval(s)`,
+              },
+              {
+                decision_input: "Discharge candidates",
+                value: `${priceStats.highHours + priceStats.scarcityHours} interval(s)`,
+              },
+              {
+                decision_input: "Primary blocker",
+                value: decisionBrief.blockers[0] ?? "No blocking price-data issue.",
+              },
+            ]}
+          />
+          <DataTable
+            columns={["capability", "backend_route", "status", "business_value"]}
+            rows={backendConnectionRows}
+          />
+        </div>
+      </SectionCard>
+
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
         <SectionCard
           action={<StatusPill tone="blue">{forecastRows.length} interval(s)</StatusPill>}
-          title="Forecast price curve"
+          title="Actionable price curve"
         >
           <div className="mb-4 grid gap-3 md:grid-cols-4">
             <MarketPriceRow label="Negative" tone={priceStats.negativeHours ? "amber" : "emerald"} value={priceStats.negativeHours} />
@@ -391,6 +448,53 @@ function buildPriceDecisionBrief({
       : "Use this curve in Market Signals and validate realized performance after execution.",
     tone,
   };
+}
+
+function buildMarketPriceBackendRows({
+  actualPriceStatus,
+  forecastPreviewRows,
+  forecastStatus,
+  marketCount,
+  productCount,
+}: {
+  actualPriceStatus?: string;
+  forecastPreviewRows: number;
+  forecastStatus?: string;
+  marketCount?: number;
+  productCount?: number;
+}) {
+  return [
+    {
+      backend_route: "/forecast/status",
+      business_value: "Validates whether the price curve is complete enough to trade.",
+      capability: "Forecast price coverage",
+      status: forecastStatus ?? "not_loaded",
+    },
+    {
+      backend_route: "/forecast/preview",
+      business_value: "Provides interval-level prices for charge/discharge window selection.",
+      capability: "Price curve preview",
+      status: `${forecastPreviewRows} row(s)`,
+    },
+    {
+      backend_route: "/data/actual-prices/status",
+      business_value: "Supplies realized price evidence for model performance and settlement.",
+      capability: "Actual price evidence",
+      status: actualPriceStatus ?? "not_loaded",
+    },
+    {
+      backend_route: "/markets",
+      business_value: "Shows which market profiles exist before choosing a route.",
+      capability: "Market profiles",
+      status: `${marketCount ?? 0} market(s)`,
+    },
+    {
+      backend_route: "/markets/products?country=Germany",
+      business_value: "Maps price evidence to tradable German products.",
+      capability: "Tradable products",
+      status: `${productCount ?? 0} product(s)`,
+    },
+  ];
 }
 
 function classifyPriceRegime(price: number) {

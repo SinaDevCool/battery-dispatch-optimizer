@@ -2,6 +2,7 @@
 
 import { Zap } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
 import { AssetSelector } from "@/components/asset-selector";
@@ -18,6 +19,7 @@ import {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [searchString, setSearchString] = useState("");
   const apiBaseUrl = useApiBaseUrl();
   const { persona } = usePersona();
   const visibleNavigationGroups =
@@ -27,6 +29,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           persona.primaryNavigationGroups.includes(group.id),
         );
   const visibleNavigation = flattenNavigationGroups(visibleNavigationGroups);
+
+  useEffect(() => {
+    const syncSearchString = () => {
+      setSearchString(window.location.search.replace(/^\?/, ""));
+    };
+
+    syncSearchString();
+    window.addEventListener("popstate", syncSearchString);
+    window.addEventListener("locationchange", syncSearchString);
+
+    return () => {
+      window.removeEventListener("popstate", syncSearchString);
+      window.removeEventListener("locationchange", syncSearchString);
+    };
+  }, [pathname]);
 
   return (
     <div className="min-h-screen bg-[#080b10] text-slate-100">
@@ -68,7 +85,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
               <div className="space-y-1">
                 {group.items.map((item) => {
-                  const isActive = isNavigationActive(pathname, item);
+                  const isActive = isNavigationActive(pathname, item, searchString);
                   const Icon = item.icon;
 
                   return (
@@ -80,6 +97,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                             "border border-sky-400/25 bg-sky-400/10 text-sky-100",
                         )}
                         href={item.href}
+                        onClick={() => setSearchString(getNavigationSearchString(item.href))}
                       >
                         <Icon className="h-4 w-4" />
                         {item.label}
@@ -88,7 +106,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         <div className="mt-1 space-y-1 border-l border-slate-800 pl-3 ml-5">
                           {item.children.map((child) => {
                             const ChildIcon = child.icon;
-                            const isChildActive = pathname === child.href;
+                            const isChildActive = isNavigationActive(pathname, child, searchString);
 
                             return (
                               <Link
@@ -97,6 +115,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                                   isChildActive && "bg-emerald-400/10 text-emerald-100",
                                 )}
                                 href={child.href}
+                                onClick={() => setSearchString(getNavigationSearchString(child.href))}
                                 key={`${group.id}-${child.href}-${child.label}`}
                               >
                                 <ChildIcon className="h-3.5 w-3.5" />
@@ -140,9 +159,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Link
                 className={cn(
                   "whitespace-nowrap rounded-md px-3 py-2 text-xs font-semibold text-slate-400",
-                  pathname === item.href && "bg-sky-400/10 text-sky-100",
+                  isNavigationActive(pathname, item, searchString) && "bg-sky-400/10 text-sky-100",
                 )}
                 href={item.href}
+                onClick={() => setSearchString(getNavigationSearchString(item.href))}
                 key={`${index}-${item.href}-${item.label}`}
               >
                 {item.shortLabel ?? item.label}
@@ -157,4 +177,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
     </div>
   );
+}
+
+function getNavigationSearchString(href: string) {
+  return href.split("#")[0]?.split("?")[1] ?? "";
 }

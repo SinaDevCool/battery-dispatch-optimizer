@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { useAssetContext } from "@/components/asset-provider";
+import { DataTable } from "@/components/data-table";
 import { DecisionBrief } from "@/components/decision-brief";
 import { ErrorState } from "@/components/error-state";
 import {
@@ -16,6 +17,8 @@ import {
 } from "@/components/forecasts/forecast-workbench-panels";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
+import { SectionCard } from "@/components/section-card";
+import { StatusPill } from "@/components/status-pill";
 import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { apiGet } from "@/lib/api";
 import { formatCurrency, formatNumber } from "@/lib/format";
@@ -34,12 +37,12 @@ import type {
 const forecastTabs = [
   {
     id: "market",
-    label: "Market View",
-    helper: "Latest source, price data coverage, provider ranking, and dispatch signal context.",
+    label: "Source Trust",
+    helper: "Which forecast source should drive automated trading, and whether it is live, fallback, or stale.",
   },
   {
     id: "performance",
-    label: "Model Performance",
+    label: "Backtest Proof",
     helper: "Forecast-vs-actual error, revenue leakage, and backtest history.",
   },
   {
@@ -64,6 +67,28 @@ type ForecastTabId = (typeof forecastTabs)[number]["id"];
 export default function ForecastsPage() {
   const { selectedAssetId } = useAssetContext();
   const [activeTab, setActiveTab] = useState<ForecastTabId>("market");
+
+  useEffect(() => {
+    const syncTabFromHash = () => {
+      const queryTab = new URLSearchParams(window.location.search).get("tab");
+      const hashTab = window.location.hash.replace(/^#/, "").split("#")[0];
+      const requestedTab = queryTab ?? hashTab;
+      const nextTab = forecastTabs.some((tab) => tab.id === requestedTab)
+        ? (requestedTab as ForecastTabId)
+        : "market";
+
+      setActiveTab(nextTab);
+    };
+
+    syncTabFromHash();
+    window.addEventListener("popstate", syncTabFromHash);
+    window.addEventListener("hashchange", syncTabFromHash);
+
+    return () => {
+      window.removeEventListener("popstate", syncTabFromHash);
+      window.removeEventListener("hashchange", syncTabFromHash);
+    };
+  }, []);
 
   const status = useQuery({
     queryFn: () => apiGet<ForecastStatusResponse>("/forecast/status"),
@@ -136,6 +161,31 @@ export default function ForecastsPage() {
     latestPerformance ? null : "Forecast-vs-actual performance is not available yet.",
     actualPrices.data?.status === "ok" ? null : "Actual price evidence is not ready.",
   ].filter(Boolean) as string[];
+  const automationLane =
+    forecastBlockers.length || forecastQualityScore < 80
+      ? "Advisory / supervised"
+      : "Automation input";
+  const backendConnectionRows = buildForecastBackendConnectionRows({
+    actualPriceStatus: actualPrices.data?.status,
+    comparisonStatus: comparison.data?.status,
+    performanceCount: performance.data?.run_count ?? performanceRows.length,
+    previewStatus: preview.data?.status,
+    selectedAssetId,
+    signalStatus: latestSignal.data?.status,
+    statusStatus: status.data?.status,
+  });
+  const pageHeading =
+    activeTab === "performance"
+      ? {
+          description:
+            "Review forecast-vs-actual backtests, model error, realized revenue leakage, and proof gaps before a forecast model is trusted for automated bid sizing.",
+          title: "Model performance",
+        }
+      : {
+          description:
+            "Decide whether a forecast source is reliable enough to drive automated bid sizing. The page links source quality, actual-price backtests, revenue leakage, and fallback risk before a signal can move toward live trading.",
+          title: "Forecast trust",
+        };
 
   const refetchForecasts = () =>
     Promise.all([
@@ -151,9 +201,9 @@ export default function ForecastsPage() {
   return (
     <>
       <PageHeading
-        description="Operate the forecast workbench that ranks market data sources, validates model error against actual prices, and decides whether a signal is reliable enough to trade."
+        description={pageHeading.description}
         eyebrow="Forecast intelligence"
-        title="Forecasts"
+        title={pageHeading.title}
       />
 
       {currentSignalUsesFallback ? (
@@ -243,9 +293,58 @@ export default function ForecastsPage() {
         />
       </div>
 
+      <SectionCard
+        action={
+          <StatusPill tone={automationLane === "Automation input" ? "emerald" : "amber"}>
+            {automationLane}
+          </StatusPill>
+        }
+        className="mb-6"
+        title="Forecast trust bridge"
+      >
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <DataTable
+            columns={["decision_input", "value"]}
+            rows={[
+              {
+                decision_input: "Current source",
+                value: currentProvider ?? "source pending",
+              },
+              {
+                decision_input: "Recommended source",
+                value:
+                  recommendedProvider?.forecast_provider ??
+                  bestComparison?.forecast_provider ??
+                  "run provider comparison",
+              },
+              {
+                decision_input: "Trading lane",
+                value: automationLane,
+              },
+              {
+                decision_input: "Reason to hold back",
+                value: forecastBlockers[0] ?? "No blocking forecast issue.",
+              },
+            ]}
+          />
+          <DataTable
+            columns={["capability", "backend_route", "status", "business_value"]}
+            rows={backendConnectionRows}
+          />
+        </div>
+      </SectionCard>
+
       <WorkspaceTabs
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={(tab) => {
+          setActiveTab(tab);
+          window.history.replaceState(
+            null,
+            "",
+            tab === "market" ? "/forecasts" : `/forecasts?tab=${tab}`,
+          );
+          window.dispatchEvent(new Event("locationchange"));
+        }}
         tabs={forecastTabs}
       />
 
@@ -384,4 +483,61 @@ function calculateTrustScore(
   }
 
   return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function buildForecastBackendConnectionRows({
+  actualPriceStatus,
+  comparisonStatus,
+  performanceCount,
+  previewStatus,
+  selectedAssetId,
+  signalStatus,
+  statusStatus,
+}: {
+  actualPriceStatus?: string;
+  comparisonStatus?: string;
+  performanceCount: number;
+  previewStatus?: string;
+  selectedAssetId: string;
+  signalStatus?: string;
+  statusStatus?: string;
+}) {
+  return [
+    {
+      backend_route: "/forecast/status",
+      business_value: "Validates forecast file quality before it can drive dispatch.",
+      capability: "Forecast quality",
+      status: statusStatus ?? "not_loaded",
+    },
+    {
+      backend_route: "/forecasts/compare-profitability/latest",
+      business_value: "Ranks forecast providers by modelled trading value.",
+      capability: "Provider ranking",
+      status: comparisonStatus ?? "not_loaded",
+    },
+    {
+      backend_route: `/assets/${selectedAssetId}/forecast-performance`,
+      business_value: "Stores forecast-vs-actual proof and revenue leakage evidence.",
+      capability: "Backtest proof",
+      status: `${performanceCount} run(s)`,
+    },
+    {
+      backend_route: "/data/actual-prices/status",
+      business_value: "Confirms actual prices exist before trusting model error.",
+      capability: "Actual price evidence",
+      status: actualPriceStatus ?? "not_loaded",
+    },
+    {
+      backend_route: `/assets/${selectedAssetId}/signal/latest`,
+      business_value: "Shows whether the latest dispatch signal used this forecast source.",
+      capability: "Signal linkage",
+      status: signalStatus ?? "not_loaded",
+    },
+    {
+      backend_route: "/forecast/preview",
+      business_value: "Lets data teams inspect raw forecast rows when quality is disputed.",
+      capability: "Raw preview",
+      status: previewStatus ?? "not_loaded",
+    },
+  ];
 }

@@ -119,6 +119,16 @@ export default function MarketSignalsPage() {
     signalSummary,
     strategyIntent: strategyIntent.data,
   });
+  const backendConnectionRows = buildSignalBackendConnectionRows({
+    allocationStatus: allocation.data?.allocation_status,
+    automationStatus: automationControl.data?.automation_status,
+    confidenceStatus: confidence.data?.automation_eligibility,
+    guardrailStatus: guardrails.data?.automation_status,
+    readinessStatus: readiness.data?.readiness_status,
+    selectedAssetId,
+    signalStatus: signal.data?.status,
+    strategyStatus: strategyIntent.data?.strategy_mode,
+  });
 
   const refetchSignals = () =>
     Promise.all([
@@ -134,9 +144,9 @@ export default function MarketSignalsPage() {
   return (
     <>
       <PageHeading
-        description="Convert forecast, price, readiness, and guardrail evidence into supervised automated-trading actions."
+        description="Convert forecast, price, readiness, market allocation, and guardrail evidence into the next executable trading step: proposal, paper trade, supervised live candidate, or hold."
         eyebrow="Market intelligence"
-        title="Market signals"
+        title="Signal-to-order readiness"
       />
 
       <div className="mb-6">
@@ -189,10 +199,25 @@ export default function MarketSignalsPage() {
         />
       </div>
 
+      <SectionCard
+        action={
+          <StatusPill tone={decisionBrief.tone}>
+            {automationMode === "blocked" ? "Order blocked" : "Order path evaluated"}
+          </StatusPill>
+        }
+        className="mb-6"
+        title="Signal evidence chain"
+      >
+        <DataTable
+          columns={["capability", "backend_route", "status", "business_value"]}
+          rows={backendConnectionRows}
+        />
+      </SectionCard>
+
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
         <SectionCard
           action={<StatusPill tone={automationTone(automationMode)}>{automationMode}</StatusPill>}
-          title="Automated trading decision"
+          title="Signal-to-order decision"
         >
           <div className="grid gap-3 md:grid-cols-2">
             <AutomationDecisionRow
@@ -651,4 +676,69 @@ function allocationTone(value: unknown): DecisionBriefTone {
   }
 
   return "slate";
+}
+
+function buildSignalBackendConnectionRows({
+  allocationStatus,
+  automationStatus,
+  confidenceStatus,
+  guardrailStatus,
+  readinessStatus,
+  selectedAssetId,
+  signalStatus,
+  strategyStatus,
+}: {
+  allocationStatus?: string;
+  automationStatus?: string;
+  confidenceStatus?: string;
+  guardrailStatus?: string;
+  readinessStatus?: string;
+  selectedAssetId: string;
+  signalStatus?: string;
+  strategyStatus?: string;
+}) {
+  return [
+    {
+      backend_route: `/assets/${selectedAssetId}/signal/latest`,
+      business_value: "Provides the charge/discharge intent and expected trading value.",
+      capability: "Trading signal",
+      status: signalStatus ?? "not_loaded",
+    },
+    {
+      backend_route: `/assets/${selectedAssetId}/forecast-confidence`,
+      business_value: "Decides whether the forecast can support automation or only paper mode.",
+      capability: "Forecast confidence",
+      status: confidenceStatus ?? "not_loaded",
+    },
+    {
+      backend_route: `/assets/${selectedAssetId}/execution/multi-market/allocation`,
+      business_value: "Selects the market route before bid proposal generation.",
+      capability: "Market allocation",
+      status: allocationStatus ?? "not_loaded",
+    },
+    {
+      backend_route: `/assets/${selectedAssetId}/execution/readiness`,
+      business_value: "Checks proposal, telemetry, approval, market adapter, and settlement readiness.",
+      capability: "Execution readiness",
+      status: readinessStatus ?? "not_loaded",
+    },
+    {
+      backend_route: `/assets/${selectedAssetId}/execution/automation-guardrails`,
+      business_value: "Blocks unsafe live trading before order creation.",
+      capability: "Guardrails",
+      status: guardrailStatus ?? "not_loaded",
+    },
+    {
+      backend_route: `/assets/${selectedAssetId}/execution/automation-control/status`,
+      business_value: "Combines freshness gates and policy state into the next automation action.",
+      capability: "Automation control",
+      status: automationStatus ?? "not_loaded",
+    },
+    {
+      backend_route: `/assets/${selectedAssetId}/execution/strategy-intent`,
+      business_value: "Turns signal evidence into strategy posture and bid-building intent.",
+      capability: "Strategy intent",
+      status: strategyStatus ?? "not_loaded",
+    },
+  ];
 }

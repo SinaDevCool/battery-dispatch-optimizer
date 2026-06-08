@@ -143,6 +143,7 @@ export default function MarketRulesPage() {
     ],
   );
   const routeSummaryRows = useMemo(() => buildRouteSummaryRows(ruleRows), [ruleRows]);
+  const routeUnlockRows = useMemo(() => buildRouteUnlockRows(ruleRows), [ruleRows]);
   const productRows = useMemo(
     () => normalizeProductRows(products.data?.products ?? []),
     [products.data?.products],
@@ -183,13 +184,35 @@ export default function MarketRulesPage() {
       ruleRows,
     ],
   );
+  const backendConnectionRows = useMemo(
+    () =>
+      buildMarketRulesBackendRows({
+        assetId: selectedAssetId,
+        ancillary: ancillary.data,
+        automationControl: automationControl.data,
+        connectorReadiness: connectorReadiness.data,
+        eligibleProductCount: eligibleProducts.data?.eligible_product_count,
+        productCount: products.data?.product_count ?? productRows.length,
+        ruleCount: ruleRows.length,
+      }),
+    [
+      ancillary.data,
+      automationControl.data,
+      connectorReadiness.data,
+      eligibleProducts.data?.eligible_product_count,
+      productRows.length,
+      products.data?.product_count,
+      ruleRows.length,
+      selectedAssetId,
+    ],
+  );
 
   return (
     <>
       <PageHeading
-        description="Inspect gate closures, product timing, submission constraints, and automation blockers for German EPEX and regelleistung markets."
+        description="Decide which EPEX and regelleistung routes can receive automated orders, which routes are still preview-only, and which credentials, timing, prequalification, or connector checks block escalation."
         eyebrow="Market intelligence"
-        title="Market rules"
+        title="Market access rules"
       />
 
       <div className="mb-6">
@@ -208,7 +231,7 @@ export default function MarketRulesPage() {
           eyebrow="Market eligibility gate"
           nextAction={decisionBrief.nextAction}
           tone={decisionBrief.tone}
-          title="Which markets can automation trade?"
+          title="Which market route can automation trade?"
         />
       </div>
 
@@ -240,8 +263,45 @@ export default function MarketRulesPage() {
       </div>
 
       <SectionCard
+        action={<StatusPill tone={decisionBrief.tone}>{decisionBrief.actionLabel}</StatusPill>}
+        title="Market access bridge"
+      >
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.1fr)]">
+          <DataTable
+            columns={["decision_input", "value"]}
+            rows={[
+              {
+                decision_input: "Live route candidate",
+                value: ruleRows.some((row) => row.live_submission === true)
+                  ? `${ruleRows.filter((row) => row.live_submission === true).length} route(s)`
+                  : "none yet",
+              },
+              {
+                decision_input: "Paper or preview routes",
+                value: `${previewOnlyCount} route(s) need controlled escalation`,
+              },
+              {
+                decision_input: "Credential blockers",
+                value: `${missingCredentialCount} route(s) need exchange or TSO credentials`,
+              },
+              {
+                decision_input: "Primary unlock",
+                value:
+                  decisionBrief.blockers[0] ??
+                  "Feed eligible routes into market allocation before proposal generation.",
+              },
+            ]}
+          />
+          <DataTable
+            columns={["capability", "backend_route", "status", "business_value"]}
+            rows={backendConnectionRows}
+          />
+        </div>
+      </SectionCard>
+
+      <SectionCard
         action={<StatusPill tone="amber">Automation gate checks</StatusPill>}
-        title="Market route automation gates"
+        title="Route automation gates"
       >
         <DataTable
           columns={[
@@ -253,6 +313,22 @@ export default function MarketRulesPage() {
             "next_gate",
           ]}
           rows={routeSummaryRows}
+        />
+      </SectionCard>
+
+      <SectionCard
+        action={<StatusPill tone={missingCredentialCount || previewOnlyCount ? "amber" : "emerald"}>Unlock plan</StatusPill>}
+        title="Route unlock plan"
+      >
+        <DataTable
+          columns={[
+            "adapter_id",
+            "automation_lane",
+            "blocks_live",
+            "next_unlock",
+            "business_value",
+          ]}
+          rows={routeUnlockRows}
         />
       </SectionCard>
 
@@ -380,6 +456,8 @@ function buildRuleRows({
         automation_scope: connector?.automation_blocking_level ?? "preview_only",
         gate_closure: rule?.gate_closure ?? "Connector-specific gate timing required",
         market_rule: rule?.market_rule ?? adapter.next_connection_action,
+        next_integration_action: connector?.next_integration_action,
+        paper_supported: connector?.paper_supported,
         product_timing: rule?.product_timing ?? "-",
         readiness_score: connector?.readiness_score ?? "-",
         submission_mode: adapter.live_submission ? "live_enabled" : rule?.submission_mode ?? "preview_only",
@@ -428,6 +506,92 @@ function buildRouteSummaryRows(rows: ReturnType<typeof buildRuleRows>) {
     readiness_score: row.readiness_score,
     venue: row.venue,
   }));
+}
+
+function buildRouteUnlockRows(rows: ReturnType<typeof buildRuleRows>) {
+  return rows.map((row) => {
+    const isEpex = String(row.adapter_id).startsWith("epex_");
+    const hasCredentialGap = row.credential_status === "missing";
+    const hasControlGap = row.automation_scope === "blocked";
+
+    return {
+      adapter_id: row.adapter_id,
+      automation_lane: row.live_submission
+        ? "live enabled"
+        : row.paper_supported
+          ? "paper-ready, live gated"
+          : row.submission_mode,
+      blocks_live: hasCredentialGap || hasControlGap ? row.automation_blocker : row.gate_closure,
+      business_value: isEpex
+        ? "wholesale spot bid submission and intraday repricing"
+        : "reserve capacity access, activation readiness, and TSO settlement evidence",
+      next_unlock:
+        row.next_integration_action ??
+        row.next_connection_action ??
+        row.automation_blocker ??
+        "Validate connector, credential, timing, and order controls.",
+    };
+  });
+}
+
+function buildMarketRulesBackendRows({
+  assetId,
+  ancillary,
+  automationControl,
+  connectorReadiness,
+  eligibleProductCount,
+  productCount,
+  ruleCount,
+}: {
+  assetId: string;
+  ancillary?: AncillaryEligibilityResponse;
+  automationControl?: AutomationControlStatusResponse;
+  connectorReadiness?: MarketConnectorReadinessResponse;
+  eligibleProductCount?: number;
+  productCount: number;
+  ruleCount: number;
+}) {
+  return [
+    {
+      backend_route: "/execution/market-adapters?country=Germany",
+      business_value: "Maps the actual EPEX and regelleistung execution routes.",
+      capability: "Market route registry",
+      status: `${ruleCount} route(s)`,
+    },
+    {
+      backend_route: "/execution/market-connectors/readiness?country=Germany",
+      business_value: "Shows whether routes are preview, paper, supervised, or live-ready.",
+      capability: "Connector readiness",
+      status: connectorReadiness?.connector_status ?? "not evaluated",
+    },
+    {
+      backend_route: `/assets/${assetId}/eligible-products`,
+      business_value: "Prevents allocation into products the asset cannot trade.",
+      capability: "Asset product eligibility",
+      status: `${eligibleProductCount ?? 0} eligible`,
+    },
+    {
+      backend_route: `/assets/${assetId}/ancillary/germany/eligibility`,
+      business_value: "Separates EPEX merchant trading from reserve-market prequalification.",
+      capability: "Ancillary eligibility",
+      status: ancillary?.eligible ? "eligible" : ancillary?.reason ?? "not confirmed",
+    },
+    {
+      backend_route: `/assets/${assetId}/execution/automation-control/status`,
+      business_value: "Stops live trading until approval, guardrails, telemetry, and settlement checks pass.",
+      capability: "Automation control",
+      status:
+        automationControl?.automation_status ??
+        automationControl?.automation_mode ??
+        "not evaluated",
+    },
+    {
+      backend_route: "/markets/products?country=Germany",
+      business_value: "Defines the product universe used by revenue stack and market allocation.",
+      capability: "Product catalog",
+      status: `${productCount} product(s)`,
+    },
+  ];
 }
 
 function buildMarketRulesDecisionBrief({

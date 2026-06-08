@@ -63,7 +63,6 @@ export const navigationGroups: NavigationGroup[] = [
       { href: "/market-prices", icon: Gauge, label: "Market Prices" },
       { href: "/market-signals", icon: Zap, label: "Market Signals" },
       { href: "/market-rules", icon: Scale, label: "Market Rules" },
-      { href: "/forecasts", icon: FileCheck2, label: "Model Performance" },
     ],
   },
   {
@@ -113,12 +112,28 @@ export const navigationGroups: NavigationGroup[] = [
   },
 ];
 
-export function isNavigationActive(pathname: string, item: NavigationItem) {
-  if (pathname === item.href) {
-    return true;
+export function isNavigationActive(
+  pathname: string,
+  item: NavigationItem,
+  searchParams = "",
+) {
+  const [itemPath = item.href, itemQuery = ""] = item.href.split("#")[0]?.split("?") ?? [item.href, ""];
+
+  if (itemQuery) {
+    return pathname === itemPath && searchParams === itemQuery;
   }
 
-  return Boolean(item.children?.some((child) => child.href === pathname));
+  if (pathname === itemPath && item.href === itemPath) {
+    return searchParams === "";
+  }
+
+  return Boolean(
+    item.children?.some((child) => {
+      const childPath = child.href.split("#")[0]?.split("?")[0] ?? child.href;
+
+      return childPath === pathname;
+    }),
+  );
 }
 
 export function flattenNavigationGroups(groups: NavigationGroup[]) {
