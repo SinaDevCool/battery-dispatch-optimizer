@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 
 import { ActionButton } from "@/components/action-button";
+import { useAssetContext } from "@/components/asset-provider";
 import { DataTable } from "@/components/data-table";
 import { DecisionBrief, type DecisionBriefTone } from "@/components/decision-brief";
 import { KpiCard } from "@/components/kpi-card";
@@ -27,12 +28,14 @@ import type {
 } from "@/types/api";
 
 export default function MarketConnectorsPage() {
+  const { selectedAssetId } = useAssetContext();
+
   const connectors = useQuery({
     queryFn: () =>
       apiGet<MarketConnectorReadinessResponse>(
-        "/execution/market-connectors/readiness?country=Germany",
+        `/execution/market-connectors/readiness?country=Germany&asset_id=${selectedAssetId}`,
       ),
-    queryKey: ["market-connectors-readiness"],
+    queryKey: ["market-connectors-readiness", selectedAssetId],
   });
 
   const persistence = useQuery({
@@ -44,9 +47,9 @@ export default function MarketConnectorsPage() {
   const handshakeHistory = useQuery({
     queryFn: () =>
       apiGet<LiveAdapterHandshakeHistoryResponse>(
-        "/execution/market-connectors/live-handshake/history?asset_id=default_site&limit=6",
+        `/execution/market-connectors/live-handshake/history?asset_id=${selectedAssetId}&limit=6`,
       ),
-    queryKey: ["market-connectors-live-handshake-history"],
+    queryKey: ["market-connectors-live-handshake-history", selectedAssetId],
   });
 
   const officialEvidence = useQuery({
@@ -584,7 +587,7 @@ export default function MarketConnectorsPage() {
         action={
           <div className="flex flex-wrap items-start gap-2">
             <ActionButton
-              endpoint="/execution/market-connectors/live-handshake/run?asset_id=default_site&country=Germany"
+              endpoint={`/execution/market-connectors/live-handshake/run?asset_id=${selectedAssetId}&country=Germany`}
               label="Run drill"
               refetch={() => Promise.all([connectors.refetch(), handshakeHistory.refetch()])}
               variant="primary"

@@ -3,6 +3,7 @@
 import { ExternalLink } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 
+import { ActionButton } from "@/components/action-button";
 import { useAssetContext } from "@/components/asset-provider";
 import { DataCompletenessPanel } from "@/components/data-completeness-panel";
 import { DataTable } from "@/components/data-table";
@@ -24,13 +25,19 @@ export default function ReportsPage() {
   const { selectedAssetId } = useAssetContext();
 
   const latest = useQuery({
-    queryFn: () => apiGet<MonthlyReportResponse>("/reports/monthly/latest"),
-    queryKey: ["monthly-report-latest"],
+    queryFn: () =>
+      apiGet<MonthlyReportResponse>(
+        `/reports/monthly/latest?asset_id=${selectedAssetId}`,
+      ),
+    queryKey: ["monthly-report-latest", selectedAssetId],
   });
 
   const archive = useQuery({
-    queryFn: () => apiGet<MonthlyReportListResponse>("/reports/monthly/list"),
-    queryKey: ["monthly-report-list"],
+    queryFn: () =>
+      apiGet<MonthlyReportListResponse>(
+        `/reports/monthly/list?asset_id=${selectedAssetId}`,
+      ),
+    queryKey: ["monthly-report-list", selectedAssetId],
   });
 
   const completeness = useQuery({
@@ -42,7 +49,16 @@ export default function ReportsPage() {
   });
 
   const reportName = String(latest.data?.report_name ?? "-");
-  const reportUrl = `${apiBaseUrl}/reports/monthly/latest/view`;
+  const viewerRoute =
+    latest.data?.viewer_route ??
+    `/reports/monthly/latest/view?asset_id=${selectedAssetId}`;
+  const reportUrl = `${apiBaseUrl}${viewerRoute}`;
+  const refetchReports = () =>
+    Promise.all([
+      latest.refetch(),
+      archive.refetch(),
+      completeness.refetch(),
+    ]);
   const reportDecision = buildReportDecision({
     completeness: completeness.data,
     reportStatus: latest.data?.status,
@@ -71,6 +87,14 @@ export default function ReportsPage() {
       />
 
       <DecisionBrief
+        action={
+          <ActionButton
+            endpoint={`/assets/${selectedAssetId}/reports/monthly/generate`}
+            label="Generate client report"
+            refetch={refetchReports}
+            variant="primary"
+          />
+        }
         blockers={reportDecision.blockers}
         className="mb-6"
         decision={reportDecision.decision}
@@ -110,11 +134,19 @@ export default function ReportsPage() {
       <div className="mb-5 grid gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
         <SectionCard
           action={
-            latest.data?.status === "ok" ? (
-              <StatusPill tone="emerald">Available</StatusPill>
-            ) : (
-              <StatusPill tone="amber">Not generated</StatusPill>
-            )
+            <div className="flex flex-wrap items-center gap-2">
+              {latest.data?.status === "ok" ? (
+                <StatusPill tone="emerald">Available</StatusPill>
+              ) : (
+                <StatusPill tone="amber">Not generated</StatusPill>
+              )}
+              <ActionButton
+                endpoint={`/assets/${selectedAssetId}/reports/monthly/generate`}
+                label="Generate"
+                refetch={refetchReports}
+                variant="secondary"
+              />
+            </div>
           }
           title="Latest monthly report"
         >
@@ -137,7 +169,11 @@ export default function ReportsPage() {
                   { field: "Delivery status", value: "Draft HTML" },
                   {
                     field: "Viewer route",
-                    value: "/reports/monthly/latest/view",
+                    value: viewerRoute,
+                  },
+                  {
+                    field: "Asset scope",
+                    value: latest.data.asset_id ?? selectedAssetId,
                   },
                 ]}
               />
@@ -287,19 +323,25 @@ function buildBackendConnectionRows({
   return [
     {
       capability: "Latest report metadata",
-      backend_route: "/reports/monthly/latest",
+      backend_route: `/reports/monthly/latest?asset_id=${selectedAssetId}`,
       status: reportStatus ?? "not_loaded",
       business_value: "Shows the current client-facing report artifact.",
     },
     {
+      capability: "Generate selected-asset report",
+      backend_route: `/assets/${selectedAssetId}/reports/monthly/generate`,
+      status: "connected",
+      business_value: "Builds a client report from the selected asset evidence stack.",
+    },
+    {
       capability: "HTML report viewer",
-      backend_route: "/reports/monthly/latest/view",
+      backend_route: `/reports/monthly/latest/view?asset_id=${selectedAssetId}`,
       status: reportStatus === "ok" ? "available" : "not_available",
       business_value: "Lets a user inspect the generated report directly.",
     },
     {
       capability: "Report archive",
-      backend_route: "/reports/monthly/list",
+      backend_route: `/reports/monthly/list?asset_id=${selectedAssetId}`,
       status: `${archiveCount ?? 0} archived`,
       business_value: "Keeps a lightweight client reporting audit trail.",
     },

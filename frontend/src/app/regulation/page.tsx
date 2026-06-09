@@ -84,9 +84,9 @@ export default function RegulationPage() {
   return (
     <>
       <PageHeading
-        description="Germany-focused regulatory cockpit for storage classification, EEG logic, grid fee exposure, and ancillary service eligibility."
+        description="Prove whether the selected German asset can be used for automated trading by checking storage classification, EEG origin risk, grid-fee exposure, and ancillary-service eligibility."
         eyebrow="Germany regulatory layer"
-        title="Regulation"
+        title="Regulatory compliance"
       />
 
       <DecisionBrief
@@ -135,6 +135,69 @@ export default function RegulationPage() {
         />
         <KpiCard accent="blue" label="Country" value="Germany" />
       </div>
+
+      <SectionCard className="mb-5" title="Regulatory-to-automation bridge">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <DataTable
+            columns={["decision_input", "value"]}
+            rows={[
+              {
+                decision_input: "Country rulebook",
+                value: "Germany",
+              },
+              {
+                decision_input: "Automation gate",
+                value: automationBlockers.length
+                  ? "blocked for live automation"
+                  : "eligible for automated route selection",
+              },
+              {
+                decision_input: "Regulatory blockers",
+                value: automationBlockers.length,
+              },
+              {
+                decision_input: "Why this page matters",
+                value:
+                  "It prevents the platform from submitting bids where EEG, storage classification, grid-fee, or ancillary eligibility evidence is incomplete.",
+              },
+            ]}
+          />
+          <DataTable
+            columns={["capability", "backend_route", "status", "business_value"]}
+            rows={[
+              {
+                backend_route: `/assets/${selectedAssetId}/storage-classification`,
+                business_value: "Classifies the asset before market-route selection.",
+                capability: "Storage classification",
+                status:
+                  classification.data?.storage_classification ??
+                  classification.data?.storage_mode ??
+                  "not loaded",
+              },
+              {
+                backend_route: `/assets/${selectedAssetId}/eeg-compliance/latest`,
+                business_value:
+                  "Blocks renewable-support or mixed-origin logic before automated bids.",
+                capability: "EEG compliance",
+                status: eeg.data?.status ?? "not loaded",
+              },
+              {
+                backend_route: `/assets/${selectedAssetId}/grid-fees/germany/sensitivity`,
+                business_value: "Tests tariff economics before dispatch approval.",
+                capability: "Grid fee sensitivity",
+                status: `${gridFeeRows.length} scenario(s)`,
+              },
+              {
+                backend_route: `/assets/${selectedAssetId}/ancillary/germany/eligibility`,
+                business_value:
+                  "Allows reserve-market bidding only for cleared products.",
+                capability: "Ancillary eligibility",
+                status: `${ancillary.data?.eligible_product_count ?? ancillary.data?.eligible_products?.length ?? 0} eligible`,
+              },
+            ]}
+          />
+        </div>
+      </SectionCard>
 
       <div className="grid gap-5 xl:grid-cols-2">
         <SectionCard title="Automation gate summary">

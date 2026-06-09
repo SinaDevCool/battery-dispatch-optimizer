@@ -30,9 +30,7 @@ import { formatCurrency, formatDateTime, formatNumber } from "@/lib/format";
 import type {
   AutomationControlStatusResponse,
   AutomationEventHistoryResponse,
-  AutomationFreshnessGate,
   AutomationModeEscalation,
-  AutomationRemediationItem,
   AutomationGuardrailsResponse,
   AssetTelemetryResponse,
   AssetMarketAdapterStatusResponse,
@@ -66,6 +64,11 @@ const executionTabs = [
     id: "overview",
     label: "Control",
     helper: "Automation mode, next action, lifecycle status, and current engine state.",
+  },
+  {
+    id: "golive",
+    label: "Go-Live",
+    helper: "Official API compliance, route certification, sandbox evidence, and supervised-live readiness.",
   },
   {
     id: "allocation",
@@ -569,36 +572,6 @@ export default function ExecutionPage({
               helper={humanGate.required ? "Required by automation policy" : "Not required"}
             />
             <KpiCard
-              accent={officialApiTone(connectorReadiness?.official_api_compliance_status)}
-              label="Official API"
-              value={connectorReadiness?.official_api_compliance_status ?? "-"}
-              helper={`${connectorSummary.official_api_compliant_route_count ?? 0}/${connectorSummary.official_api_route_count ?? 0} compliant`}
-            />
-            <KpiCard
-              accent={routeCertificationTone(connectorReadiness?.route_certification_status)}
-              label="Route certification"
-              value={connectorReadiness?.route_certification_status ?? "-"}
-              helper={`${connectorSummary.certified_route_count ?? 0}/${connectorSummary.route_certification_count ?? 0} certified`}
-            />
-            <KpiCard
-              accent={sandboxCertificationTone(connectorReadiness?.sandbox_certification_status)}
-              label="Sandbox certification"
-              value={connectorReadiness?.sandbox_certification_status ?? "-"}
-              helper={`${connectorSummary.paper_certified_count ?? 0} paper / ${connectorSummary.supervised_live_certified_count ?? 0} supervised live`}
-            />
-            <KpiCard
-              accent={supervisedLiveGateTone(connectorReadiness?.supervised_live_gate_status)}
-              label="Supervised live gate"
-              value={connectorReadiness?.supervised_live_gate_status ?? "-"}
-              helper={`${connectorSummary.supervised_live_candidate_count ?? 0} candidate / ${connectorSummary.paper_ready_live_blocked_count ?? 0} blocked`}
-            />
-            <KpiCard
-              accent={handshakeTone(connectorReadiness?.handshake_readiness_status)}
-              label="Live handshake"
-              value={connectorReadiness?.handshake_readiness_status ?? "-"}
-              helper={`${connectorSummary.handshake_ready_count ?? 0}/${connectorSummary.handshake_target_count ?? 0} dry-run ready`}
-            />
-            <KpiCard
               accent={controlBlockers.length ? "red" : "emerald"}
               label="Blockers"
               value={controlBlockers.length}
@@ -699,15 +672,6 @@ export default function ExecutionPage({
               </div>
             </div>
           </SectionCard>
-
-          <GoLiveReadinessPanel
-            data={liveTradingReadiness.data}
-            refetchExecution={refetchExecution}
-          />
-          <RouteCertificationPanel
-            routes={routeCertifications}
-            status={connectorReadiness?.route_certification_status}
-          />
         </>
       ) : null}
 
@@ -736,6 +700,51 @@ export default function ExecutionPage({
             selectedAssetId={selectedAssetId}
             submission={submission}
             telemetryData={telemetryData}
+          />
+        </div>
+      ) : null}
+
+      {activeTab === "golive" ? (
+        <div className="space-y-5">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <KpiCard
+              accent={officialApiTone(connectorReadiness?.official_api_compliance_status)}
+              label="Official API"
+              value={connectorReadiness?.official_api_compliance_status ?? "-"}
+              helper={`${connectorSummary.official_api_compliant_route_count ?? 0}/${connectorSummary.official_api_route_count ?? 0} compliant`}
+            />
+            <KpiCard
+              accent={routeCertificationTone(connectorReadiness?.route_certification_status)}
+              label="Route certification"
+              value={connectorReadiness?.route_certification_status ?? "-"}
+              helper={`${connectorSummary.certified_route_count ?? 0}/${connectorSummary.route_certification_count ?? 0} certified`}
+            />
+            <KpiCard
+              accent={sandboxCertificationTone(connectorReadiness?.sandbox_certification_status)}
+              label="Sandbox certification"
+              value={connectorReadiness?.sandbox_certification_status ?? "-"}
+              helper={`${connectorSummary.paper_certified_count ?? 0} paper / ${connectorSummary.supervised_live_certified_count ?? 0} supervised live`}
+            />
+            <KpiCard
+              accent={supervisedLiveGateTone(connectorReadiness?.supervised_live_gate_status)}
+              label="Supervised live gate"
+              value={connectorReadiness?.supervised_live_gate_status ?? "-"}
+              helper={`${connectorSummary.supervised_live_candidate_count ?? 0} candidate / ${connectorSummary.paper_ready_live_blocked_count ?? 0} blocked`}
+            />
+            <KpiCard
+              accent={handshakeTone(connectorReadiness?.handshake_readiness_status)}
+              label="Live handshake"
+              value={connectorReadiness?.handshake_readiness_status ?? "-"}
+              helper={`${connectorSummary.handshake_ready_count ?? 0}/${connectorSummary.handshake_target_count ?? 0} dry-run ready`}
+            />
+          </div>
+          <GoLiveReadinessPanel
+            data={liveTradingReadiness.data}
+            refetchExecution={refetchExecution}
+          />
+          <RouteCertificationPanel
+            routes={routeCertifications}
+            status={connectorReadiness?.route_certification_status}
           />
         </div>
       ) : null}
@@ -912,21 +921,18 @@ export default function ExecutionPage({
       {activeTab === "risk" ? (
         <div className="space-y-5">
           <AutomationModeLadder escalation={modeEscalation} />
-            <AutomationRemediationQueue
-              items={remediationQueue}
-              recoveryPlan={recovery}
-              refetchExecution={refetchExecution}
-            />
-          <FreshnessTrustGates gates={freshnessGates} />
           <ExecutionRiskApprovalPanel
             approvalData={approvalData}
             automationBlockers={automationBlockers}
             automationStatus={automationStatus}
             confidence={confidence}
+            freshnessGates={freshnessGates}
             guardrailSummary={guardrailSummary}
             guardrails={guardrails}
             hardBlockers={hardBlockers}
             refetchExecution={refetchExecution}
+            recoveryPlan={recovery}
+            remediationItems={remediationQueue}
             selectedAssetId={selectedAssetId}
           />
         </div>
@@ -958,10 +964,15 @@ export default function ExecutionPage({
 
       {activeTab === "audit" ? (
         <ExecutionAuditPanel
+          approvalData={approvalData}
           auditRows={auditRows}
           automationEvents={eventRows}
           lifecycleRows={lifecycleRows}
+          paperTrade={paperTrade}
+          proposal={proposal}
+          settlementData={settlementData}
           submissionLifecycle={submissionLifecycle.data}
+          submission={submission}
           riskChecks={riskChecks}
           telemetryData={telemetryData}
         />
@@ -1343,109 +1354,6 @@ function StrategyIntentPanel({ intent }: { intent?: StrategyIntentResponse }) {
   );
 }
 
-function AutomationRemediationQueue({
-  items,
-  recoveryPlan,
-  refetchExecution,
-}: {
-  items: AutomationRemediationItem[];
-  recoveryPlan?: ExecutionRecoveryPlanResponse;
-  refetchExecution: () => Promise<unknown>;
-}) {
-  const recoveryRows = recoveryPlan?.recovery_queue ?? [];
-  const primaryAction = recoveryPlan?.primary_action;
-
-  if (!items.length) {
-    return (
-      <SectionCard
-        action={<StatusPill tone={recoveryTone(recoveryPlan?.recovery_status)}>{recoveryPlan?.recovery_status ?? "Clear"}</StatusPill>}
-        className="mb-6"
-        title="Execution recovery plan"
-      >
-        <div className="mb-4 grid gap-3 md:grid-cols-4">
-          <ExecutionRecoveryMetric label="Stuck step" value={recoveryPlan?.stuck_step?.label ?? "-"} />
-          <ExecutionRecoveryMetric label="Root cause" value={recoveryPlan?.root_cause?.category?.replaceAll("_", " ") ?? "-"} />
-          <ExecutionRecoveryMetric label="Auto actions" value={recoveryPlan?.summary?.auto_resolvable_count ?? 0} />
-          <ExecutionRecoveryMetric label="Manual reviews" value={recoveryPlan?.summary?.manual_review_count ?? 0} />
-        </div>
-        <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-100">
-          {recoveryPlan?.primary_action?.message ?? "No remediation items are blocking the automation engine."}
-        </div>
-      </SectionCard>
-    );
-  }
-
-  const queueRows = items.slice(0, 8).map((item) => ({
-    action:
-      item.auto_resolvable && item.resolution_endpoint
-        ? "auto-fix available"
-        : item.evidence_link
-          ? "open evidence"
-          : "review",
-    category: item.category?.replaceAll("_", " ") ?? "remediation",
-    required_action: item.required_action ?? item.message ?? "Resolve blocker",
-    severity: item.severity ?? "medium",
-    source: item.source ?? item.blocker_id,
-  }));
-
-  return (
-    <SectionCard
-      action={<StatusPill tone={recoveryTone(recoveryPlan?.recovery_status)}>{recoveryPlan?.recovery_status ?? `${items.length} item(s)`}</StatusPill>}
-      className="mb-6"
-      title="Execution recovery plan"
-    >
-      <div className="mb-4 grid gap-3 md:grid-cols-4">
-        <ExecutionRecoveryMetric label="Stuck step" value={recoveryPlan?.stuck_step?.label ?? "-"} />
-        <ExecutionRecoveryMetric label="Root cause" value={recoveryPlan?.root_cause?.category?.replaceAll("_", " ") ?? "-"} />
-        <ExecutionRecoveryMetric label="Primary action" value={primaryAction?.label ?? "-"} />
-        <ExecutionRecoveryMetric label="Auto-safe" value={primaryAction?.auto_resolvable ? "yes" : "no"} />
-      </div>
-      <div className="mb-4 rounded-lg border border-slate-800 bg-slate-900/45 p-4 text-sm leading-6 text-slate-300">
-        {recoveryPlan?.root_cause?.message ?? primaryAction?.message ?? "Recovery plan is not available yet."}
-      </div>
-      <div className="mb-4 flex flex-wrap gap-3">
-        {primaryAction?.auto_resolvable && primaryAction.resolution_endpoint ? (
-          <ActionButton
-            endpoint={primaryAction.resolution_endpoint}
-            label={primaryAction.label ?? "Run recovery"}
-            refetch={refetchExecution}
-            variant="primary"
-          />
-        ) : null}
-      </div>
-      <DataTable
-        columns={["severity", "category", "source", "action", "required_action"]}
-        rows={queueRows}
-      />
-      {recoveryRows.length ? (
-        <div className="mt-5">
-          <DataTable
-            columns={["severity", "category", "source", "action", "label", "auto_resolvable"]}
-            rows={recoveryRows.slice(0, 6)}
-          />
-        </div>
-      ) : null}
-    </SectionCard>
-  );
-}
-
-function ExecutionRecoveryMetric({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-4">
-      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-        {label}
-      </div>
-      <div className="mt-2 text-sm font-semibold text-slate-100">{value}</div>
-    </div>
-  );
-}
-
 function AutomationModeLadder({
   escalation,
 }: {
@@ -1515,102 +1423,6 @@ function AutomationModeLadder({
   );
 }
 
-function FreshnessTrustGates({ gates }: { gates: AutomationFreshnessGate[] }) {
-  if (!gates.length) {
-    return null;
-  }
-
-  return (
-    <SectionCard
-      action={
-        <StatusPill
-          tone={gates.some((gate) => gate.freshness_status !== "fresh") ? "amber" : "emerald"}
-        >
-          Freshness & trust
-        </StatusPill>
-      }
-      className="mb-6"
-      title="Freshness & trust gates"
-    >
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {gates.map((gate) => (
-          <div
-            className="min-h-44 rounded-lg border border-slate-800 bg-slate-900/45 p-4"
-            key={gate.gate_id}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-slate-100">
-                  {gate.label}
-                </div>
-                <div className="mt-1 text-xs text-slate-500">
-                  Blocks {gate.blocks_mode?.replaceAll("_", " ") ?? "automation"}
-                </div>
-              </div>
-              <StatusPill tone={freshnessTone(gate.freshness_status)}>
-                {gate.freshness_status ?? "-"}
-              </StatusPill>
-            </div>
-            <div className="mt-4 grid gap-2 text-xs text-slate-300">
-              <div className="flex justify-between gap-3">
-                <span className="text-slate-500">Age</span>
-                <span>{formatFreshnessAge(gate.age_minutes)}</span>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-slate-500">Max age</span>
-                <span>{formatFreshnessAge(gate.max_age_minutes)}</span>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-slate-500">Last seen</span>
-                <span>{formatDateTime(gate.last_seen_at)}</span>
-              </div>
-            </div>
-            <div className="mt-4 text-xs leading-5 text-slate-400">
-              {gate.required_action}
-            </div>
-          </div>
-        ))}
-      </div>
-    </SectionCard>
-  );
-}
-
-function freshnessTone(value: unknown) {
-  if (value === "fresh") {
-    return "emerald";
-  }
-
-  if (value === "stale") {
-    return "amber";
-  }
-
-  if (value === "missing") {
-    return "red";
-  }
-
-  return "slate";
-}
-
-function recoveryTone(value: unknown) {
-  if (value === "no_recovery_needed") {
-    return "emerald";
-  }
-
-  if (value === "auto_recovery_available") {
-    return "blue";
-  }
-
-  if (value === "human_gate_required") {
-    return "amber";
-  }
-
-  if (value === "manual_recovery_required") {
-    return "red";
-  }
-
-  return "slate";
-}
-
 function goLiveTone(value: unknown) {
   if (value === "go_live_ready" || value === "supervised_ready") {
     return "emerald";
@@ -1657,24 +1469,6 @@ function ladderTone(value: unknown) {
   }
 
   return "amber";
-}
-
-function formatFreshnessAge(value: unknown) {
-  const minutes = Number(value);
-
-  if (!Number.isFinite(minutes)) {
-    return "-";
-  }
-
-  if (minutes >= 1440) {
-    return `${formatNumber(minutes / 1440, 1)} d`;
-  }
-
-  if (minutes >= 60) {
-    return `${formatNumber(minutes / 60, 1)} h`;
-  }
-
-  return `${formatNumber(minutes, 0)} min`;
 }
 
 function controlModeTone(value: unknown) {

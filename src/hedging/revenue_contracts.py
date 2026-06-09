@@ -47,6 +47,7 @@ def build_hedged_revenue_view(asset, merchant_revenue_eur=0.0, contract=None):
     merchant_revenue_eur = float(merchant_revenue_eur or 0.0)
 
     contracts = [contract] if contract else DEFAULT_HEDGE_CONTRACTS
+    contract_source = "client_contract" if contract else "default_assumption_library"
     results = []
 
     for contract_config in contracts:
@@ -69,10 +70,48 @@ def build_hedged_revenue_view(asset, merchant_revenue_eur=0.0, contract=None):
     return {
         "status": "ok",
         "asset_id": asset.asset_id,
+        "contract_source": contract_source,
         "merchant_revenue_eur_per_month": round(merchant_revenue_eur, 2),
         "power_mw": round(power_mw, 4),
         "best_contract": best_contract,
         "contracts": results,
+        "summary": {
+            "hedged_revenue_eur": (best_contract or {}).get(
+                "expected_owner_revenue_eur_per_month",
+                0.0,
+            ),
+            "merchant_upside_eur": (best_contract or {}).get(
+                "owner_upside_eur_per_month",
+                0.0,
+            ),
+            "residual_exposure_eur": (best_contract or {}).get(
+                "merchant_revenue_given_away_eur_per_month",
+                0.0,
+            ),
+            "downside_protection_eur": (best_contract or {}).get(
+                "downside_protection_eur_per_month",
+                0.0,
+            ),
+            "contract_count": len(results),
+            "contract_source": contract_source,
+        },
+        "assumption_basis": [
+            {
+                "input": "merchant_revenue_eur_per_month",
+                "source": "latest revenue stack, falling back to latest dispatch signal PnL",
+                "value": round(merchant_revenue_eur, 2),
+            },
+            {
+                "input": "power_mw",
+                "source": "asset grid connection capacity, falling back to battery discharge power",
+                "value": round(power_mw, 4),
+            },
+            {
+                "input": "contract_terms",
+                "source": contract_source,
+                "value": len(results),
+            },
+        ],
     }
 
 

@@ -10,6 +10,7 @@ import { ErrorState } from "@/components/error-state";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
 import { SectionCard } from "@/components/section-card";
+import { StatusPill } from "@/components/status-pill";
 import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { apiGet } from "@/lib/api";
 import { formatCurrency, formatNumber } from "@/lib/format";
@@ -73,6 +74,21 @@ export default function ScenariosPage() {
         ? "automation guardrail"
         : "resilience evidence",
   }));
+  const scenarioEvidenceRows = buildScenarioEvidenceRows({
+    bestScenario,
+    downsideAtRisk,
+    scenarioRows,
+    scenariosStatus: scenarios.data?.status,
+    stressRows,
+    stressStatus: stress.data?.status,
+    worstStress,
+  });
+  const backendConnectionRows = buildScenarioBackendConnectionRows({
+    scenarioCount: scenarioRows.length,
+    scenariosStatus: scenarios.data?.status,
+    stressCount: stressRows.length,
+    stressStatus: stress.data?.status,
+  });
 
   const refetchScenarios = () =>
     Promise.all([scenarios.refetch(), stress.refetch()]);
@@ -80,9 +96,9 @@ export default function ScenariosPage() {
   return (
     <>
       <PageHeading
-        description="Convert optimizer outputs into bankable what-if evidence: asset sizing, price downside, upside capture, and model resilience before committing capital or automation."
+        description="Convert optimizer outputs into bankable what-if evidence: asset sizing, downside survival, upside capture, and automation guardrails before committing capital or live strategy limits."
         eyebrow="Commercial resilience"
-        title="Scenario Lab"
+        title="Scenario resilience lab"
       />
 
       {scenarios.data?.status === "not_found" && stress.data?.status === "not_found" ? (
@@ -148,6 +164,27 @@ export default function ScenariosPage() {
           helper={downsideAtRisk ? "Downside breach visible" : "No negative stress PnL found"}
         />
       </div>
+
+      <SectionCard
+        action={
+          <StatusPill tone={downsideAtRisk || !scenarioRows.length || !stressRows.length ? "amber" : "emerald"}>
+            Scenario evidence
+          </StatusPill>
+        }
+        className="mb-6"
+        title="Scenario-to-business-value bridge"
+      >
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.1fr)]">
+          <DataTable
+            columns={["business_question", "answer", "automation_use"]}
+            rows={scenarioEvidenceRows}
+          />
+          <DataTable
+            columns={["capability", "backend_route", "status", "business_value"]}
+            rows={backendConnectionRows}
+          />
+        </div>
+      </SectionCard>
 
       <WorkspaceTabs
         activeTab={activeTab}
@@ -233,6 +270,92 @@ export default function ScenariosPage() {
       ) : null}
     </>
   );
+}
+
+function buildScenarioEvidenceRows({
+  bestScenario,
+  downsideAtRisk,
+  scenarioRows,
+  scenariosStatus,
+  stressRows,
+  stressStatus,
+  worstStress,
+}: {
+  bestScenario?: TableRow;
+  downsideAtRisk: boolean;
+  scenarioRows: TableRow[];
+  scenariosStatus?: string;
+  stressRows: TableRow[];
+  stressStatus?: string;
+  worstStress?: TableRow;
+}) {
+  return [
+    {
+      answer: bestScenario
+        ? `${displayValue(bestScenario.scenario_name)} at ${formatCurrency(bestScenario.total_pnl_eur)}`
+        : "No sizing case available",
+      automation_use: "Sets candidate capacity, power, and cycle limits before live strategy scaling.",
+      business_question: "What asset size creates the best economics?",
+    },
+    {
+      answer: worstStress
+        ? `${displayValue(worstStress.scenario_name)} at ${formatCurrency(worstStress.total_pnl_eur)}`
+        : "No stress case available",
+      automation_use: downsideAtRisk
+        ? "Create a guardrail before allowing automated escalation."
+        : "Supports resilient operation under current stress assumptions.",
+      business_question: "Does the strategy survive downside prices?",
+    },
+    {
+      answer: `${scenarioRows.length} sizing case(s), ${stressRows.length} stress case(s)`,
+      automation_use: "Prevents one forecast run from becoming an untested trading policy.",
+      business_question: "Is there enough scenario evidence?",
+    },
+    {
+      answer: `${scenariosStatus ?? "unknown"} / ${stressStatus ?? "unknown"}`,
+      automation_use: "Shows whether the evidence is fresh enough to support client or owner decisions.",
+      business_question: "Is the backend evidence available?",
+    },
+  ];
+}
+
+function buildScenarioBackendConnectionRows({
+  scenarioCount,
+  scenariosStatus,
+  stressCount,
+  stressStatus,
+}: {
+  scenarioCount: number;
+  scenariosStatus?: string;
+  stressCount: number;
+  stressStatus?: string;
+}) {
+  return [
+    {
+      backend_route: "/scenarios/latest",
+      business_value: "Loads persisted asset sizing economics for investment and strategy limits.",
+      capability: "Asset sizing evidence",
+      status: `${scenariosStatus ?? "unknown"} / ${scenarioCount} case(s)`,
+    },
+    {
+      backend_route: "/stress/latest",
+      business_value: "Loads downside and upside price stress evidence before automation is trusted.",
+      capability: "Price stress evidence",
+      status: `${stressStatus ?? "unknown"} / ${stressCount} case(s)`,
+    },
+    {
+      backend_route: "/scenarios/run-latest",
+      business_value: "Refreshes sizing evidence from the latest forecast and optimizer output.",
+      capability: "Sizing run control",
+      status: "available",
+    },
+    {
+      backend_route: "/stress/run-latest",
+      business_value: "Refreshes downside guardrail evidence before strategy escalation.",
+      capability: "Stress run control",
+      status: "available",
+    },
+  ];
 }
 
 function findBestRow(rows: TableRow[]) {

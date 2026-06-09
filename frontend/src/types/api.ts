@@ -286,7 +286,9 @@ export type HedgingSummary = JsonObject & {
 };
 
 export type HedgingRevenueResponse = ApiEnvelope<{
+  assumption_basis?: TableRow[];
   best_contract?: HedgeContract | null;
+  contract_source?: string;
   contracts?: HedgeContract[];
   merchant_revenue_eur_per_month?: number;
   power_mw?: number;
@@ -667,6 +669,7 @@ export type SettlementReconciliation = JsonObject & {
   asset_id?: string;
   evidence_status?: JsonObject;
   generated_at?: string;
+  links?: JsonObject;
   market_execution_model?: string;
   primary_variance_driver?: string;
   recommended_actions?: string[];
@@ -1972,8 +1975,10 @@ export type EligibleProductsResponse = ApiEnvelope<{
 }>;
 
 export type MonthlyReportResponse = ApiEnvelope<{
+  asset_id?: string;
   report_file?: string;
   report_name?: string;
+  viewer_route?: string;
 }>;
 
 export type MonthlyReportListResponse = ApiEnvelope<{

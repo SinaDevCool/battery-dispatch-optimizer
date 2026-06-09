@@ -2,9 +2,7 @@ import {
   BatteryCharging,
   BrainCircuit,
   Cable,
-  ChartNoAxesCombined,
   ClipboardCheck,
-  ClipboardList,
   FileCheck2,
   GitBranch,
   Gauge,
@@ -69,11 +67,9 @@ export const navigationGroups: NavigationGroup[] = [
     id: "optimization",
     label: "Optimization",
     items: [
-      { href: "/dispatch", icon: Cable, label: "Trading Schedule" },
-      { href: "/revenue", icon: Layers3, label: "Revenue Assurance" },
+      { href: "/dispatch", icon: Cable, label: "Dispatch Schedule" },
       { href: "/scenarios", icon: SquareActivity, label: "Scenario Lab" },
       { href: "/hedging", icon: ShieldCheck, label: "Hedging" },
-      { href: "/regulation", icon: Scale, label: "Market Eligibility" },
     ],
   },
   {
@@ -82,20 +78,7 @@ export const navigationGroups: NavigationGroup[] = [
     items: [
       { href: "/execution/automation-policies", icon: SlidersHorizontal, label: "Automation Control" },
       { href: "/execution/orchestrator", icon: GitBranch, label: "Trading Orchestrator" },
-      {
-        href: "/execution",
-        icon: ClipboardCheck,
-        label: "Mission Control",
-        children: [
-          { href: "/execution", icon: BrainCircuit, label: "Strategy Intent" },
-          { href: "/execution/market-allocation", icon: ChartNoAxesCombined, label: "Market Allocation" },
-          { href: "/execution/proposals", icon: ClipboardList, label: "Bid Proposals" },
-          { href: "/execution/simulation", icon: SquareActivity, label: "Paper Trading" },
-          { href: "/execution/market-connectors", icon: Cable, label: "Market Access & Data" },
-          { href: "/execution/settlement", icon: ReceiptText, label: "Settlement Feedback" },
-          { href: "/execution/audit", icon: Scale, label: "Audit Trail" },
-        ],
-      },
+      { href: "/execution", icon: ClipboardCheck, label: "Mission Control" },
     ],
   },
   {

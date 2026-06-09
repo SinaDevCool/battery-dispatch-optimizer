@@ -1,4 +1,8 @@
 export function formatCurrency(value: unknown, currency = "EUR") {
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+
   const numberValue = Number(value);
 
   if (!Number.isFinite(numberValue)) {
@@ -13,6 +17,10 @@ export function formatCurrency(value: unknown, currency = "EUR") {
 }
 
 export function formatNumber(value: unknown, digits = 2) {
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+
   const numberValue = Number(value);
 
   if (!Number.isFinite(numberValue)) {

@@ -146,6 +146,66 @@ export default function AutomationPoliciesPage() {
         />
       </div>
 
+      <SectionCard className="mb-5" title="Policy-to-automation bridge">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <DataTable
+            columns={["decision_input", "value"]}
+            rows={[
+              {
+                decision_input: "Control purpose",
+                value:
+                  "Defines which trading modes are allowed before any automated bid can move from signal to submission.",
+              },
+              {
+                decision_input: "Current mode",
+                value: control?.automation_mode ?? currentPolicy?.automation_mode ?? "-",
+              },
+              {
+                decision_input: "Live trading",
+                value: control?.live_trading_allowed ? "permitted" : "blocked by control plane",
+              },
+              {
+                decision_input: "Next action owner",
+                value: nextAutomationAction.owner ?? "automation_control",
+              },
+            ]}
+          />
+          <DataTable
+            columns={["capability", "backend_route", "status", "business_value"]}
+            rows={[
+              {
+                backend_route: `/assets/${selectedAssetId}/execution/automation-policy`,
+                business_value:
+                  "Stores the active trading mode, risk limits, confidence thresholds, and approval rules.",
+                capability: "Policy envelope",
+                status: currentPolicy?.policy_version ?? policy.data?.source ?? "not loaded",
+              },
+              {
+                backend_route: `/assets/${selectedAssetId}/execution/automation-policy/evaluation`,
+                business_value:
+                  "Turns the policy into pass, review, and blocked gates before automation escalates.",
+                capability: "Policy evaluation",
+                status: policyDecision ?? "not evaluated",
+              },
+              {
+                backend_route: `/assets/${selectedAssetId}/execution/automation-control/status`,
+                business_value:
+                  "Combines policy, readiness, proposal, paper trade, approval, and connector evidence into one automation decision.",
+                capability: "Control-plane status",
+                status: control?.automation_status ?? control?.readiness_status ?? "not loaded",
+              },
+              {
+                backend_route: `/assets/${selectedAssetId}/execution/automation-policies?limit=10`,
+                business_value:
+                  "Provides an audit trail of policy versions for governance and client diligence.",
+                capability: "Policy history",
+                status: `${history.data?.policies?.length ?? 0} version(s)`,
+              },
+            ]}
+          />
+        </div>
+      </SectionCard>
+
       <div className="mb-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.75fr)]">
         <SectionCard
           action={<StatusPill tone={controlModeTone(control?.automation_mode)}>{control?.automation_mode ?? "-"}</StatusPill>}

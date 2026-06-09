@@ -27,6 +27,8 @@ export default function HedgingPage() {
   const contracts = hedge.data?.contracts ?? [];
   const bestContract = hedge.data?.best_contract;
   const contractRows = contracts.map(formatContractRow);
+  const contractSource = hedge.data?.contract_source ?? summary.contract_source;
+  const assumptionRows = hedge.data?.assumption_basis ?? [];
   const hedgedRevenue =
     summary.hedged_revenue_eur ??
     bestContract?.expected_owner_revenue_eur_per_month;
@@ -68,6 +70,24 @@ export default function HedgingPage() {
         title="Hedging"
       />
 
+      {hedge.error ? (
+        <div className="mb-6">
+          <SectionCard title="Backend connection">
+            <DataTable
+              columns={["capability", "backend_route", "status", "business_value"]}
+              rows={[
+                {
+                  backend_route: `/assets/${selectedAssetId}/hedging/revenue`,
+                  business_value: "Loads hedge contract economics from the backend.",
+                  capability: "Hedging revenue model",
+                  status: "error",
+                },
+              ]}
+            />
+          </SectionCard>
+        </div>
+      ) : null}
+
       <DecisionBrief
         blockers={
           contracts.length
@@ -99,6 +119,50 @@ export default function HedgingPage() {
         <KpiCard label="Owner upside" value={formatCurrency(merchantUpside)} />
         <KpiCard accent="amber" label="Merchant revenue given away" value={formatCurrency(residualExposure)} />
       </div>
+
+      <SectionCard className="mb-5" title="Hedge-to-bankability bridge">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <DataTable
+            columns={["decision_input", "value"]}
+            rows={[
+              {
+                decision_input: "Merchant revenue basis",
+                value: formatCurrency(hedge.data?.merchant_revenue_eur_per_month),
+              },
+              {
+                decision_input: "Contract term source",
+                value:
+                  contractSource === "client_contract"
+                    ? "Client-specific contract"
+                    : "Default assumption library",
+              },
+              {
+                decision_input: "Portfolio power basis",
+                value: `${hedge.data?.power_mw ?? "-"} MW`,
+              },
+              {
+                decision_input: "Why this page matters",
+                value:
+                  "It converts volatile merchant optimization value into an owner-facing revenue certainty offer.",
+              },
+            ]}
+          />
+          <DataTable
+            columns={["input", "source", "value"]}
+            rows={
+              assumptionRows.length
+                ? assumptionRows
+                : [
+                    {
+                      input: "hedging revenue",
+                      source: `/assets/${selectedAssetId}/hedging/revenue`,
+                      value: hedge.data?.status ?? "not loaded",
+                    },
+                  ]
+            }
+          />
+        </div>
+      </SectionCard>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
         <SectionCard title="Recommended owner offer">

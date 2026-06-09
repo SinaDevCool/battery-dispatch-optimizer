@@ -92,9 +92,9 @@ export default function MarketRulesPage() {
   const connectorReadiness = useQuery({
     queryFn: () =>
       apiGet<MarketConnectorReadinessResponse>(
-        "/execution/market-connectors/readiness?country=Germany",
+        `/execution/market-connectors/readiness?country=Germany&asset_id=${selectedAssetId}`,
       ),
-    queryKey: ["market-rules-connector-readiness"],
+    queryKey: ["market-rules-connector-readiness", selectedAssetId],
   });
 
   const automationControl = useQuery({
@@ -559,7 +559,7 @@ function buildMarketRulesBackendRows({
       status: `${ruleCount} route(s)`,
     },
     {
-      backend_route: "/execution/market-connectors/readiness?country=Germany",
+      backend_route: `/execution/market-connectors/readiness?country=Germany&asset_id=${assetId}`,
       business_value: "Shows whether routes are preview, paper, supervised, or live-ready.",
       capability: "Connector readiness",
       status: connectorReadiness?.connector_status ?? "not evaluated",

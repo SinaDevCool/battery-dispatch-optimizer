@@ -9,7 +9,7 @@ export default function ExecutionSettlementPage() {
       eyebrow="Automated trading"
       initialTab="settlement"
       showTabs={false}
-      title="Settlement"
+      title="Settlement Evidence"
     />
   );
 }

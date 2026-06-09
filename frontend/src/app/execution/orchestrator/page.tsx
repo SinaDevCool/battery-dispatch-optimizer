@@ -97,6 +97,37 @@ export default function TradingOrchestratorPage() {
         />
       </div>
 
+      <SectionCard className="mb-5" title="Orchestrator-to-execution bridge">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <DataTable
+            columns={["decision_input", "value"]}
+            rows={[
+              {
+                decision_input: "Control purpose",
+                value:
+                  "Selects the next automated trading step so the platform moves from signal to proposal, allocation, validation, approval, and submission without siloed operator handoffs.",
+              },
+              {
+                decision_input: "Current owner",
+                value: nextAction?.owner ?? "not assigned",
+              },
+              {
+                decision_input: "Current action",
+                value: nextAction?.action ?? "-",
+              },
+              {
+                decision_input: "Run endpoint",
+                value: `/assets/${selectedAssetId}/execution/orchestrator/run`,
+              },
+            ]}
+          />
+          <DataTable
+            columns={["capability", "backend_route", "status", "business_value"]}
+            rows={orchestratorBridgeRows(selectedAssetId, evidence, data?.orchestrator_status)}
+          />
+        </div>
+      </SectionCard>
+
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.75fr)]">
         <SectionCard
           action={
@@ -249,6 +280,57 @@ function formatEvidence(evidence: JsonObject) {
     metric,
     value: value === null || value === undefined || value === "" ? "-" : String(value),
   }));
+}
+
+function orchestratorBridgeRows(
+  assetId: string,
+  evidence: JsonObject,
+  orchestratorStatus: string | undefined,
+) {
+  return [
+    {
+      backend_route: `/assets/${assetId}/execution/orchestrator/status`,
+      business_value: "Combines every trading gate into one next-step decision.",
+      capability: "Orchestration status",
+      status: orchestratorStatus ?? "not loaded",
+    },
+    {
+      backend_route: `/assets/${assetId}/signal/latest`,
+      business_value: "Provides the trading signal that starts the workflow.",
+      capability: "Market signal",
+      status: String(evidence.signal ?? "-"),
+    },
+    {
+      backend_route: `/assets/${assetId}/execution/automation-control/status`,
+      business_value: "Prevents the orchestrator from escalating beyond approved automation mode.",
+      capability: "Automation policy",
+      status: String(evidence.policy_decision ?? "-"),
+    },
+    {
+      backend_route: `/assets/${assetId}/execution/multi-market/allocation`,
+      business_value: "Selects the market route before bid creation.",
+      capability: "Market allocation",
+      status: String(evidence.allocation_status ?? "-"),
+    },
+    {
+      backend_route: `/assets/${assetId}/execution/proposal/latest`,
+      business_value: "Turns dispatch into bid-ready order evidence.",
+      capability: "Bid proposal",
+      status: String(evidence.execution_proposal_id ?? "No proposal"),
+    },
+    {
+      backend_route: `/assets/${assetId}/execution/paper-trade/latest`,
+      business_value: "Validates the bid lifecycle before live submission.",
+      capability: "Paper validation",
+      status: String(evidence.paper_trade_id ?? "No paper trade"),
+    },
+    {
+      backend_route: `/assets/${assetId}/execution/approval/latest`,
+      business_value: "Applies human approval and four-eyes checks where policy requires it.",
+      capability: "Risk and approval",
+      status: String(evidence.approval_status ?? "No approval"),
+    },
+  ];
 }
 
 function stageTone(value: unknown) {
