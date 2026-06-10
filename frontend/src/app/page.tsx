@@ -748,7 +748,7 @@ function buildPersonaDecisionBrief({
     `Automation mode is ${String(automationMode).replaceAll("_", " ")}.`,
   ];
 
-  if (personaId === "asset_owner") {
+  if (personaId === "asset_owner" || personaId === "investor_lender" || personaId === "client_success") {
     return {
       blockers: topBlockers,
       decision: (
@@ -776,7 +776,33 @@ function buildPersonaDecisionBrief({
     };
   }
 
-  if (personaId === "trader") {
+  if (personaId === "project_developer") {
+    return {
+      blockers: topBlockers,
+      decision: (
+        <>
+          {completeness?.readiness ?? "readiness pending"}
+          <span className="text-slate-500"> / </span>
+          {formatCurrency(totalRevenue)}
+        </>
+      ),
+      evidence: [
+        `${completeness?.score ?? 0}/100 evidence completeness score.`,
+        `${revenueRows?.length ?? 0} revenue product(s) assessed for development economics.`,
+        enterpriseMaturity?.automation_readiness
+          ? `Automation readiness: ${enterpriseMaturity.automation_readiness}.`
+          : "Automation readiness is not scored yet.",
+      ],
+      nextAction:
+        blockerCount > 0
+          ? "Use Scenario Lab, Market Rules, and Regulatory Compliance to clear development blockers."
+          : "Use Reports to package development readiness evidence.",
+      title: "Development readiness decision",
+      tone: blockerCount ? "amber" : "emerald",
+    };
+  }
+
+  if (personaId === "trading_desk") {
     return {
       blockers: topBlockers,
       decision: (
@@ -802,7 +828,7 @@ function buildPersonaDecisionBrief({
     };
   }
 
-  if (personaId === "automation_manager") {
+  if (personaId === "automation_operator" || personaId === "market_operations") {
     return {
       blockers: topBlockers,
       decision: (
@@ -827,7 +853,7 @@ function buildPersonaDecisionBrief({
     };
   }
 
-  if (personaId === "optimizer") {
+  if (personaId === "forecast_quant" || personaId === "revenue_analyst") {
     return {
       blockers: topBlockers,
       decision: (

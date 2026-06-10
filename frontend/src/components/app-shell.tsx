@@ -22,12 +22,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [searchString, setSearchString] = useState("");
   const apiBaseUrl = useApiBaseUrl();
   const { persona } = usePersona();
-  const visibleNavigationGroups =
-    persona.id === "all"
-      ? navigationGroups
-      : navigationGroups.filter((group) =>
-          persona.primaryNavigationGroups.includes(group.id),
-        );
+  const visibleNavigationGroups = navigationGroups
+    .filter((group) =>
+      persona.id === "all" || persona.primaryNavigationGroups.includes(group.id),
+    )
+    .map((group) => ({
+      ...group,
+      items: group.items.filter(
+        (item) =>
+          persona.id === "all" ||
+          persona.allowedNavigationHrefs.includes(item.href),
+      ),
+    }))
+    .filter((group) => group.items.length > 0);
   const visibleNavigation = flattenNavigationGroups(visibleNavigationGroups);
 
   useEffect(() => {
@@ -63,6 +70,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="mb-4 shrink-0 rounded-lg border border-slate-800 bg-slate-900/45 p-3">
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300">
+            {getPersonaLayerLabel(persona.layer)}
+          </div>
           <div className="text-xs font-semibold text-sky-200">
             {persona.label}
           </div>
@@ -181,4 +191,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
 function getNavigationSearchString(href: string) {
   return href.split("#")[0]?.split("?")[1] ?? "";
+}
+
+function getPersonaLayerLabel(layer: string) {
+  if (layer === "client") {
+    return "Client Evidence Portal";
+  }
+
+  if (layer === "internal") {
+    return "Internal Trading OS";
+  }
+
+  return "Platform";
 }

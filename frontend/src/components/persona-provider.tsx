@@ -31,13 +31,10 @@ export function PersonaProvider({ children }: { children: React.ReactNode }) {
     }
 
     const storedValue = window.localStorage.getItem(STORAGE_KEY);
+    const migratedPersonaId = migrateStoredPersonaId(storedValue);
 
-    if (storedValue && isPersonaId(storedValue)) {
-      if (storedValue === "optimizer") {
-        return DEFAULT_PERSONA_ID;
-      }
-
-      return storedValue;
+    if (migratedPersonaId) {
+      return migratedPersonaId;
     }
 
     return DEFAULT_PERSONA_ID;
@@ -62,6 +59,22 @@ export function PersonaProvider({ children }: { children: React.ReactNode }) {
       {children}
     </PersonaContext.Provider>
   );
+}
+
+function migrateStoredPersonaId(value: string | null): PersonaId | null {
+  if (!value) {
+    return null;
+  }
+
+  const migrationMap: Record<string, PersonaId> = {
+    automation_manager: "automation_operator",
+    optimizer: "forecast_quant",
+    trader: "trading_desk",
+  };
+
+  const migratedValue = migrationMap[value] ?? value;
+
+  return isPersonaId(migratedValue) ? migratedValue : null;
 }
 
 export function usePersona() {

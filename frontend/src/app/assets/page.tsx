@@ -8,9 +8,11 @@ import { DecisionBrief } from "@/components/decision-brief";
 import { ErrorState } from "@/components/error-state";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
+import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
 import { apiGet } from "@/lib/api";
+import type { PersonaId } from "@/lib/personas";
 import type {
   Asset,
   AutomationControlStatusResponse,
@@ -18,6 +20,20 @@ import type {
   StorageClassificationResponse,
   TableRow,
 } from "@/types/api";
+
+type AssetPersonaFraming = {
+  archetypeTitle: string;
+  backendTitle: string;
+  blockersTitle: string;
+  decisionEyebrow: string;
+  decisionTitle: string;
+  description: string;
+  eyebrow: string;
+  gatesTitle: string;
+  passportTitle: string;
+  portfolioTitle: string;
+  title: string;
+};
 
 const assetArchetypes: TableRow[] = [
   {
@@ -60,6 +76,8 @@ const assetArchetypes: TableRow[] = [
 
 export default function AssetsPage() {
   const { assets, selectedAssetId } = useAssetContext();
+  const { persona, personaId } = usePersona();
+  const framing = getAssetPersonaFraming(personaId);
 
   const classification = useQuery({
     queryFn: () =>
@@ -104,9 +122,9 @@ export default function AssetsPage() {
   return (
     <>
       <PageHeading
-        description="Confirm physical limits, market classification, evidence readiness, and automation gates before an asset enters automated trading."
-        eyebrow="Asset registry"
-        title="Asset onboarding"
+        description={framing.description}
+        eyebrow={framing.eyebrow}
+        title={framing.title}
       />
 
       {!rows.length ? <ErrorState message="Could not load assets from the API." /> : null}
@@ -116,9 +134,9 @@ export default function AssetsPage() {
         className="mb-6"
         decision={registryDecision.decision}
         evidence={registryDecision.evidence}
-        eyebrow="Asset onboarding decision"
+        eyebrow={framing.decisionEyebrow}
         nextAction={registryDecision.nextAction}
-        title="Is this asset ready for automated trading?"
+        title={framing.decisionTitle}
         tone={registryDecision.tone}
       />
 
@@ -152,7 +170,7 @@ export default function AssetsPage() {
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.75fr)]">
         <SectionCard
           action={<StatusPill tone={registryDecision.tone}>{registryDecision.blockers.length ? "Onboarding" : "Tradable"}</StatusPill>}
-          title="Asset trading passport"
+          title={framing.passportTitle}
         >
           <DataTable
             columns={["field", "value"]}
@@ -169,7 +187,7 @@ export default function AssetsPage() {
               {automationControl.data?.automation_status ?? "not evaluated"}
             </StatusPill>
           }
-          title="Onboarding gates"
+          title={framing.gatesTitle}
         >
           <DataTable
             columns={["gate", "status", "message"]}
@@ -209,7 +227,7 @@ export default function AssetsPage() {
           </StatusPill>
         }
         className="mt-5"
-        title="Blocker details"
+        title={framing.blockersTitle}
       >
         <DataTable
           columns={["blocker", "owner", "reason", "next_action"]}
@@ -223,7 +241,7 @@ export default function AssetsPage() {
       <SectionCard
         action={<StatusPill tone="blue">{assetArchetypes.length} archetypes</StatusPill>}
         className="mt-5"
-        title="Supported asset archetype reference"
+        title={framing.archetypeTitle}
       >
         <DataTable
           columns={["archetype", "commercial_use", "evidence_needed", "fit"]}
@@ -231,18 +249,20 @@ export default function AssetsPage() {
         />
       </SectionCard>
 
-      <SectionCard
-        action={<StatusPill tone="blue">Backend linked</StatusPill>}
-        className="mt-5"
-        title="Asset backend connection map"
-      >
-        <DataTable
-          columns={["capability", "backend_route", "status", "business_value"]}
-          rows={backendConnectionRows}
-        />
-      </SectionCard>
+      {persona.layer === "client" ? null : (
+        <SectionCard
+          action={<StatusPill tone="blue">Backend linked</StatusPill>}
+          className="mt-5"
+          title={framing.backendTitle}
+        >
+          <DataTable
+            columns={["capability", "backend_route", "status", "business_value"]}
+            rows={backendConnectionRows}
+          />
+        </SectionCard>
+      )}
 
-      <SectionCard className="mt-5" title="Registered portfolio">
+      <SectionCard className="mt-5" title={framing.portfolioTitle}>
         <DataTable
           columns={[
             "asset_id",
@@ -258,6 +278,126 @@ export default function AssetsPage() {
       </SectionCard>
     </>
   );
+}
+
+function getAssetPersonaFraming(personaId: PersonaId): AssetPersonaFraming {
+  const defaults: AssetPersonaFraming = {
+    archetypeTitle: "Supported asset archetype reference",
+    backendTitle: "Asset backend connection map",
+    blockersTitle: "Blocker details",
+    decisionEyebrow: "Asset onboarding decision",
+    decisionTitle: "Is this asset ready for automated trading?",
+    description:
+      "Confirm physical limits, market classification, evidence readiness, and automation gates before an asset enters automated trading.",
+    eyebrow: "Asset registry",
+    gatesTitle: "Onboarding gates",
+    passportTitle: "Asset trading passport",
+    portfolioTitle: "Registered portfolio",
+    title: "Asset onboarding",
+  };
+
+  const frames: Partial<Record<PersonaId, AssetPersonaFraming>> = {
+    asset_owner: {
+      archetypeTitle: "Supported asset types",
+      backendTitle: "Asset evidence source map",
+      blockersTitle: "Owner readiness blockers",
+      decisionEyebrow: "Owner asset readiness decision",
+      decisionTitle: "Can the owner rely on this asset record?",
+      description:
+        "Show the asset owner whether physical limits, market classification, evidence completeness, and automation readiness are clear enough to trust revenue and reporting claims.",
+      eyebrow: "Client evidence portal",
+      gatesTitle: "Owner readiness checks",
+      passportTitle: "Owner asset passport",
+      portfolioTitle: "Owner asset portfolio",
+      title: "Asset readiness",
+    },
+    project_developer: {
+      archetypeTitle: "Development asset archetypes",
+      backendTitle: "Development evidence source map",
+      blockersTitle: "Development readiness blockers",
+      decisionEyebrow: "Development asset decision",
+      decisionTitle: "Is this asset defined well enough for project planning?",
+      description:
+        "Confirm technical envelope, market classification, metering assumptions, and evidence completeness before using the asset in scenarios, price assumptions, and bankability work.",
+      eyebrow: "Development readiness",
+      gatesTitle: "Development readiness gates",
+      passportTitle: "Development asset passport",
+      portfolioTitle: "Development asset registry",
+      title: "Development asset readiness",
+    },
+    investor_lender: {
+      archetypeTitle: "Bankability asset context",
+      backendTitle: "Asset evidence source map",
+      blockersTitle: "Diligence asset blockers",
+      decisionEyebrow: "Bankability asset decision",
+      decisionTitle: "Is the asset definition diligence-ready?",
+      description:
+        "Show investors and lenders whether physical limits, market classification, storage mode, and evidence completeness are strong enough to support bankability review.",
+      eyebrow: "Bankability view",
+      gatesTitle: "Diligence readiness checks",
+      passportTitle: "Bankability asset passport",
+      portfolioTitle: "Bankability asset registry",
+      title: "Bankability asset evidence",
+    },
+    client_success: {
+      archetypeTitle: "Client asset context",
+      backendTitle: "Client evidence source map",
+      blockersTitle: "Client delivery blockers",
+      decisionEyebrow: "Client asset explanation decision",
+      decisionTitle: "Can client success explain this asset confidently?",
+      description:
+        "Package asset limits, market classification, evidence gaps, and automation readiness into a client-friendly asset context for reports and performance conversations.",
+      eyebrow: "Client delivery",
+      gatesTitle: "Client explanation checks",
+      passportTitle: "Client asset passport",
+      portfolioTitle: "Client asset list",
+      title: "Client asset context",
+    },
+    market_operations: {
+      archetypeTitle: "Operational asset archetypes",
+      backendTitle: "Asset backend connection map",
+      blockersTitle: "Operational registry blockers",
+      decisionEyebrow: "Market operations asset decision",
+      decisionTitle: "Is this asset configured for market operations?",
+      description:
+        "Validate market classification, asset limits, registry evidence, and automation dependencies before connectors, market rules, and route certification rely on the asset.",
+      eyebrow: "Market operations",
+      gatesTitle: "Operational onboarding gates",
+      passportTitle: "Operational asset passport",
+      portfolioTitle: "Operational asset registry",
+      title: "Asset operations registry",
+    },
+    automation_operator: {
+      archetypeTitle: "Automation-supported asset types",
+      backendTitle: "Automation asset source map",
+      blockersTitle: "Automation onboarding blockers",
+      decisionEyebrow: "Automation asset decision",
+      decisionTitle: "Can this asset enter the automation control plane?",
+      description:
+        "Check physical limits, evidence readiness, classification, and control-plane blockers before the asset can move from onboarding into automated trading workflows.",
+      eyebrow: "Internal automation OS",
+      gatesTitle: "Automation onboarding gates",
+      passportTitle: "Automation asset passport",
+      portfolioTitle: "Automation asset registry",
+      title: "Automation asset onboarding",
+    },
+    risk_compliance: {
+      archetypeTitle: "Governed asset archetypes",
+      backendTitle: "Asset governance source map",
+      blockersTitle: "Asset governance blockers",
+      decisionEyebrow: "Asset governance decision",
+      decisionTitle: "Is the asset record governed enough for approval?",
+      description:
+        "Review asset master data, storage classification, data completeness, and automation blockers before approving trading, reports, or compliance evidence.",
+      eyebrow: "Risk & compliance",
+      gatesTitle: "Asset governance gates",
+      passportTitle: "Governed asset passport",
+      portfolioTitle: "Governed asset registry",
+      title: "Asset governance",
+    },
+  };
+
+  return frames[personaId] ?? defaults;
 }
 
 function formatAssetRow(asset: Asset) {

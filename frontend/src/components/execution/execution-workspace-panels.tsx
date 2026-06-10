@@ -23,6 +23,7 @@ import type {
   MarketSubmissionLifecycleResponse,
   TableRow,
 } from "@/types/api";
+import type { PersonaId, PersonaLayer } from "@/lib/personas";
 
 type RefetchExecution = () => Promise<unknown>;
 
@@ -33,6 +34,7 @@ export function ExecutionOverviewPanel({
   hardBlockers,
   marketAdapterStatus,
   paperTrade,
+  personaId,
   proposal,
   readiness,
   refetchExecution,
@@ -46,6 +48,7 @@ export function ExecutionOverviewPanel({
   hardBlockers: string[];
   marketAdapterStatus?: AssetMarketAdapterStatusResponse;
   paperTrade?: TableRow | null;
+  personaId: PersonaId;
   proposal?: ExecutionProposal | null;
   readiness?: ExecutionReadinessResponse;
   refetchExecution: RefetchExecution;
@@ -53,40 +56,42 @@ export function ExecutionOverviewPanel({
   submission?: TableRow | null;
   telemetryData: AssetTelemetryResponse["telemetry"];
 }) {
+  const framing = getOverviewPersonaFraming(personaId);
+
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
       <SectionCard
         action={<StatusPill tone={automationTone(automationStatus)}>{automationStatus ?? "not evaluated"}</StatusPill>}
-        title="Automation command sequence"
+        title={framing.commandTitle}
       >
         <div className="mb-5 flex flex-wrap gap-3">
           <ActionButton
             endpoint={`/assets/${selectedAssetId}/execution/proposal/build`}
-            label="Build proposal"
+            label={framing.buildProposalLabel}
             refetch={refetchExecution}
             variant="primary"
           />
           <ActionButton
             endpoint={`/assets/${selectedAssetId}/execution/approval/request`}
-            label="Request human gate"
+            label={framing.requestGateLabel}
             refetch={refetchExecution}
             variant="secondary"
           />
           <ActionButton
             endpoint={`/assets/${selectedAssetId}/execution/approval/approve`}
-            label="Clear human gate"
+            label={framing.clearGateLabel}
             refetch={refetchExecution}
             variant="secondary"
           />
           <ActionButton
             endpoint={`/assets/${selectedAssetId}/execution/paper-trade/run`}
-            label="Run auto paper"
+            label={framing.runPaperLabel}
             refetch={refetchExecution}
             variant="secondary"
           />
           <ActionButton
             endpoint={`/assets/${selectedAssetId}/execution/demo-submit`}
-            label="Simulate submission"
+            label={framing.simulateSubmissionLabel}
             refetch={refetchExecution}
             variant="secondary"
           />
@@ -103,7 +108,7 @@ export function ExecutionOverviewPanel({
       <div className="space-y-5">
         <SectionCard
           action={<StatusPill tone={readinessTone(readiness?.readiness_status)}>{readiness?.readiness_status ?? "not evaluated"}</StatusPill>}
-          title="Automation evidence snapshot"
+          title={framing.evidenceTitle}
         >
           <div className="grid gap-3 md:grid-cols-2">
             <ExecutionMetric
@@ -156,6 +161,59 @@ export function ExecutionOverviewPanel({
   );
 }
 
+function getOverviewPersonaFraming(personaId: PersonaId) {
+  const defaults = {
+    buildProposalLabel: "Build proposal",
+    clearGateLabel: "Clear human gate",
+    commandTitle: "Automation command sequence",
+    evidenceTitle: "Automation evidence snapshot",
+    requestGateLabel: "Request human gate",
+    runPaperLabel: "Run auto paper",
+    simulateSubmissionLabel: "Simulate submission",
+  };
+
+  const framing: Partial<Record<PersonaId, typeof defaults>> = {
+    automation_operator: {
+      buildProposalLabel: "Build order package",
+      clearGateLabel: "Clear live gate",
+      commandTitle: "Automation run sequence",
+      evidenceTitle: "Operator readiness snapshot",
+      requestGateLabel: "Request gate review",
+      runPaperLabel: "Run paper validation",
+      simulateSubmissionLabel: "Run submission drill",
+    },
+    market_operations: {
+      buildProposalLabel: "Build routed package",
+      clearGateLabel: "Clear route gate",
+      commandTitle: "Market route command sequence",
+      evidenceTitle: "Market operations evidence",
+      requestGateLabel: "Request route approval",
+      runPaperLabel: "Validate route paper",
+      simulateSubmissionLabel: "Run route drill",
+    },
+    risk_compliance: {
+      buildProposalLabel: "Create review packet",
+      clearGateLabel: "Approve governed gate",
+      commandTitle: "Governed automation sequence",
+      evidenceTitle: "Risk evidence snapshot",
+      requestGateLabel: "Request approval evidence",
+      runPaperLabel: "Run control test",
+      simulateSubmissionLabel: "Simulate controlled submission",
+    },
+    trading_desk: {
+      buildProposalLabel: "Build tradable package",
+      clearGateLabel: "Clear desk gate",
+      commandTitle: "Trading desk execution sequence",
+      evidenceTitle: "Desk readiness snapshot",
+      requestGateLabel: "Request desk approval",
+      runPaperLabel: "Run paper PnL",
+      simulateSubmissionLabel: "Test submission path",
+    },
+  };
+
+  return framing[personaId] ?? defaults;
+}
+
 export function ExecutionRiskApprovalPanel({
   approvalData,
   automationBlockers,
@@ -165,6 +223,7 @@ export function ExecutionRiskApprovalPanel({
   guardrailSummary,
   guardrails,
   hardBlockers,
+  personaId,
   refetchExecution,
   recoveryPlan,
   remediationItems,
@@ -178,11 +237,13 @@ export function ExecutionRiskApprovalPanel({
   guardrailSummary: JsonObject;
   guardrails: TableRow[];
   hardBlockers: string[];
+  personaId: PersonaId;
   refetchExecution: RefetchExecution;
   recoveryPlan?: ExecutionRecoveryPlanResponse;
   remediationItems: AutomationRemediationItem[];
   selectedAssetId: string;
 }) {
+  const framing = getRiskApprovalPersonaFraming(personaId);
   const riskPolicy = confidence?.risk_policy as JsonObject | undefined;
   const blockedGuardrails = Number(guardrailSummary.blocked ?? 0);
   const reviewGuardrails = Number(guardrailSummary.review ?? 0);
@@ -252,7 +313,7 @@ export function ExecutionRiskApprovalPanel({
     <div className="space-y-5">
       <SectionCard
         action={<StatusPill tone={gateTone(decisionStatus)}>{decisionStatus}</StatusPill>}
-        title="Risk-to-live decision"
+        title={framing.decisionTitle}
       >
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(420px,0.75fr)]">
           <div className="rounded border border-slate-700 bg-slate-950/40 p-4">
@@ -270,26 +331,26 @@ export function ExecutionRiskApprovalPanel({
           </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-3">
-          <ActionButton endpoint={`/assets/${selectedAssetId}/execution/approval/request`} label="Request human gate" refetch={refetchExecution} variant="primary" />
-          <ActionButton endpoint={`/assets/${selectedAssetId}/execution/approval/approve`} label="Clear gate" refetch={refetchExecution} variant="secondary" />
-          <ActionButton endpoint={`/assets/${selectedAssetId}/execution/approval/reject`} label="Block gate" refetch={refetchExecution} variant="secondary" />
+          <ActionButton endpoint={`/assets/${selectedAssetId}/execution/approval/request`} label={framing.requestGateLabel} refetch={refetchExecution} variant="primary" />
+          <ActionButton endpoint={`/assets/${selectedAssetId}/execution/approval/approve`} label={framing.clearGateLabel} refetch={refetchExecution} variant="secondary" />
+          <ActionButton endpoint={`/assets/${selectedAssetId}/execution/approval/reject`} label={framing.blockGateLabel} refetch={refetchExecution} variant="secondary" />
         </div>
       </SectionCard>
 
       <SectionCard
         action={<StatusPill tone={unblockRows.length ? "amber" : "emerald"}>{unblockRows.length ? "priority queue" : "clear"}</StatusPill>}
-        title="Path to live automation"
+        title={framing.pathTitle}
       >
         <DataTable columns={["priority", "source", "blocker", "owner", "next_action"]} rows={unblockRows.slice(0, 10)} />
       </SectionCard>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
-        <SectionCard title="Gate matrix">
+        <SectionCard title={framing.gateMatrixTitle}>
           <DataTable columns={["gate", "status", "evidence", "next_action"]} rows={gateRows} />
         </SectionCard>
         <SectionCard
           action={<StatusPill tone={approvalTone(approvalData?.status)}>{approvalData?.status ?? "missing"}</StatusPill>}
-          title="Human gate evidence"
+          title={framing.humanGateTitle}
         >
           <DataTable
             columns={["approval_id", "execution_proposal_id", "status", "requested_by", "decided_by", "reason"]}
@@ -301,7 +362,7 @@ export function ExecutionRiskApprovalPanel({
       <div className="grid gap-5 xl:grid-cols-2">
         <SectionCard
           action={<StatusPill tone={automationTone(automationStatus)}>{automationStatus ?? "not evaluated"}</StatusPill>}
-          title="Guardrail evidence"
+          title={framing.guardrailTitle}
         >
           <div className="mb-4 grid gap-3 md:grid-cols-3">
             <ExecutionMetric label="Passed" value={formatNumber(guardrailSummary.passed, 0)} />
@@ -312,7 +373,7 @@ export function ExecutionRiskApprovalPanel({
         </SectionCard>
         <SectionCard
           action={<StatusPill tone={confidenceTone(confidence?.confidence_band)}>{String(confidence?.confidence_band ?? "unscored")}</StatusPill>}
-          title="Forecast confidence evidence"
+          title={framing.confidenceTitle}
         >
           <div className="mb-4 grid gap-3 md:grid-cols-3">
             <ExecutionMetric label="Confidence score" value={formatNumber(confidence?.confidence_score, 1)} />
@@ -328,7 +389,7 @@ export function ExecutionRiskApprovalPanel({
 
       <SectionCard
         action={<StatusPill tone={staleFreshnessGates.length ? "amber" : "emerald"}>{staleFreshnessGates.length ? "review" : "fresh"}</StatusPill>}
-        title="Freshness and trust evidence"
+        title={framing.freshnessTitle}
       >
         <DataTable
           columns={["gate_id", "label", "freshness_status", "age_minutes", "max_age_minutes", "required_action"]}
@@ -339,11 +400,80 @@ export function ExecutionRiskApprovalPanel({
   );
 }
 
+function getRiskApprovalPersonaFraming(personaId: PersonaId) {
+  const defaults = {
+    blockGateLabel: "Block gate",
+    clearGateLabel: "Clear gate",
+    confidenceTitle: "Forecast confidence evidence",
+    decisionTitle: "Risk-to-live decision",
+    freshnessTitle: "Freshness and trust evidence",
+    gateMatrixTitle: "Gate matrix",
+    guardrailTitle: "Guardrail evidence",
+    humanGateTitle: "Human gate evidence",
+    pathTitle: "Path to live automation",
+    requestGateLabel: "Request human gate",
+  };
+
+  const framing: Partial<Record<PersonaId, typeof defaults>> = {
+    automation_operator: {
+      blockGateLabel: "Hold automation",
+      clearGateLabel: "Clear operator gate",
+      confidenceTitle: "Forecast control input",
+      decisionTitle: "Operator go-live gate",
+      freshnessTitle: "Fresh data gates",
+      gateMatrixTitle: "Automation blocker matrix",
+      guardrailTitle: "Automation guardrails",
+      humanGateTitle: "Operator approval evidence",
+      pathTitle: "Operator unblock queue",
+      requestGateLabel: "Request operator review",
+    },
+    market_operations: {
+      blockGateLabel: "Block route",
+      clearGateLabel: "Clear route gate",
+      confidenceTitle: "Route confidence evidence",
+      decisionTitle: "Market route approval gate",
+      freshnessTitle: "Market data freshness",
+      gateMatrixTitle: "Route gate matrix",
+      guardrailTitle: "Route guardrails",
+      humanGateTitle: "Route approval evidence",
+      pathTitle: "Route unblock queue",
+      requestGateLabel: "Request route approval",
+    },
+    risk_compliance: {
+      blockGateLabel: "Reject gate",
+      clearGateLabel: "Approve governed gate",
+      confidenceTitle: "Model confidence controls",
+      decisionTitle: "Governance approval decision",
+      freshnessTitle: "Evidence freshness controls",
+      gateMatrixTitle: "Control matrix",
+      guardrailTitle: "Policy guardrail evidence",
+      humanGateTitle: "Approval record",
+      pathTitle: "Compliance remediation queue",
+      requestGateLabel: "Request approval record",
+    },
+    trading_desk: {
+      blockGateLabel: "Hold desk action",
+      clearGateLabel: "Clear desk gate",
+      confidenceTitle: "Desk confidence evidence",
+      decisionTitle: "Desk go/no-go decision",
+      freshnessTitle: "Market freshness evidence",
+      gateMatrixTitle: "Desk gate matrix",
+      guardrailTitle: "Trading guardrails",
+      humanGateTitle: "Desk approval evidence",
+      pathTitle: "Desk unblock path",
+      requestGateLabel: "Request desk approval",
+    },
+  };
+
+  return framing[personaId] ?? defaults;
+}
+
 export function ExecutionSimulationPanel({
   paperFills,
   paperHistoryRows,
   paperTrade,
   paperTradeRunCount,
+  personaId,
   refetchExecution,
   selectedAssetId,
   submission,
@@ -354,6 +484,7 @@ export function ExecutionSimulationPanel({
   paperHistoryRows: TableRow[];
   paperTrade?: ExecutionPaperTrade | null;
   paperTradeRunCount: number;
+  personaId: PersonaId;
   refetchExecution: RefetchExecution;
   selectedAssetId: string;
   submission?: TableRow | null;
@@ -361,13 +492,14 @@ export function ExecutionSimulationPanel({
   submissionSummary: JsonObject;
 }) {
   const lifecycleSteps = submissionLifecycle?.steps ?? [];
+  const framing = getSimulationPersonaFraming(personaId);
 
   return (
     <div className="grid gap-5 xl:grid-cols-2">
       <div className="space-y-5">
         <SectionCard
-          action={<ActionButton endpoint={`/assets/${selectedAssetId}/execution/paper-trade/run`} label="Run paper trade" refetch={refetchExecution} variant="primary" />}
-          title="Market-specific paper execution"
+          action={<ActionButton endpoint={`/assets/${selectedAssetId}/execution/paper-trade/run`} label={framing.runPaperLabel} refetch={refetchExecution} variant="primary" />}
+          title={framing.paperTitle}
         >
           <div className="mb-4 grid gap-3 md:grid-cols-3">
             <ExecutionMetric
@@ -400,7 +532,7 @@ export function ExecutionSimulationPanel({
         </SectionCard>
         <SectionCard
           action={<StatusPill tone={paperTrade?.awards?.length ? "emerald" : "slate"}>{paperTrade?.awards?.length ?? 0}</StatusPill>}
-          title="Market awards and validation"
+          title={framing.awardsTitle}
         >
           <div className="mb-4 grid gap-5 xl:grid-cols-2">
             <DataTable
@@ -415,7 +547,7 @@ export function ExecutionSimulationPanel({
         </SectionCard>
         <SectionCard
           action={<StatusPill tone={paperTradeRunCount ? "emerald" : "slate"}>{paperTradeRunCount} run(s)</StatusPill>}
-          title="Paper trade history"
+          title={framing.historyTitle}
         >
           <DataTable
             columns={[
@@ -431,8 +563,8 @@ export function ExecutionSimulationPanel({
         </SectionCard>
       </div>
       <SectionCard
-        action={<ActionButton endpoint={`/assets/${selectedAssetId}/execution/demo-submit`} label="Simulate bid submission" refetch={refetchExecution} variant="primary" />}
-        title="Simulated market submission"
+        action={<ActionButton endpoint={`/assets/${selectedAssetId}/execution/demo-submit`} label={framing.simulateLabel} refetch={refetchExecution} variant="primary" />}
+        title={framing.submissionTitle}
       >
         <div className="mb-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
           <ExecutionMetric
@@ -463,19 +595,70 @@ export function ExecutionSimulationPanel({
   );
 }
 
+function getSimulationPersonaFraming(personaId: PersonaId) {
+  const defaults = {
+    awardsTitle: "Market awards and validation",
+    historyTitle: "Paper trade history",
+    paperTitle: "Market-specific paper execution",
+    runPaperLabel: "Run paper trade",
+    simulateLabel: "Simulate bid submission",
+    submissionTitle: "Simulated market submission",
+  };
+
+  const frames: Partial<Record<PersonaId, typeof defaults>> = {
+    automation_operator: {
+      awardsTitle: "Automation validation and awards",
+      historyTitle: "Automation paper run history",
+      paperTitle: "Automation paper execution",
+      runPaperLabel: "Run automation paper test",
+      simulateLabel: "Simulate automation submission",
+      submissionTitle: "Automation lifecycle simulation",
+    },
+    trading_desk: {
+      awardsTitle: "Desk fills and validation",
+      historyTitle: "Desk paper trading history",
+      paperTitle: "Desk paper execution",
+      runPaperLabel: "Run desk paper trade",
+      simulateLabel: "Simulate desk submission",
+      submissionTitle: "Desk market submission simulation",
+    },
+    risk_compliance: {
+      awardsTitle: "Risk validation and awards",
+      historyTitle: "Paper validation history",
+      paperTitle: "Risk paper validation",
+      runPaperLabel: "Run paper validation",
+      simulateLabel: "Simulate governed submission",
+      submissionTitle: "Governed market submission simulation",
+    },
+    market_operations: {
+      awardsTitle: "Route awards and validation",
+      historyTitle: "Route paper run history",
+      paperTitle: "Route paper execution",
+      runPaperLabel: "Run route paper trade",
+      simulateLabel: "Simulate route submission",
+      submissionTitle: "Route lifecycle simulation",
+    },
+  };
+
+  return frames[personaId] ?? defaults;
+}
+
 export function ExecutionSettlementPanel({
+  personaId,
   refetchExecution,
   selectedAssetId,
   settlementData,
   settlementSummary,
   varianceDrivers,
 }: {
+  personaId: PersonaId;
   refetchExecution: RefetchExecution;
   selectedAssetId: string;
   settlementData?: JsonObject | null;
   settlementSummary: JsonObject;
   varianceDrivers: TableRow[];
 }) {
+  const settlementFraming = getSettlementPersonaFraming(personaId);
   const evidenceStatus = (settlementData?.evidence_status ?? {}) as JsonObject;
   const links = (settlementData?.links ?? {}) as JsonObject;
   const recommendedActions = ((settlementData?.recommended_actions as string[] | undefined) ?? [])
@@ -486,21 +669,21 @@ export function ExecutionSettlementPanel({
   const realizedDelta = settlementSummary.realized_delta_eur;
   const decision =
     settlementStatus === "settled"
-      ? "Realized economics are reconciled against the automation packet"
+      ? settlementFraming.settledDecision
       : settlementStatus === "paper_reconciled"
-        ? "Paper economics are reconciled, but realized price evidence is still missing"
+        ? settlementFraming.paperReconciledDecision
         : settlementStatus === "needs_paper_trade"
-          ? "Run paper trading before settlement can judge execution quality"
-          : "Settlement evidence has not been reconciled yet";
+          ? settlementFraming.needsPaperDecision
+          : settlementFraming.notReconciledDecision;
   const nextAction =
     recommendedActions[0] ??
     (settlementData
-      ? "Keep settlement evidence attached to the automated trading audit packet."
-      : "Run settlement reconciliation after bid proposal and paper execution evidence exist.");
+      ? settlementFraming.readyNextAction
+      : settlementFraming.emptyNextAction);
   const evidence = [
-    `Expected PnL ${formatCurrency(settlementSummary.expected_pnl_eur)}.`,
-    `Paper delta ${formatCurrency(paperDelta)}.`,
-    `Realized delta ${formatCurrency(realizedDelta)}.`,
+    `${settlementFraming.expectedLabel} ${formatCurrency(settlementSummary.expected_pnl_eur)}.`,
+    `${settlementFraming.paperDeltaLabel} ${formatCurrency(paperDelta)}.`,
+    `${settlementFraming.realizedDeltaLabel} ${formatCurrency(realizedDelta)}.`,
     `Primary variance driver: ${String(settlementData?.primary_variance_driver ?? "not evaluated").replaceAll("_", " ")}.`,
   ];
   const statusRows = Object.entries(evidenceStatus).map(([evidence, status]) => ({
@@ -527,15 +710,15 @@ export function ExecutionSettlementPanel({
         blockers={missingEvidence}
         decision={decision}
         evidence={evidence}
-        eyebrow="Settlement evidence"
+        eyebrow={settlementFraming.eyebrow}
         nextAction={nextAction}
-        title="Can the trading result be defended?"
+        title={settlementFraming.title}
         tone={settlementTone(settlementStatus)}
       />
 
       <SectionCard
         action={<ActionButton endpoint={`/assets/${selectedAssetId}/settlement/reconcile`} label="Reconcile settlement" refetch={refetchExecution} variant="primary" />}
-        title="Financial reconciliation"
+        title={settlementFraming.reconciliationTitle}
       >
         <div className="mb-4 grid gap-3 md:grid-cols-3">
           <ExecutionMetric label="Expected PnL" value={formatCurrency(settlementSummary.expected_pnl_eur)} />
@@ -562,17 +745,17 @@ export function ExecutionSettlementPanel({
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
         <SectionCard
           action={<StatusPill tone={missingEvidence.length ? "amber" : "emerald"}>{missingEvidence.length ? "incomplete" : "complete"}</StatusPill>}
-          title="Evidence completeness"
+          title={settlementFraming.completenessTitle}
         >
           <DataTable columns={["evidence", "status", "business_use"]} rows={statusRows} />
         </SectionCard>
 
-        <SectionCard title="Recommended actions">
+        <SectionCard title={settlementFraming.actionsTitle}>
           <DataTable columns={["priority", "recommended_action"]} rows={actionRows} />
         </SectionCard>
       </div>
 
-      <SectionCard title="Linked audit packet">
+      <SectionCard title={settlementFraming.linksTitle}>
         <DataTable columns={["artifact", "id", "business_use"]} rows={linkRows} />
       </SectionCard>
     </div>
@@ -583,6 +766,133 @@ function buildMissingSettlementEvidence(evidenceStatus: JsonObject) {
   return Object.entries(evidenceStatus)
     .filter(([, status]) => !["available", "ok"].includes(String(status)))
     .map(([evidence, status]) => `${evidence.replaceAll("_", " ")} is ${String(status).replaceAll("_", " ")}.`);
+}
+
+function getSettlementPersonaFraming(personaId: PersonaId) {
+  const defaultFraming = {
+    actionsTitle: "Recommended actions",
+    completenessTitle: "Evidence completeness",
+    emptyNextAction: "Run settlement reconciliation after bid proposal and paper execution evidence exist.",
+    eyebrow: "Settlement evidence",
+    expectedLabel: "Expected PnL",
+    linksTitle: "Linked audit packet",
+    needsPaperDecision: "Run paper trading before settlement can judge execution quality",
+    notReconciledDecision: "Settlement evidence has not been reconciled yet",
+    paperDeltaLabel: "Paper delta",
+    paperReconciledDecision: "Paper economics are reconciled, but realized price evidence is still missing",
+    readyNextAction: "Keep settlement evidence attached to the automated trading audit packet.",
+    realizedDeltaLabel: "Realized delta",
+    reconciliationTitle: "Financial reconciliation",
+    settledDecision: "Realized economics are reconciled against the automation packet",
+    title: "Can the trading result be defended?",
+  };
+
+  const personaFraming: Partial<Record<PersonaId, typeof defaultFraming>> = {
+    asset_owner: {
+      actionsTitle: "Owner next actions",
+      completenessTitle: "Owner proof completeness",
+      emptyNextAction: "Run settlement reconciliation before presenting realized value to the owner.",
+      eyebrow: "Owner settlement evidence",
+      expectedLabel: "Owner expected value",
+      linksTitle: "Owner audit links",
+      needsPaperDecision: "Run paper execution before owner value can be reconciled",
+      notReconciledDecision: "Owner settlement evidence has not been reconciled yet",
+      paperDeltaLabel: "Paper value variance",
+      paperReconciledDecision: "Paper value is reconciled, but realized price proof is still missing",
+      readyNextAction: "Use settlement evidence to explain whether expected value converted into execution value.",
+      realizedDeltaLabel: "Realized value variance",
+      reconciliationTitle: "Owner value reconciliation",
+      settledDecision: "Expected owner value is reconciled against realized trading evidence",
+      title: "Did expected value turn into realized or paper value?",
+    },
+    client_success: {
+      actionsTitle: "Client explanation actions",
+      completenessTitle: "Client proof completeness",
+      emptyNextAction: "Run settlement reconciliation before sending the client performance narrative.",
+      eyebrow: "Client settlement explanation",
+      expectedLabel: "Reported expectation",
+      linksTitle: "Client evidence links",
+      needsPaperDecision: "Run paper trading before explaining execution quality to the client",
+      notReconciledDecision: "Settlement evidence is not ready for client explanation yet",
+      paperDeltaLabel: "Paper explanation variance",
+      paperReconciledDecision: "Paper economics are explainable, but realized price evidence is still missing",
+      readyNextAction: "Use the variance drivers and recommended actions in the client conversation.",
+      realizedDeltaLabel: "Realized explanation variance",
+      reconciliationTitle: "Client settlement explanation",
+      settledDecision: "Settlement evidence is ready to explain client performance",
+      title: "How should settlement variance be explained to the client?",
+    },
+    investor_lender: {
+      actionsTitle: "Diligence actions",
+      completenessTitle: "Bankability proof completeness",
+      emptyNextAction: "Run settlement reconciliation before using this as investment evidence.",
+      eyebrow: "Investment settlement evidence",
+      expectedLabel: "Underwritten value",
+      linksTitle: "Diligence evidence links",
+      needsPaperDecision: "Paper execution is required before investment-quality settlement review",
+      notReconciledDecision: "Settlement evidence is not bankable yet",
+      paperDeltaLabel: "Paper downside variance",
+      paperReconciledDecision: "Paper economics are available, but realized settlement proof is incomplete",
+      readyNextAction: "Use settlement variance to support bankability and downside-risk review.",
+      realizedDeltaLabel: "Realized downside variance",
+      reconciliationTitle: "Bankability reconciliation",
+      settledDecision: "Settlement evidence supports investment-quality revenue review",
+      title: "Does settlement evidence support bankability?",
+    },
+    risk_compliance: {
+      actionsTitle: "Governance actions",
+      completenessTitle: "Governance evidence completeness",
+      emptyNextAction: "Run settlement reconciliation before approving the trading packet.",
+      eyebrow: "Governance settlement evidence",
+      expectedLabel: "Approved expected PnL",
+      linksTitle: "Governance audit links",
+      needsPaperDecision: "Paper execution is required before variance can be approved",
+      notReconciledDecision: "Settlement evidence is missing for governance review",
+      paperDeltaLabel: "Paper control variance",
+      paperReconciledDecision: "Paper variance is available, but realized evidence is still missing",
+      readyNextAction: "Use variance drivers to decide whether the trading packet remains defensible.",
+      realizedDeltaLabel: "Realized control variance",
+      reconciliationTitle: "Governance reconciliation",
+      settledDecision: "Settlement variance can be defended against the approved trading packet",
+      title: "Can we defend the settlement variance?",
+    },
+    revenue_analyst: {
+      actionsTitle: "Revenue model actions",
+      completenessTitle: "Revenue evidence completeness",
+      emptyNextAction: "Run settlement reconciliation before updating revenue assumptions.",
+      eyebrow: "Revenue settlement evidence",
+      expectedLabel: "Modelled revenue",
+      linksTitle: "Revenue evidence links",
+      needsPaperDecision: "Paper execution is required before revenue assumptions can be tested",
+      notReconciledDecision: "Settlement evidence is not ready to update revenue assumptions",
+      paperDeltaLabel: "Paper revenue variance",
+      paperReconciledDecision: "Paper revenue is reconciled, but actual-price feedback is still missing",
+      readyNextAction: "Use settlement variance to tune revenue stack, route allocation, and hedge assumptions.",
+      realizedDeltaLabel: "Realized revenue variance",
+      reconciliationTitle: "Revenue assumption reconciliation",
+      settledDecision: "Settlement feedback is ready to update revenue assumptions",
+      title: "What should change in revenue assumptions?",
+    },
+    executive: {
+      actionsTitle: "Management actions",
+      completenessTitle: "Management proof completeness",
+      emptyNextAction: "Run settlement reconciliation before presenting realized performance.",
+      eyebrow: "Executive settlement evidence",
+      expectedLabel: "Management expected value",
+      linksTitle: "Management evidence links",
+      needsPaperDecision: "Paper execution is required before management performance review",
+      notReconciledDecision: "Settlement evidence is not ready for management review",
+      paperDeltaLabel: "Paper performance variance",
+      paperReconciledDecision: "Paper performance is reconciled, but realized evidence is still incomplete",
+      readyNextAction: "Use settlement evidence to explain realized performance and open variance.",
+      realizedDeltaLabel: "Realized performance variance",
+      reconciliationTitle: "Management performance reconciliation",
+      settledDecision: "Settlement evidence is ready for management performance review",
+      title: "Can management trust the performance result?",
+    },
+  };
+
+  return personaFraming[personaId] ?? defaultFraming;
 }
 
 function settlementEvidenceBusinessUse(evidence: string) {
@@ -646,6 +956,8 @@ export function ExecutionAuditPanel({
   auditRows,
   automationEvents,
   lifecycleRows,
+  personaId,
+  personaLayer,
   paperTrade,
   proposal,
   settlementData,
@@ -658,6 +970,8 @@ export function ExecutionAuditPanel({
   auditRows: TableRow[];
   automationEvents: AutomationEvent[];
   lifecycleRows: TableRow[];
+  personaId: PersonaId;
+  personaLayer: PersonaLayer;
   paperTrade?: ExecutionPaperTrade | null;
   proposal?: ExecutionProposal | null;
   settlementData?: JsonObject | null;
@@ -666,6 +980,8 @@ export function ExecutionAuditPanel({
   riskChecks: TableRow[];
   telemetryData: AssetTelemetryResponse["telemetry"];
 }) {
+  const auditFraming = getAuditPersonaFraming(personaId);
+  const showOperationalDetail = personaLayer === "internal" || personaLayer === "platform";
   const blockedLifecycleSteps = lifecycleRows.filter((row) => row.status === "blocked");
   const failedRiskChecks = riskChecks.filter((row) => !["passed", "complete"].includes(String(row.status)));
   const auditPacketRows = buildAuditPacketRows({
@@ -713,9 +1029,9 @@ export function ExecutionAuditPanel({
         blockers={blockers}
         decision={auditDecision}
         evidence={evidence}
-        eyebrow="Audit evidence"
+        eyebrow={auditFraming.eyebrow}
         nextAction={nextAction}
-        title="Can the automated decision be defended?"
+        title={auditFraming.title}
         tone={auditDecisionTone(auditDecisionStatus)}
       />
 
@@ -729,56 +1045,169 @@ export function ExecutionAuditPanel({
 
       <SectionCard
         action={<StatusPill tone={missingPacketRows.length ? "amber" : "emerald"}>{missingPacketRows.length ? "incomplete" : "complete"}</StatusPill>}
-        title="Audit packet completeness"
+        title={auditFraming.packetTitle}
       >
         <DataTable columns={["evidence", "status", "severity", "business_use", "next_action"]} rows={auditPacketRows} />
       </SectionCard>
 
-      <div className="grid gap-5 xl:grid-cols-2">
-      <SectionCard
-        action={<StatusPill tone={lifecycleTone(submissionLifecycle?.lifecycle_status)}>{submissionLifecycle?.lifecycle_status ?? "not evaluated"}</StatusPill>}
-        title="Submission lifecycle"
-      >
-        <div className="mb-4 grid gap-3 md:grid-cols-4">
-          <ExecutionMetric label="Current step" value={submissionLifecycle?.current_step?.label ?? "-"} />
-          <ExecutionMetric label="Adapter" value={submissionLifecycle?.adapter_id ?? "-"} />
-          <ExecutionMetric label="Complete" value={formatNumber(submissionLifecycle?.summary?.complete, 0)} />
-          <ExecutionMetric label="Blocked" value={formatNumber(submissionLifecycle?.summary?.blocked, 0)} />
+      {showOperationalDetail ? (
+        <div className="grid gap-5 xl:grid-cols-2">
+        <SectionCard
+          action={<StatusPill tone={lifecycleTone(submissionLifecycle?.lifecycle_status)}>{submissionLifecycle?.lifecycle_status ?? "not evaluated"}</StatusPill>}
+          title="Submission lifecycle"
+        >
+          <div className="mb-4 grid gap-3 md:grid-cols-4">
+            <ExecutionMetric label="Current step" value={submissionLifecycle?.current_step?.label ?? "-"} />
+            <ExecutionMetric label="Adapter" value={submissionLifecycle?.adapter_id ?? "-"} />
+            <ExecutionMetric label="Complete" value={formatNumber(submissionLifecycle?.summary?.complete, 0)} />
+            <ExecutionMetric label="Blocked" value={formatNumber(submissionLifecycle?.summary?.blocked, 0)} />
+          </div>
+          <DataTable columns={["step", "label", "status", "owner", "message"]} rows={lifecycleRows.slice(0, 10)} />
+        </SectionCard>
+        <SectionCard title="Backend risk checks">
+          <DataTable columns={["check", "status", "message"]} rows={riskChecks.slice(0, 8)} />
+        </SectionCard>
+
+        <SectionCard
+          action={<StatusPill tone={automationEvents.length ? "emerald" : "slate"}>{automationEvents.length}</StatusPill>}
+          title="Automation event trail"
+        >
+          <DataTable
+            columns={[
+              "created_at",
+              "event_type",
+              "action",
+              "status",
+              "automation_mode_after",
+              "strategy_mode_after",
+              "error_type",
+            ]}
+            rows={automationEvents.slice(0, 8)}
+          />
+        </SectionCard>
+
+        <SectionCard
+          action={<StatusPill tone="blue">Pre-trade audit</StatusPill>}
+          title="Execution audit trail"
+        >
+          <DataTable columns={["event", "actor", "status", "note"]} rows={auditRows.slice(0, 10)} />
+        </SectionCard>
+        <AssetTelemetryPanel telemetryData={telemetryData} />
         </div>
-        <DataTable columns={["step", "label", "status", "owner", "message"]} rows={lifecycleRows.slice(0, 10)} />
-      </SectionCard>
-      <SectionCard title="Backend risk checks">
-        <DataTable columns={["check", "status", "message"]} rows={riskChecks.slice(0, 8)} />
-      </SectionCard>
-
-      <SectionCard
-        action={<StatusPill tone={automationEvents.length ? "emerald" : "slate"}>{automationEvents.length}</StatusPill>}
-        title="Automation event trail"
-      >
-        <DataTable
-          columns={[
-            "created_at",
-            "event_type",
-            "action",
-            "status",
-            "automation_mode_after",
-            "strategy_mode_after",
-            "error_type",
-          ]}
-          rows={automationEvents.slice(0, 8)}
-        />
-      </SectionCard>
-
-      <SectionCard
-        action={<StatusPill tone="blue">Pre-trade audit</StatusPill>}
-        title="Execution audit trail"
-      >
-        <DataTable columns={["event", "actor", "status", "note"]} rows={auditRows.slice(0, 10)} />
-      </SectionCard>
-      <AssetTelemetryPanel telemetryData={telemetryData} />
-      </div>
+      ) : (
+        <SectionCard
+          action={<StatusPill tone={blockers.length ? "amber" : "emerald"}>{blockers.length ? "review" : "clear"}</StatusPill>}
+          title={auditFraming.clientSummaryTitle}
+        >
+          <DataTable
+            columns={["proof_point", "status", "client_value", "next_action"]}
+            rows={buildClientAuditSummaryRows({
+              auditPacketRows,
+              automationEvents,
+              lifecycleRows,
+              riskChecks,
+              telemetryData,
+            })}
+          />
+        </SectionCard>
+      )}
     </div>
   );
+}
+
+function getAuditPersonaFraming(personaId: PersonaId) {
+  const defaultFraming = {
+    clientSummaryTitle: "Client-facing audit summary",
+    eyebrow: "Audit evidence",
+    packetTitle: "Audit packet completeness",
+    title: "Can the automated decision be defended?",
+  };
+
+  const framing: Partial<Record<PersonaId, typeof defaultFraming>> = {
+    asset_owner: {
+      clientSummaryTitle: "Owner-facing proof summary",
+      eyebrow: "Owner audit evidence",
+      packetTitle: "Owner evidence packet",
+      title: "Can the owner trust the automated decision?",
+    },
+    investor_lender: {
+      clientSummaryTitle: "Bankability proof summary",
+      eyebrow: "Investment audit evidence",
+      packetTitle: "Bankability audit packet",
+      title: "Is the decision defensible for diligence?",
+    },
+    executive: {
+      clientSummaryTitle: "Executive proof summary",
+      eyebrow: "Executive audit evidence",
+      packetTitle: "Board evidence packet",
+      title: "Is the automated decision board-defensible?",
+    },
+    client_success: {
+      clientSummaryTitle: "Client explanation summary",
+      eyebrow: "Client audit evidence",
+      packetTitle: "Client evidence packet",
+      title: "Can client success explain and defend this decision?",
+    },
+    project_developer: {
+      clientSummaryTitle: "Development proof summary",
+      eyebrow: "Development audit evidence",
+      packetTitle: "Development evidence packet",
+      title: "Does the audit trail support development readiness?",
+    },
+  };
+
+  return framing[personaId] ?? defaultFraming;
+}
+
+function buildClientAuditSummaryRows({
+  auditPacketRows,
+  automationEvents,
+  lifecycleRows,
+  riskChecks,
+  telemetryData,
+}: {
+  auditPacketRows: TableRow[];
+  automationEvents: AutomationEvent[];
+  lifecycleRows: TableRow[];
+  riskChecks: TableRow[];
+  telemetryData: AssetTelemetryResponse["telemetry"];
+}) {
+  const missingEvidence = auditPacketRows.filter((row) => row.status !== "available" && row.status !== "complete");
+  const blockedLifecycleSteps = lifecycleRows.filter((row) => row.status === "blocked");
+  const failedRiskChecks = riskChecks.filter((row) => !["passed", "complete"].includes(String(row.status)));
+
+  return [
+    {
+      client_value: "Shows whether the complete decision packet exists.",
+      next_action: missingEvidence[0]?.next_action ?? "Keep the audit packet attached to reports.",
+      proof_point: "Evidence packet",
+      status: missingEvidence.length ? `${missingEvidence.length} gap(s)` : "complete",
+    },
+    {
+      client_value: "Shows whether the trading workflow reached a defendable state.",
+      next_action: blockedLifecycleSteps[0]?.message ?? "Keep lifecycle status available for review.",
+      proof_point: "Submission lifecycle",
+      status: blockedLifecycleSteps.length ? `${blockedLifecycleSteps.length} blocked` : "no blocked steps",
+    },
+    {
+      client_value: "Confirms risk checks do not contradict the report narrative.",
+      next_action: failedRiskChecks[0]?.message ?? "Keep risk checks linked to the audit packet.",
+      proof_point: "Risk checks",
+      status: failedRiskChecks.length ? `${failedRiskChecks.length} review` : "passed",
+    },
+    {
+      client_value: "Proves the asset could physically support the automated decision.",
+      next_action: telemetryData ? "Keep telemetry snapshot for client evidence." : "Capture telemetry before client sign-off.",
+      proof_point: "Asset telemetry",
+      status: telemetryData?.availability_status ?? "missing",
+    },
+    {
+      client_value: "Shows automation actions were recorded for post-trade review.",
+      next_action: automationEvents.length ? "Keep event trail archived." : "Record automation activity before sign-off.",
+      proof_point: "Automation events",
+      status: automationEvents.length ? `${automationEvents.length} event(s)` : "missing",
+    },
+  ];
 }
 
 function buildAuditPacketRows({

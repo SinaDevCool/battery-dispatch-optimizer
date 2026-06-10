@@ -9,10 +9,12 @@ import { DataTable } from "@/components/data-table";
 import { DecisionBrief } from "@/components/decision-brief";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
+import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
 import { apiGet } from "@/lib/api";
 import { formatCurrency, formatDateTime, formatNumber } from "@/lib/format";
+import type { PersonaId } from "@/lib/personas";
 import type {
   AutomationPolicy,
   AutomationControlStatusResponse,
@@ -23,8 +25,28 @@ import type {
   TableRow,
 } from "@/types/api";
 
+type AutomationPersonaFraming = {
+  blockersTitle: string;
+  bridgeTitle: string;
+  decisionEyebrow: string;
+  decisionTitle: string;
+  description: string;
+  envelopeTitle: string;
+  evidenceTitle: string;
+  exceptionsTitle: string;
+  eyebrow: string;
+  historyTitle: string;
+  routesTitle: string;
+  statusTitle: string;
+  thresholdsTitle: string;
+  title: string;
+  workflowTitle: string;
+};
+
 export default function AutomationPoliciesPage() {
   const { selectedAssetId } = useAssetContext();
+  const { personaId } = usePersona();
+  const framing = getAutomationPersonaFraming(personaId);
 
   const policy = useQuery({
     queryFn: () =>
@@ -86,9 +108,9 @@ export default function AutomationPoliciesPage() {
   return (
     <>
       <PageHeading
-        description="Control automated battery trading by mode: advisory, paper trading, supervised automation, and limited live automation with hard risk, confidence, connector, and human-gate constraints."
-        eyebrow="Trading operations"
-        title="Automation control plane"
+        description={framing.description}
+        eyebrow={framing.eyebrow}
+        title={framing.title}
       />
 
       <DecisionBrief
@@ -110,12 +132,12 @@ export default function AutomationPoliciesPage() {
             ? "Limited live submission is permitted by the control plane."
             : "Live submission remains gated by policy evidence.",
         ]}
-        eyebrow="Automation policy decision"
+        eyebrow={framing.decisionEyebrow}
         nextAction={
           nextAutomationAction.message ??
           "Evaluate policy gates before changing automated trading mode."
         }
-        title="Can the asset trade automatically?"
+        title={framing.decisionTitle}
         tone={policyDecision === "blocked" ? "red" : blockerRows.length ? "amber" : "emerald"}
       />
 
@@ -146,7 +168,7 @@ export default function AutomationPoliciesPage() {
         />
       </div>
 
-      <SectionCard className="mb-5" title="Policy-to-automation bridge">
+      <SectionCard className="mb-5" title={framing.bridgeTitle}>
         <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <DataTable
             columns={["decision_input", "value"]}
@@ -209,7 +231,7 @@ export default function AutomationPoliciesPage() {
       <div className="mb-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.75fr)]">
         <SectionCard
           action={<StatusPill tone={controlModeTone(control?.automation_mode)}>{control?.automation_mode ?? "-"}</StatusPill>}
-          title="Automated trading status"
+          title={framing.statusTitle}
         >
           <div className="grid gap-3 md:grid-cols-3">
             <PolicyRow
@@ -245,7 +267,7 @@ export default function AutomationPoliciesPage() {
           </div>
         </SectionCard>
 
-        <SectionCard title="Automation evidence">
+        <SectionCard title={framing.evidenceTitle}>
           <DataTable
             columns={["evidence", "record", "status"]}
             rows={[
@@ -289,7 +311,7 @@ export default function AutomationPoliciesPage() {
               variant="primary"
             />
           }
-          title="Automation control envelope"
+          title={framing.envelopeTitle}
         >
           <div className="grid gap-3 md:grid-cols-2">
             <PolicyRow
@@ -325,7 +347,7 @@ export default function AutomationPoliciesPage() {
           </div>
         </SectionCard>
 
-        <SectionCard title="Automated trading workflow">
+        <SectionCard title={framing.workflowTitle}>
           <div className="space-y-3">
             <WorkflowLink
               href="/market-signals"
@@ -352,7 +374,7 @@ export default function AutomationPoliciesPage() {
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
-        <SectionCard title="Risk and confidence thresholds">
+        <SectionCard title={framing.thresholdsTitle}>
           <DataTable
             columns={["policy_area", "limit", "value", "automation_effect"]}
             rows={[
@@ -396,7 +418,7 @@ export default function AutomationPoliciesPage() {
           />
         </SectionCard>
 
-        <SectionCard title="Allowed German market routes">
+        <SectionCard title={framing.routesTitle}>
           <DataTable
             columns={["adapter_id", "role", "automation_scope", "policy_status"]}
             rows={formatMarketRoles(currentPolicy)}
@@ -407,7 +429,7 @@ export default function AutomationPoliciesPage() {
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
         <SectionCard
           action={<StatusPill tone={decisionTone(policyDecision)}>{policyDecision ?? "-"}</StatusPill>}
-          title="Policy exceptions"
+          title={framing.exceptionsTitle}
         >
           <DataTable
             columns={["check", "status", "message", "context"]}
@@ -415,7 +437,7 @@ export default function AutomationPoliciesPage() {
           />
         </SectionCard>
 
-        <SectionCard title="Automation blockers and next action">
+        <SectionCard title={framing.blockersTitle}>
           <DataTable
             columns={["source", "key", "status", "message"]}
             rows={
@@ -435,7 +457,7 @@ export default function AutomationPoliciesPage() {
       </div>
 
       <div className="mt-5">
-        <SectionCard title="Policy history">
+        <SectionCard title={framing.historyTitle}>
           <DataTable
             columns={[
               "automation_policy_id",
@@ -453,6 +475,106 @@ export default function AutomationPoliciesPage() {
       </div>
     </>
   );
+}
+
+function getAutomationPersonaFraming(
+  personaId: PersonaId,
+): AutomationPersonaFraming {
+  const defaults: AutomationPersonaFraming = {
+    blockersTitle: "Automation blockers and next action",
+    bridgeTitle: "Policy-to-automation bridge",
+    decisionEyebrow: "Automation policy decision",
+    decisionTitle: "Can the asset trade automatically?",
+    description:
+      "Control automated battery trading by mode: advisory, paper trading, supervised automation, and limited live automation with hard risk, confidence, connector, and human-gate constraints.",
+    envelopeTitle: "Automation control envelope",
+    evidenceTitle: "Automation evidence",
+    exceptionsTitle: "Policy exceptions",
+    eyebrow: "Trading operations",
+    historyTitle: "Policy history",
+    routesTitle: "Allowed German market routes",
+    statusTitle: "Automated trading status",
+    thresholdsTitle: "Risk and confidence thresholds",
+    title: "Automation control plane",
+    workflowTitle: "Automated trading workflow",
+  };
+
+  const frames: Partial<Record<PersonaId, AutomationPersonaFraming>> = {
+    automation_operator: {
+      blockersTitle: "Operator blockers and next action",
+      bridgeTitle: "Control-plane escalation bridge",
+      decisionEyebrow: "Operator automation decision",
+      decisionTitle: "What automation mode is allowed next?",
+      description:
+        "Operate the control plane across advisory, paper, supervised, and limited-live modes with explicit policy, freshness, connector, approval, and evidence gates.",
+      envelopeTitle: "Operator control envelope",
+      evidenceTitle: "Escalation evidence",
+      exceptionsTitle: "Control-plane exceptions",
+      eyebrow: "Internal automation OS",
+      historyTitle: "Control policy history",
+      routesTitle: "Automation-enabled market routes",
+      statusTitle: "Automation mode status",
+      thresholdsTitle: "Operating risk and confidence limits",
+      title: "Automation control",
+      workflowTitle: "Automation escalation workflow",
+    },
+    trading_desk: {
+      blockersTitle: "Desk blockers and next action",
+      bridgeTitle: "Policy-to-desk bridge",
+      decisionEyebrow: "Desk automation decision",
+      decisionTitle: "Can the desk use automation for this asset?",
+      description:
+        "Show the trading desk which action is allowed now: advisory review, paper validation, supervised execution candidate, or blocked live submission.",
+      envelopeTitle: "Desk automation envelope",
+      evidenceTitle: "Desk execution evidence",
+      exceptionsTitle: "Desk policy exceptions",
+      eyebrow: "Trading desk",
+      historyTitle: "Desk policy history",
+      routesTitle: "Desk-allowed market routes",
+      statusTitle: "Desk trading mode",
+      thresholdsTitle: "Desk risk and confidence thresholds",
+      title: "Desk automation limits",
+      workflowTitle: "Desk execution workflow",
+    },
+    risk_compliance: {
+      blockersTitle: "Governance blockers and next action",
+      bridgeTitle: "Policy-to-governance bridge",
+      decisionEyebrow: "Governance automation decision",
+      decisionTitle: "Can risk approve this automation state?",
+      description:
+        "Review the policy envelope, approval gate, risk limits, exceptions, blockers, and policy history before automation is escalated or defended.",
+      envelopeTitle: "Governed policy envelope",
+      evidenceTitle: "Governance evidence",
+      exceptionsTitle: "Governance exceptions",
+      eyebrow: "Risk & compliance",
+      historyTitle: "Governance policy history",
+      routesTitle: "Governed market routes",
+      statusTitle: "Governed automation status",
+      thresholdsTitle: "Risk, confidence, and approval thresholds",
+      title: "Automation governance",
+      workflowTitle: "Governed automation workflow",
+    },
+    market_operations: {
+      blockersTitle: "Route blockers and next action",
+      bridgeTitle: "Policy-to-route bridge",
+      decisionEyebrow: "Market operations automation decision",
+      decisionTitle: "Are market routes ready for the allowed automation mode?",
+      description:
+        "Connect policy state to route readiness, connector status, market roles, live-submission gates, and operational next actions before escalation.",
+      envelopeTitle: "Market operations control envelope",
+      evidenceTitle: "Route automation evidence",
+      exceptionsTitle: "Route policy exceptions",
+      eyebrow: "Market operations",
+      historyTitle: "Route policy history",
+      routesTitle: "Operational market routes",
+      statusTitle: "Route automation status",
+      thresholdsTitle: "Route risk and confidence thresholds",
+      title: "Market route automation control",
+      workflowTitle: "Route escalation workflow",
+    },
+  };
+
+  return frames[personaId] ?? defaults;
 }
 
 function PolicyRow({

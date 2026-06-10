@@ -9,10 +9,12 @@ import { DataTable } from "@/components/data-table";
 import { DecisionBrief, type DecisionBriefTone } from "@/components/decision-brief";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
+import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
 import { apiGet } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
+import type { PersonaId } from "@/lib/personas";
 import type {
   ActualPriceStatusResponse,
   ApiEnvelope,
@@ -31,7 +33,23 @@ type MarketProductsResponse = ApiEnvelope<{
   products?: TableRow[];
 }>;
 
+type MarketPricesPersonaFraming = {
+  bridgeTitle: string;
+  controlsTitle: string;
+  curveTitle: string;
+  decisionEyebrow: string;
+  decisionTitle: string;
+  description: string;
+  eyebrow: string;
+  productsTitle: string;
+  summaryTitle: string;
+  title: string;
+};
+
 export default function MarketPricesPage() {
+  const { persona, personaId } = usePersona();
+  const framing = getMarketPricesPersonaFraming(personaId);
+
   const forecastStatus = useQuery({
     queryFn: () => apiGet<ForecastStatusResponse>("/forecast/status"),
     queryKey: ["market-prices-forecast-status"],
@@ -122,9 +140,9 @@ export default function MarketPricesPage() {
   return (
     <>
       <PageHeading
-        description="Decide whether market-price evidence is reliable enough for automated bid creation, forecast backtesting, charge/discharge window selection, and settlement proof."
-        eyebrow="Market intelligence"
-        title="Market price trust"
+        description={framing.description}
+        eyebrow={framing.eyebrow}
+        title={framing.title}
       />
 
       <div className="mb-6">
@@ -140,10 +158,10 @@ export default function MarketPricesPage() {
           blockers={decisionBrief.blockers}
           decision={decisionBrief.decision}
           evidence={decisionBrief.evidence}
-          eyebrow="Price-to-bid decision"
+          eyebrow={framing.decisionEyebrow}
           nextAction={decisionBrief.nextAction}
           tone={decisionBrief.tone}
-          title="Can automation trust this price evidence?"
+          title={framing.decisionTitle}
         />
       </div>
 
@@ -181,7 +199,7 @@ export default function MarketPricesPage() {
           </StatusPill>
         }
         className="mb-6"
-        title="Price-to-automation bridge"
+        title={framing.bridgeTitle}
       >
         <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <DataTable
@@ -217,7 +235,7 @@ export default function MarketPricesPage() {
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
         <SectionCard
           action={<StatusPill tone="blue">{forecastRows.length} interval(s)</StatusPill>}
-          title="Actionable price curve"
+          title={framing.curveTitle}
         >
           <div className="mb-4 grid gap-3 md:grid-cols-4">
             <MarketPriceRow label="Negative" tone={priceStats.negativeHours ? "amber" : "emerald"} value={priceStats.negativeHours} />
@@ -245,7 +263,7 @@ export default function MarketPricesPage() {
           ) : null}
         </SectionCard>
 
-        <SectionCard title="Price evidence summary">
+        <SectionCard title={framing.summaryTitle}>
           <div className="space-y-3">
             <MarketPriceRow label="Average forecast" tone="blue" value={`${formatNumber(priceStats.averagePrice, 2)} EUR/MWh`} />
             <MarketPriceRow label="Volatility estimate" tone="blue" value={`${formatNumber(priceStats.volatility, 2)} EUR/MWh`} />
@@ -259,7 +277,7 @@ export default function MarketPricesPage() {
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
         <SectionCard
           action={<StatusPill tone="blue">{productRows.length} product(s)</StatusPill>}
-          title="German market products"
+          title={framing.productsTitle}
         >
           <DataTable
             columns={[
@@ -274,24 +292,114 @@ export default function MarketPricesPage() {
           />
         </SectionCard>
 
-        <SectionCard title="Price data controls">
-          <div className="grid gap-3">
-            <ActionButton
-              endpoint="/data/update-entsoe"
-              label="Update ENTSO-E forecast"
-              refetch={refetchPrices}
-              variant="primary"
-            />
-            <ActionButton
-              endpoint="/data/update-actual-prices"
-              label="Update actual prices"
-              refetch={refetchPrices}
-            />
-          </div>
-        </SectionCard>
+        {persona.layer === "client" ? null : (
+          <SectionCard title={framing.controlsTitle}>
+            <div className="grid gap-3">
+              <ActionButton
+                endpoint="/data/update-entsoe"
+                label="Update ENTSO-E forecast"
+                refetch={refetchPrices}
+                variant="primary"
+              />
+              <ActionButton
+                endpoint="/data/update-actual-prices"
+                label="Update actual prices"
+                refetch={refetchPrices}
+              />
+            </div>
+          </SectionCard>
+        )}
       </div>
     </>
   );
+}
+
+function getMarketPricesPersonaFraming(
+  personaId: PersonaId,
+): MarketPricesPersonaFraming {
+  const defaults: MarketPricesPersonaFraming = {
+    bridgeTitle: "Price-to-automation bridge",
+    controlsTitle: "Price data controls",
+    curveTitle: "Actionable price curve",
+    decisionEyebrow: "Price-to-bid decision",
+    decisionTitle: "Can automation trust this price evidence?",
+    description:
+      "Decide whether market-price evidence is reliable enough for automated bid creation, forecast backtesting, charge/discharge window selection, and settlement proof.",
+    eyebrow: "Market intelligence",
+    productsTitle: "German market products",
+    summaryTitle: "Price evidence summary",
+    title: "Market price trust",
+  };
+
+  const frames: Partial<Record<PersonaId, MarketPricesPersonaFraming>> = {
+    trading_desk: {
+      bridgeTitle: "Price-to-desk bridge",
+      controlsTitle: "Desk price data controls",
+      curveTitle: "Tradable price curve",
+      decisionEyebrow: "Desk price decision",
+      decisionTitle: "Can the desk trust this price curve?",
+      description:
+        "Show whether forecast and actual price evidence is fresh enough for desk bid sizing, charge/discharge window selection, and proposal generation.",
+      eyebrow: "Trading desk",
+      productsTitle: "Tradable German products",
+      summaryTitle: "Desk price evidence summary",
+      title: "Desk price trust",
+    },
+    forecast_quant: {
+      bridgeTitle: "Price-to-model bridge",
+      controlsTitle: "Model price data controls",
+      curveTitle: "Model price curve",
+      decisionEyebrow: "Model price evidence decision",
+      decisionTitle: "Is the price evidence good enough for model validation?",
+      description:
+        "Validate forecast price coverage, actual-price readiness, regimes, volatility, and raw curve quality before backtesting or model-driven dispatch.",
+      eyebrow: "Model quality OS",
+      productsTitle: "Modelled market products",
+      summaryTitle: "Model price evidence summary",
+      title: "Price evidence for models",
+    },
+    revenue_analyst: {
+      bridgeTitle: "Price-to-revenue bridge",
+      controlsTitle: "Revenue price data controls",
+      curveTitle: "Revenue price curve",
+      decisionEyebrow: "Revenue price decision",
+      decisionTitle: "Can this price evidence support the revenue case?",
+      description:
+        "Connect price freshness, volatility, negative-price windows, actual-price proof, and tradable products to revenue assurance and dispatch economics.",
+      eyebrow: "Commercial analytics OS",
+      productsTitle: "Revenue market products",
+      summaryTitle: "Revenue price evidence summary",
+      title: "Price evidence for revenue",
+    },
+    market_operations: {
+      bridgeTitle: "Price-data operations bridge",
+      controlsTitle: "Market data controls",
+      curveTitle: "Operational price curve",
+      decisionEyebrow: "Market data readiness decision",
+      decisionTitle: "Is market data ready for downstream systems?",
+      description:
+        "Monitor forecast and actual-price feeds, market profiles, product context, and data gaps so trading, model validation, and settlement evidence have current inputs.",
+      eyebrow: "Market operations",
+      productsTitle: "Market product catalog",
+      summaryTitle: "Market data evidence summary",
+      title: "Market data readiness",
+    },
+    project_developer: {
+      bridgeTitle: "Price-to-development bridge",
+      controlsTitle: "Price evidence controls",
+      curveTitle: "Development price assumptions",
+      decisionEyebrow: "Development price decision",
+      decisionTitle: "Are price assumptions credible enough for development planning?",
+      description:
+        "Show whether forecast and actual-price evidence can support project scenarios, market assumptions, and the commercial case before investment commitment.",
+      eyebrow: "Development readiness",
+      productsTitle: "Relevant German market products",
+      summaryTitle: "Development price evidence summary",
+      title: "Price assumptions",
+    },
+  };
+
+  return frames[personaId] ?? defaults;
 }
 
 function normalizeForecastPriceRows(rows: NonNullable<ForecastPreviewResponse["preview"]>) {

@@ -9,9 +9,11 @@ import { DataTable } from "@/components/data-table";
 import { DecisionBrief, type DecisionBriefTone } from "@/components/decision-brief";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
+import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
 import { apiGet } from "@/lib/api";
+import type { PersonaId } from "@/lib/personas";
 import type {
   AncillaryEligibilityResponse,
   ApiEnvelope,
@@ -26,6 +28,22 @@ type MarketProductsResponse = ApiEnvelope<{
   product_count?: number;
   products?: TableRow[];
 }>;
+
+type MarketRulesPersonaFraming = {
+  bridgeTitle: string;
+  contractTitle: string;
+  decisionEyebrow: string;
+  decisionTitle: string;
+  defaultUnlock: string;
+  description: string;
+  eligibilityTitle: string;
+  eyebrow: string;
+  gatesTitle: string;
+  productTitle: string;
+  readinessTitle: string;
+  title: string;
+  unlockTitle: string;
+};
 
 const marketRuleCatalog = [
   {
@@ -80,6 +98,8 @@ const marketRuleCatalog = [
 
 export default function MarketRulesPage() {
   const { selectedAssetId } = useAssetContext();
+  const { personaId } = usePersona();
+  const framing = getMarketRulesPersonaFraming(personaId);
 
   const adapters = useQuery({
     queryFn: () =>
@@ -210,9 +230,9 @@ export default function MarketRulesPage() {
   return (
     <>
       <PageHeading
-        description="Decide which EPEX and regelleistung routes can receive automated orders, which routes are still preview-only, and which credentials, timing, prequalification, or connector checks block escalation."
-        eyebrow="Market intelligence"
-        title="Market access rules"
+        description={framing.description}
+        eyebrow={framing.eyebrow}
+        title={framing.title}
       />
 
       <div className="mb-6">
@@ -228,10 +248,10 @@ export default function MarketRulesPage() {
           blockers={decisionBrief.blockers}
           decision={decisionBrief.decision}
           evidence={decisionBrief.evidence}
-          eyebrow="Market eligibility gate"
+          eyebrow={framing.decisionEyebrow}
           nextAction={decisionBrief.nextAction}
           tone={decisionBrief.tone}
-          title="Which market route can automation trade?"
+          title={framing.decisionTitle}
         />
       </div>
 
@@ -264,7 +284,7 @@ export default function MarketRulesPage() {
 
       <SectionCard
         action={<StatusPill tone={decisionBrief.tone}>{decisionBrief.actionLabel}</StatusPill>}
-        title="Market access bridge"
+        title={framing.bridgeTitle}
       >
         <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.1fr)]">
           <DataTable
@@ -288,7 +308,7 @@ export default function MarketRulesPage() {
                 decision_input: "Primary unlock",
                 value:
                   decisionBrief.blockers[0] ??
-                  "Feed eligible routes into market allocation before proposal generation.",
+                  framing.defaultUnlock,
               },
             ]}
           />
@@ -301,7 +321,7 @@ export default function MarketRulesPage() {
 
       <SectionCard
         action={<StatusPill tone="amber">Automation gate checks</StatusPill>}
-        title="Route automation gates"
+        title={framing.gatesTitle}
       >
         <DataTable
           columns={[
@@ -318,7 +338,7 @@ export default function MarketRulesPage() {
 
       <SectionCard
         action={<StatusPill tone={missingCredentialCount || previewOnlyCount ? "amber" : "emerald"}>Unlock plan</StatusPill>}
-        title="Route unlock plan"
+        title={framing.unlockTitle}
       >
         <DataTable
           columns={[
@@ -333,7 +353,7 @@ export default function MarketRulesPage() {
       </SectionCard>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
-        <SectionCard title="Product constraints">
+        <SectionCard title={framing.productTitle}>
           <DataTable
             columns={[
               "product_id",
@@ -346,7 +366,7 @@ export default function MarketRulesPage() {
           />
         </SectionCard>
 
-        <SectionCard title="Automation readiness rules">
+        <SectionCard title={framing.readinessTitle}>
           <div className="space-y-3">
             <MarketRuleRow
               label="EPEX live route"
@@ -375,7 +395,7 @@ export default function MarketRulesPage() {
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
         <SectionCard
           action={<StatusPill tone={blockedProductCount ? "amber" : "emerald"}>{eligibleProductRows.length}</StatusPill>}
-          title="Asset-specific product eligibility"
+          title={framing.eligibilityTitle}
         >
           <DataTable
             columns={[
@@ -389,7 +409,7 @@ export default function MarketRulesPage() {
           />
         </SectionCard>
 
-        <SectionCard title="EPEX vs ancillary automation contract">
+        <SectionCard title={framing.contractTitle}>
           <div className="space-y-3">
             <MarketRuleRow
               label="EPEX wholesale"
@@ -416,6 +436,110 @@ export default function MarketRulesPage() {
       </div>
     </>
   );
+}
+
+function getMarketRulesPersonaFraming(personaId: PersonaId): MarketRulesPersonaFraming {
+  const defaults: MarketRulesPersonaFraming = {
+    bridgeTitle: "Market access bridge",
+    contractTitle: "EPEX vs ancillary automation contract",
+    decisionEyebrow: "Market eligibility gate",
+    decisionTitle: "Which market route can automation trade?",
+    defaultUnlock: "Feed eligible routes into market allocation before proposal generation.",
+    description:
+      "Decide which EPEX and regelleistung routes can receive automated orders, which routes are still preview-only, and which credentials, timing, prequalification, or connector checks block escalation.",
+    eligibilityTitle: "Asset-specific product eligibility",
+    eyebrow: "Market intelligence",
+    gatesTitle: "Route automation gates",
+    productTitle: "Product constraints",
+    readinessTitle: "Automation readiness rules",
+    title: "Market access rules",
+    unlockTitle: "Route unlock plan",
+  };
+
+  const frames: Partial<Record<PersonaId, MarketRulesPersonaFraming>> = {
+    project_developer: {
+      bridgeTitle: "Development market-access bridge",
+      contractTitle: "Merchant and ancillary readiness contract",
+      decisionEyebrow: "Pre-COD market eligibility",
+      decisionTitle: "Can this project reach the planned revenue markets?",
+      defaultUnlock: "Clear the market eligibility assumptions before investment commitment.",
+      description:
+        "Translate German market rules into development readiness: which EPEX and reserve routes are bankable assumptions, which need prequalification, and which connector or credential gaps still block the commercial plan.",
+      eligibilityTitle: "Project product eligibility",
+      eyebrow: "Development readiness",
+      gatesTitle: "Pre-COD route gates",
+      productTitle: "Revenue product constraints",
+      readinessTitle: "Development readiness rules",
+      title: "Market eligibility for development",
+      unlockTitle: "Bankability unlock plan",
+    },
+    risk_compliance: {
+      bridgeTitle: "Governance-to-automation bridge",
+      contractTitle: "Market access compliance contract",
+      decisionEyebrow: "Operating compliance gate",
+      decisionTitle: "Can automation operate within approved market rules?",
+      defaultUnlock: "Resolve rule, credential, and approval blockers before live escalation.",
+      description:
+        "Review the market-rule evidence that governs live escalation: route eligibility, exchange or TSO credentials, prequalification, timing, approval state, and automation controls.",
+      eligibilityTitle: "Controlled product eligibility",
+      eyebrow: "Risk & compliance",
+      gatesTitle: "Governed automation gates",
+      productTitle: "Rulebook constraints",
+      readinessTitle: "Control readiness rules",
+      title: "Market rule governance",
+      unlockTitle: "Compliance unlock plan",
+    },
+    market_operations: {
+      bridgeTitle: "Connector certification bridge",
+      contractTitle: "EPEX and TSO route contract",
+      decisionEyebrow: "Route readiness gate",
+      decisionTitle: "Which market routes are technically ready to operate?",
+      defaultUnlock: "Certify connector, credential, timing, and order-control readiness.",
+      description:
+        "Use market rules as an operating checklist for route certification: exchange adapters, TSO routes, credentials, timing checks, live handshakes, and automation blocking level.",
+      eligibilityTitle: "Route product eligibility",
+      eyebrow: "Market operations",
+      gatesTitle: "Connector automation gates",
+      productTitle: "Adapter product constraints",
+      readinessTitle: "Route readiness rules",
+      title: "Market route operations",
+      unlockTitle: "Connector unlock plan",
+    },
+    trading_desk: {
+      bridgeTitle: "Trading route bridge",
+      contractTitle: "Tradable route contract",
+      decisionEyebrow: "Desk execution gate",
+      decisionTitle: "Which routes can the desk use before proposals or orders?",
+      defaultUnlock: "Send eligible routes into market allocation and keep blocked routes out of bid packages.",
+      description:
+        "Show the trading desk which EPEX and reserve routes are usable, which remain paper or preview-only, and which constraints must be respected before building bid packages.",
+      eligibilityTitle: "Tradable product eligibility",
+      eyebrow: "Trading desk",
+      gatesTitle: "Desk route gates",
+      productTitle: "Bid product constraints",
+      readinessTitle: "Execution readiness rules",
+      title: "Tradable market rules",
+      unlockTitle: "Desk unlock plan",
+    },
+    revenue_analyst: {
+      bridgeTitle: "Revenue-to-market bridge",
+      contractTitle: "Revenue route contract",
+      decisionEyebrow: "Revenue eligibility gate",
+      decisionTitle: "Which market products can create defensible revenue?",
+      defaultUnlock: "Quantify blocked route value and feed eligible products into revenue allocation.",
+      description:
+        "Connect product eligibility and market constraints to revenue assumptions, blocked product value, and the commercial case behind dispatch, hedging, and client reporting.",
+      eligibilityTitle: "Revenue product eligibility",
+      eyebrow: "Commercial analytics",
+      gatesTitle: "Revenue route gates",
+      productTitle: "Commercial product constraints",
+      readinessTitle: "Revenue readiness rules",
+      title: "Market rules for revenue",
+      unlockTitle: "Commercial unlock plan",
+    },
+  };
+
+  return frames[personaId] ?? defaults;
 }
 
 function buildRuleRows({

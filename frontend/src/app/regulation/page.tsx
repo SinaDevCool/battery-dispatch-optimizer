@@ -7,8 +7,10 @@ import { DataTable } from "@/components/data-table";
 import { DecisionBrief } from "@/components/decision-brief";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
+import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { apiGet } from "@/lib/api";
+import type { PersonaId } from "@/lib/personas";
 import type {
   AncillaryEligibilityResponse,
   EegComplianceResponse,
@@ -20,6 +22,7 @@ import type {
 
 export default function RegulationPage() {
   const { selectedAssetId } = useAssetContext();
+  const { personaId } = usePersona();
 
   const classification = useQuery({
     queryFn: () =>
@@ -80,13 +83,14 @@ export default function RegulationPage() {
       ? `${reviewAncillaryRows.length} ancillary product(s) require review.`
       : null,
   ].filter(Boolean) as string[];
+  const framing = getRegulatoryPersonaFraming(personaId);
 
   return (
     <>
       <PageHeading
-        description="Prove whether the selected German asset can be used for automated trading by checking storage classification, EEG origin risk, grid-fee exposure, and ancillary-service eligibility."
-        eyebrow="Germany regulatory layer"
-        title="Regulatory compliance"
+        description={framing.pageDescription}
+        eyebrow={framing.pageEyebrow}
+        title={framing.pageTitle}
       />
 
       <DecisionBrief
@@ -100,17 +104,17 @@ export default function RegulationPage() {
           </>
         }
         evidence={[
-          `Storage classification: ${String(classification.data?.storage_classification ?? classification.data?.storage_mode ?? "-")}.`,
-          `EEG status: ${String(eeg.data?.status ?? "-")}.`,
-          `${String(ancillary.data?.eligible_product_count ?? ancillary.data?.eligible_products?.length ?? 0)} ancillary product(s) eligible.`,
+          `${framing.storageEvidenceLabel}: ${String(classification.data?.storage_classification ?? classification.data?.storage_mode ?? "-")}.`,
+          `${framing.eegEvidenceLabel}: ${String(eeg.data?.status ?? "-")}.`,
+          `${String(ancillary.data?.eligible_product_count ?? ancillary.data?.eligible_products?.length ?? 0)} ${framing.ancillaryEvidenceLabel}.`,
         ]}
-        eyebrow="Regulatory automation gate"
+        eyebrow={framing.decisionEyebrow}
         nextAction={
           automationBlockers.length
-            ? "Clear the regulatory blockers before allowing unattended bid submission."
-            : "Use this regulatory clearance as a pre-trade automation gate for German market routes."
+            ? framing.blockedNextAction
+            : framing.clearNextAction
         }
-        title="German eligibility decision"
+        title={framing.decisionTitle}
         tone={automationBlockers.length ? "amber" : "emerald"}
       />
 
@@ -136,7 +140,7 @@ export default function RegulationPage() {
         <KpiCard accent="blue" label="Country" value="Germany" />
       </div>
 
-      <SectionCard className="mb-5" title="Regulatory-to-automation bridge">
+      <SectionCard className="mb-5" title={framing.bridgeTitle}>
         <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <DataTable
             columns={["decision_input", "value"]}
@@ -157,8 +161,7 @@ export default function RegulationPage() {
               },
               {
                 decision_input: "Why this page matters",
-                value:
-                  "It prevents the platform from submitting bids where EEG, storage classification, grid-fee, or ancillary eligibility evidence is incomplete.",
+                value: framing.whyItMatters,
               },
             ]}
           />
@@ -348,6 +351,126 @@ function formatAncillaryGateRows(rows: TableRow[]): TableRow[] {
       product_id: row.product_id ?? "-",
     };
   });
+}
+
+function getRegulatoryPersonaFraming(personaId: PersonaId) {
+  const defaultFraming = {
+    ancillaryEvidenceLabel: "ancillary product(s) eligible",
+    blockedNextAction: "Clear the regulatory blockers before allowing unattended bid submission.",
+    bridgeTitle: "Regulatory-to-automation bridge",
+    clearNextAction: "Use this regulatory clearance as a pre-trade automation gate for German market routes.",
+    decisionEyebrow: "Regulatory automation gate",
+    decisionTitle: "German eligibility decision",
+    eegEvidenceLabel: "EEG status",
+    pageDescription:
+      "Prove whether the selected German asset can be used for automated trading by checking storage classification, EEG origin risk, grid-fee exposure, and ancillary-service eligibility.",
+    pageEyebrow: "Germany regulatory layer",
+    pageTitle: "Regulatory compliance",
+    storageEvidenceLabel: "Storage classification",
+    whyItMatters:
+      "It prevents the platform from submitting bids where EEG, storage classification, grid-fee, or ancillary eligibility evidence is incomplete.",
+  };
+
+  const personaFraming: Partial<Record<PersonaId, typeof defaultFraming>> = {
+    project_developer: {
+      ancillaryEvidenceLabel: "reserve-market option(s) available for development planning",
+      blockedNextAction: "Resolve pre-COD regulatory blockers before using this asset in the investment case.",
+      bridgeTitle: "Development-readiness bridge",
+      clearNextAction: "Use this clearance as development evidence for market access, financing, and COD planning.",
+      decisionEyebrow: "Development eligibility gate",
+      decisionTitle: "Pre-COD regulatory readiness",
+      eegEvidenceLabel: "Development EEG risk",
+      pageDescription:
+        "Check whether the German asset has the regulatory, market, and grid-fee assumptions needed before COD, financing, or market-access planning.",
+      pageEyebrow: "Development compliance",
+      pageTitle: "Development regulatory readiness",
+      storageEvidenceLabel: "Development storage classification",
+      whyItMatters:
+        "It prevents the project from carrying unsupported market-access, EEG, or grid-fee assumptions into financing and COD planning.",
+    },
+    investor_lender: {
+      ancillaryEvidenceLabel: "bankability-relevant ancillary option(s) eligible",
+      blockedNextAction: "Resolve legal and eligibility gaps before presenting this asset as bankable.",
+      bridgeTitle: "Bankability risk bridge",
+      clearNextAction: "Use this clearance as regulatory evidence in the investment or lending packet.",
+      decisionEyebrow: "Bankability gate",
+      decisionTitle: "Regulatory bankability decision",
+      eegEvidenceLabel: "Legal-risk status",
+      pageDescription:
+        "Translate storage classification, EEG exposure, grid fees, and market eligibility into bankability and legal-risk evidence for investors or lenders.",
+      pageEyebrow: "Investment compliance",
+      pageTitle: "Regulatory bankability",
+      storageEvidenceLabel: "Bankability classification",
+      whyItMatters:
+        "It shows whether revenue assumptions are legally and commercially supportable before diligence or lending review.",
+    },
+    risk_compliance: {
+      ancillaryEvidenceLabel: "ancillary control(s) eligible",
+      blockedNextAction: "Clear governance blockers before approving automation or client reporting.",
+      bridgeTitle: "Operating compliance bridge",
+      clearNextAction: "Use this clearance as the compliance gate before automation mode escalation.",
+      decisionEyebrow: "Operating compliance gate",
+      decisionTitle: "Can this asset operate compliantly?",
+      eegEvidenceLabel: "Compliance status",
+      pageDescription:
+        "Review whether storage classification, EEG origin risk, grid-fee exposure, and ancillary eligibility support compliant operation and automation approval.",
+      pageEyebrow: "Operating compliance",
+      pageTitle: "Compliance gate",
+      storageEvidenceLabel: "Operating classification",
+      whyItMatters:
+        "It keeps automation, reporting, and market participation inside approved regulatory and operating assumptions.",
+    },
+    executive: {
+      ancillaryEvidenceLabel: "market expansion option(s) available",
+      blockedNextAction: "Treat regulatory readiness as a management blocker before promising automated trading.",
+      bridgeTitle: "Management readiness bridge",
+      clearNextAction: "Use this clearance as management evidence that the German asset can progress.",
+      decisionEyebrow: "Executive readiness gate",
+      decisionTitle: "Is regulatory readiness blocking value?",
+      eegEvidenceLabel: "Readiness status",
+      pageDescription:
+        "Summarize whether German regulatory assumptions, tariff exposure, and market eligibility create a major blocker for management decisions.",
+      pageEyebrow: "Executive compliance view",
+      pageTitle: "Regulatory readiness",
+      storageEvidenceLabel: "Readiness classification",
+      whyItMatters:
+        "It gives management a high-level blocked-or-clear view of legal and market eligibility risks.",
+    },
+    asset_owner: {
+      ancillaryEvidenceLabel: "owner revenue option(s) eligible",
+      blockedNextAction: "Resolve regulatory blockers before presenting the asset as owner-ready for automated trading.",
+      bridgeTitle: "Owner readiness bridge",
+      clearNextAction: "Use this clearance to support owner reporting and market-route confidence.",
+      decisionEyebrow: "Owner readiness gate",
+      decisionTitle: "Can the owner rely on this asset's market eligibility?",
+      eegEvidenceLabel: "Owner compliance status",
+      pageDescription:
+        "Explain whether German regulatory evidence supports owner value, market participation, and safe automation claims.",
+      pageEyebrow: "Owner compliance view",
+      pageTitle: "Owner regulatory readiness",
+      storageEvidenceLabel: "Owner asset classification",
+      whyItMatters:
+        "It prevents owner-facing revenue claims from relying on incomplete EEG, grid-fee, or eligibility evidence.",
+    },
+    client_success: {
+      ancillaryEvidenceLabel: "client-explainable market option(s) eligible",
+      blockedNextAction: "Explain the open regulatory blocker before sharing automation or revenue claims with the client.",
+      bridgeTitle: "Client explanation bridge",
+      clearNextAction: "Use this clearance in the client report and next-action narrative.",
+      decisionEyebrow: "Client readiness gate",
+      decisionTitle: "Can this regulatory story be explained to the client?",
+      eegEvidenceLabel: "Client-facing compliance status",
+      pageDescription:
+        "Turn German regulatory checks into a clear client explanation of what is ready, what is blocked, and what must happen next.",
+      pageEyebrow: "Client compliance explanation",
+      pageTitle: "Client regulatory evidence",
+      storageEvidenceLabel: "Client-facing classification",
+      whyItMatters:
+        "It gives client success a defensible explanation of regulatory readiness, blockers, and next actions.",
+    },
+  };
+
+  return personaFraming[personaId] ?? defaultFraming;
 }
 
 function formatList(value: unknown) {

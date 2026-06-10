@@ -9,10 +9,12 @@ import { DataTable } from "@/components/data-table";
 import { DecisionBrief } from "@/components/decision-brief";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
+import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
 import { apiGet } from "@/lib/api";
 import { formatCurrency, formatNumber } from "@/lib/format";
+import type { PersonaId } from "@/lib/personas";
 import type {
   ClientConfigResponse,
   CredentialReadinessItem,
@@ -32,6 +34,7 @@ import type {
 
 export default function SettingsPage() {
   const { selectedAsset, selectedAssetId } = useAssetContext();
+  const { personaId } = usePersona();
 
   const config = useQuery({
     queryFn: () => apiGet<ClientConfigResponse>("/client/config"),
@@ -89,13 +92,14 @@ export default function SettingsPage() {
   const missingCredentials = credentials.data?.credentials?.filter((item) => item.status !== "configured") ?? [];
   const handshakeBlockers = handshakes.data?.targets?.filter((item) => !["dry_run_ready", "real_ready"].includes(String(item.handshake_status))) ?? [];
   const automationMode = selectedAsset?.auto_trading_enabled ? "Enabled" : "Disabled";
+  const framing = getSettingsPersonaFraming(personaId);
 
   return (
     <>
       <PageHeading
-        description="Configuration is shown read-only until role-based permissions, approval workflow, and audit logging are added. These sections translate backend config into product-level operating assumptions."
-        eyebrow="Configuration"
-        title="Settings"
+        description={framing.description}
+        eyebrow={framing.eyebrow}
+        title={framing.title}
       />
 
       <DecisionBrief
@@ -121,7 +125,7 @@ export default function SettingsPage() {
           `${credentialSummary.credential_ready_route_count ?? 0} route(s) have required credentials configured.`,
           `${handshakeSummary.handshake_ready_count ?? 0}/${handshakeSummary.handshake_target_count ?? 0} live adapter handshake target(s) are dry-run ready.`,
         ]}
-        eyebrow="Configuration automation gate"
+        eyebrow={framing.decisionEyebrow}
         nextAction={
           missingEvidence.length
             ? "Complete missing configuration evidence before raising automation mode."
@@ -129,9 +133,9 @@ export default function SettingsPage() {
               ? "Complete credential onboarding before supervised live trading."
               : handshakeBlockers.length
                 ? "Enable dry-run handshakes for market, EMS, data, and settlement adapters before supervised live trading."
-            : "Use these assumptions as the asset-level configuration source for automated trading."
+                : framing.clearNextAction
         }
-        title="Can this asset be automated from config?"
+        title={framing.decisionTitle}
         tone={missingEvidence.length || missingCredentials.length || handshakeBlockers.length ? "amber" : "emerald"}
       />
 
@@ -181,7 +185,7 @@ export default function SettingsPage() {
               {credentials.data?.credential_readiness_status ?? "-"}
             </StatusPill>
           }
-          title="Credential onboarding"
+          title={framing.credentialTitle}
         >
           <DataTable
             columns={[
@@ -197,7 +201,7 @@ export default function SettingsPage() {
           />
         </SectionCard>
 
-        <SectionCard title="Route credential blockers">
+        <SectionCard title={framing.routeCredentialTitle}>
           <DataTable
             columns={[
               "adapter_id",
@@ -227,7 +231,7 @@ export default function SettingsPage() {
               </StatusPill>
             </div>
           }
-          title="Live adapter handshake"
+          title={framing.handshakeTitle}
         >
           <DataTable
             columns={[
@@ -245,7 +249,7 @@ export default function SettingsPage() {
           />
         </SectionCard>
 
-        <SectionCard title="Route handshake blockers">
+        <SectionCard title={framing.routeHandshakeTitle}>
           <div className="space-y-4">
             <DataTable
               columns={[
@@ -280,7 +284,7 @@ export default function SettingsPage() {
           </StatusPill>
         }
         className="mb-5"
-        title="Guided live environment activation"
+        title={framing.envActivationTitle}
       >
         <div className="mb-4 grid gap-3 md:grid-cols-3">
           <KpiCard
@@ -371,7 +375,7 @@ export default function SettingsPage() {
           </StatusPill>
         }
         className="mb-5"
-        title="Live handshake environment detail"
+        title={framing.envDetailTitle}
       >
         <DataTable
           columns={[
@@ -391,7 +395,7 @@ export default function SettingsPage() {
       </SectionCard>
 
       <div className="mb-5 grid gap-5 xl:grid-cols-2">
-        <SectionCard title="Client and market profile">
+        <SectionCard title={framing.profileTitle}>
           <DataTable
             columns={["field", "value"]}
             rows={[
@@ -408,7 +412,7 @@ export default function SettingsPage() {
           />
         </SectionCard>
 
-        <SectionCard title="Asset technical limits">
+        <SectionCard title={framing.technicalLimitsTitle}>
           <DataTable
             columns={["field", "value"]}
             rows={[
@@ -425,7 +429,7 @@ export default function SettingsPage() {
       </div>
 
       <div className="mb-5 grid gap-5 xl:grid-cols-2">
-        <SectionCard title="Dispatch strategy">
+        <SectionCard title={framing.strategyTitle}>
           <DataTable
             columns={["field", "value"]}
             rows={[
@@ -439,7 +443,7 @@ export default function SettingsPage() {
           />
         </SectionCard>
 
-        <SectionCard title="Commercial assumptions">
+        <SectionCard title={framing.commercialTitle}>
           <DataTable
             columns={["field", "value"]}
             rows={[
@@ -456,7 +460,7 @@ export default function SettingsPage() {
       </div>
 
       <div className="mb-5 grid gap-5 xl:grid-cols-2">
-        <SectionCard title="Germany regulatory assumptions">
+        <SectionCard title={framing.regulatoryTitle}>
           <DataTable
             columns={["field", "value"]}
             rows={[
@@ -471,7 +475,7 @@ export default function SettingsPage() {
           />
         </SectionCard>
 
-        <SectionCard title="Revenue certainty assumptions">
+        <SectionCard title={framing.revenueCertaintyTitle}>
           <DataTable
             columns={["field", "value"]}
             rows={[
@@ -485,9 +489,71 @@ export default function SettingsPage() {
         </SectionCard>
       </div>
 
-      <DataCompletenessPanel data={completeness.data} title="Configuration evidence readiness" />
+      <DataCompletenessPanel data={completeness.data} title={framing.evidenceTitle} />
     </>
   );
+}
+
+function getSettingsPersonaFraming(personaId: PersonaId) {
+  const defaults = {
+    clearNextAction: "Use these assumptions as the asset-level configuration source for automated trading.",
+    commercialTitle: "Commercial assumptions",
+    credentialTitle: "Credential onboarding",
+    decisionEyebrow: "Configuration automation gate",
+    decisionTitle: "Can this asset be automated from config?",
+    description: "Configuration is shown read-only until role-based permissions, approval workflow, and audit logging are added. These sections translate backend config into product-level operating assumptions.",
+    envActivationTitle: "Guided live environment activation",
+    envDetailTitle: "Live handshake environment detail",
+    evidenceTitle: "Configuration evidence readiness",
+    eyebrow: "Configuration",
+    handshakeTitle: "Live adapter handshake",
+    profileTitle: "Client and market profile",
+    regulatoryTitle: "Germany regulatory assumptions",
+    revenueCertaintyTitle: "Revenue certainty assumptions",
+    routeCredentialTitle: "Route credential blockers",
+    routeHandshakeTitle: "Route handshake blockers",
+    strategyTitle: "Dispatch strategy",
+    technicalLimitsTitle: "Asset technical limits",
+    title: "Settings",
+  };
+
+  const framing: Partial<Record<PersonaId, typeof defaults>> = {
+    automation_operator: {
+      ...defaults,
+      clearNextAction: "Use this configuration as the operator source of truth before increasing automation mode.",
+      decisionEyebrow: "Operator configuration gate",
+      decisionTitle: "Is configuration ready for automation escalation?",
+      description: "Review the asset assumptions, credentials, live adapter drills, and evidence gaps that decide whether automation can safely move beyond paper mode.",
+      envActivationTitle: "Operator environment activation",
+      envDetailTitle: "Operator handshake checklist",
+      handshakeTitle: "Operator live adapter drill",
+      title: "Automation Configuration",
+    },
+    market_operations: {
+      ...defaults,
+      clearNextAction: "Use this route and credential setup as the source of truth for market access operations.",
+      credentialTitle: "Market access credentials",
+      decisionEyebrow: "Market operations configuration gate",
+      decisionTitle: "Are route credentials and handshakes ready?",
+      description: "Check exchange, TSO, EMS, data, and settlement setup so every configured route has the credentials and dry-run proof required for production operations.",
+      routeCredentialTitle: "Market route credential blockers",
+      routeHandshakeTitle: "Market route handshake blockers",
+      title: "Market Operations Settings",
+    },
+    risk_compliance: {
+      ...defaults,
+      clearNextAction: "Use this configuration evidence as the governance baseline for automation approvals.",
+      commercialTitle: "Commercial assumption controls",
+      decisionEyebrow: "Configuration governance gate",
+      decisionTitle: "Are the assumptions defensible for approval?",
+      description: "Review credentials, audit-relevant settings, technical limits, commercial assumptions, and regulatory configuration before approving live automation.",
+      evidenceTitle: "Governance evidence readiness",
+      regulatoryTitle: "Regulatory assumption controls",
+      title: "Configuration Governance",
+    },
+  };
+
+  return framing[personaId] ?? defaults;
 }
 
 function objectValue(value: unknown): JsonObject {

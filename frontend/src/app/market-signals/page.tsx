@@ -9,10 +9,12 @@ import { DataTable } from "@/components/data-table";
 import { DecisionBrief, type DecisionBriefTone } from "@/components/decision-brief";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
+import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
 import { apiGet } from "@/lib/api";
 import { formatCurrency, formatDateTime, formatNumber } from "@/lib/format";
+import type { PersonaId } from "@/lib/personas";
 import type {
   AutomationGuardrailsResponse,
   AutomationControlStatusResponse,
@@ -26,8 +28,25 @@ import type {
   TableRow,
 } from "@/types/api";
 
+type MarketSignalsPersonaFraming = {
+  automationControlsTitle: string;
+  blockersTitle: string;
+  bridgeTitle: string;
+  decisionEyebrow: string;
+  decisionTitle: string;
+  description: string;
+  dispatchTitle: string;
+  eyebrow: string;
+  nextStepTitle: string;
+  orderDecisionTitle: string;
+  routeTitle: string;
+  title: string;
+};
+
 export default function MarketSignalsPage() {
   const { selectedAssetId } = useAssetContext();
+  const { personaId } = usePersona();
+  const framing = getMarketSignalsPersonaFraming(personaId);
 
   const signal = useQuery({
     queryFn: () =>
@@ -144,9 +163,9 @@ export default function MarketSignalsPage() {
   return (
     <>
       <PageHeading
-        description="Convert forecast, price, readiness, market allocation, and guardrail evidence into the next executable trading step: proposal, paper trade, supervised live candidate, or hold."
-        eyebrow="Market intelligence"
-        title="Signal-to-order readiness"
+        description={framing.description}
+        eyebrow={framing.eyebrow}
+        title={framing.title}
       />
 
       <div className="mb-6">
@@ -165,10 +184,10 @@ export default function MarketSignalsPage() {
           blockers={decisionBrief.blockers}
           decision={decisionBrief.decision}
           evidence={decisionBrief.evidence}
-          eyebrow="Signal-to-trade decision"
+          eyebrow={framing.decisionEyebrow}
           nextAction={decisionBrief.nextAction}
           tone={decisionBrief.tone}
-          title="Can automation trade this signal?"
+          title={framing.decisionTitle}
         />
       </div>
 
@@ -206,7 +225,7 @@ export default function MarketSignalsPage() {
           </StatusPill>
         }
         className="mb-6"
-        title="Signal evidence chain"
+        title={framing.bridgeTitle}
       >
         <DataTable
           columns={["capability", "backend_route", "status", "business_value"]}
@@ -217,7 +236,7 @@ export default function MarketSignalsPage() {
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
         <SectionCard
           action={<StatusPill tone={automationTone(automationMode)}>{automationMode}</StatusPill>}
-          title="Signal-to-order decision"
+          title={framing.orderDecisionTitle}
         >
           <div className="grid gap-3 md:grid-cols-2">
             <AutomationDecisionRow
@@ -264,7 +283,7 @@ export default function MarketSignalsPage() {
           </div>
         </SectionCard>
 
-        <SectionCard title="Next automated workflow step">
+        <SectionCard title={framing.nextStepTitle}>
           <div className="space-y-3">
             <AutomationStepLink
               href="/forecasts"
@@ -298,7 +317,7 @@ export default function MarketSignalsPage() {
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
         <SectionCard
           action={<StatusPill tone={blockers.length ? "amber" : "emerald"}>{blockers.length}</StatusPill>}
-          title="Automation blockers"
+          title={framing.blockersTitle}
         >
           <div className="mb-4 grid gap-3 md:grid-cols-3">
             <AutomationDecisionRow label="Readiness" tone={blockerSummary.readiness ? "amber" : "emerald"} value={blockerSummary.readiness} />
@@ -310,7 +329,7 @@ export default function MarketSignalsPage() {
 
         <SectionCard
           action={<StatusPill tone="blue">{activeRows.length} active</StatusPill>}
-          title="Dispatch signal evidence"
+          title={framing.dispatchTitle}
         >
           <DataTable
             columns={[
@@ -328,7 +347,7 @@ export default function MarketSignalsPage() {
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
-        <SectionCard title="Market route candidates">
+        <SectionCard title={framing.routeTitle}>
           <DataTable
             columns={[
               "adapter_id",
@@ -344,7 +363,7 @@ export default function MarketSignalsPage() {
           />
         </SectionCard>
 
-        <SectionCard title="Automation controls">
+        <SectionCard title={framing.automationControlsTitle}>
           <div className="grid gap-3">
             <ActionButton
               endpoint={`/assets/${selectedAssetId}/signal/run-latest`}
@@ -367,6 +386,91 @@ export default function MarketSignalsPage() {
       </div>
     </>
   );
+}
+
+function getMarketSignalsPersonaFraming(
+  personaId: PersonaId,
+): MarketSignalsPersonaFraming {
+  const defaults: MarketSignalsPersonaFraming = {
+    automationControlsTitle: "Automation controls",
+    blockersTitle: "Automation blockers",
+    bridgeTitle: "Signal evidence chain",
+    decisionEyebrow: "Signal-to-trade decision",
+    decisionTitle: "Can automation trade this signal?",
+    description:
+      "Convert forecast, price, readiness, market allocation, and guardrail evidence into the next executable trading step: proposal, paper trade, supervised live candidate, or hold.",
+    dispatchTitle: "Dispatch signal evidence",
+    eyebrow: "Market intelligence",
+    nextStepTitle: "Next automated workflow step",
+    orderDecisionTitle: "Signal-to-order decision",
+    routeTitle: "Market route candidates",
+    title: "Signal-to-order readiness",
+  };
+
+  const frames: Partial<Record<PersonaId, MarketSignalsPersonaFraming>> = {
+    trading_desk: {
+      automationControlsTitle: "Desk action controls",
+      blockersTitle: "Desk execution blockers",
+      bridgeTitle: "Signal-to-desk evidence chain",
+      decisionEyebrow: "Desk signal decision",
+      decisionTitle: "Can the desk act on this signal?",
+      description:
+        "Turn forecast, price, market allocation, and risk evidence into the next desk action: build proposal, paper trade, supervised candidate, or hold.",
+      dispatchTitle: "Desk dispatch signal evidence",
+      eyebrow: "Trading desk",
+      nextStepTitle: "Next desk workflow step",
+      orderDecisionTitle: "Signal-to-bid decision",
+      routeTitle: "Tradable route candidates",
+      title: "Desk signal readiness",
+    },
+    automation_operator: {
+      automationControlsTitle: "Operator automation controls",
+      blockersTitle: "Automation escalation blockers",
+      bridgeTitle: "Signal-to-automation evidence chain",
+      decisionEyebrow: "Automation escalation decision",
+      decisionTitle: "Can this signal move through automation safely?",
+      description:
+        "Combine signal, confidence, readiness, guardrails, policy freshness, and market route evidence into the safe next automation action.",
+      dispatchTitle: "Automation signal evidence",
+      eyebrow: "Internal automation OS",
+      nextStepTitle: "Next automation control step",
+      orderDecisionTitle: "Signal-to-automation decision",
+      routeTitle: "Automation route candidates",
+      title: "Automation signal control",
+    },
+    forecast_quant: {
+      automationControlsTitle: "Signal validation controls",
+      blockersTitle: "Model-to-signal blockers",
+      bridgeTitle: "Forecast-to-signal evidence chain",
+      decisionEyebrow: "Model signal decision",
+      decisionTitle: "Does model evidence support this signal?",
+      description:
+        "Trace the signal back to forecast confidence, active dispatch intervals, provider metadata, allocation, and guardrail outcomes before model output influences execution.",
+      dispatchTitle: "Model dispatch signal evidence",
+      eyebrow: "Model quality OS",
+      nextStepTitle: "Next model validation step",
+      orderDecisionTitle: "Forecast-to-signal decision",
+      routeTitle: "Modelled market route candidates",
+      title: "Model signal trust",
+    },
+    revenue_analyst: {
+      automationControlsTitle: "Commercial signal controls",
+      blockersTitle: "Revenue signal blockers",
+      bridgeTitle: "Signal-to-revenue evidence chain",
+      decisionEyebrow: "Commercial signal decision",
+      decisionTitle: "Does this signal support the revenue case?",
+      description:
+        "Connect signal actionability, expected PnL, route selection, confidence, and blockers to revenue assurance, dispatch economics, and reporting evidence.",
+      dispatchTitle: "Revenue signal evidence",
+      eyebrow: "Commercial analytics OS",
+      nextStepTitle: "Next commercial workflow step",
+      orderDecisionTitle: "Signal-to-revenue decision",
+      routeTitle: "Revenue route candidates",
+      title: "Revenue signal readiness",
+    },
+  };
+
+  return frames[personaId] ?? defaults;
 }
 
 function classifyAutomationMode({

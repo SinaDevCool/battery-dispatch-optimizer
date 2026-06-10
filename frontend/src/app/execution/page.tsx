@@ -22,6 +22,7 @@ import {
 } from "@/components/execution/trading-automation-pipeline";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
+import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
 import { WorkspaceTabs } from "@/components/workspace-tabs";
@@ -118,6 +119,7 @@ export default function ExecutionPage({
   title?: string;
 } = {}) {
   const { selectedAsset, selectedAssetId } = useAssetContext();
+  const { persona, personaId } = usePersona();
   const [activeTab, setActiveTab] = useState<ExecutionTabId>(initialTab);
 
   const latestProposal = useQuery({
@@ -493,6 +495,7 @@ export default function ExecutionPage({
       varianceDrivers.length,
     ],
   );
+  const proposalFraming = getProposalPersonaFraming(personaId);
 
   const refetchExecution = () =>
     Promise.all([
@@ -694,6 +697,7 @@ export default function ExecutionPage({
             hardBlockers={hardBlockers}
             marketAdapterStatus={marketAdapterStatus.data}
             paperTrade={paperTrade}
+            personaId={personaId}
             proposal={proposal}
             readiness={readiness.data}
             refetchExecution={refetchExecution}
@@ -780,23 +784,23 @@ export default function ExecutionPage({
               `Package ${String(summary.package_validation_status ?? bidPackage?.validation?.status ?? "not built")}.`,
               `Paper mode ${control?.paper_trading_allowed ? "allowed" : "gated"}.`,
             ]}
-            eyebrow="Bid proposal decision"
+            eyebrow={proposalFraming.decisionEyebrow}
             nextAction={
               proposal
-                ? nextAutomationAction.message ?? "Validate the package with paper trading before live submission."
-                : "Build a pre-trade proposal from the selected market route."
+                ? nextAutomationAction.message ?? proposalFraming.nextActionBuilt
+                : proposalFraming.nextActionMissing
             }
-            title="Can the automated bid package advance?"
+            title={proposalFraming.decisionTitle}
             tone={automationBlockers.length || hardBlockers.length ? "amber" : proposal ? "emerald" : "blue"}
           />
           <TradingAutomationPipeline
             currentStageId="proposal"
             stages={pipelineStages}
-            title="Order package automation pipeline"
+            title={proposalFraming.pipelineTitle}
           />
           <SectionCard
             action={<StatusPill tone={bidPackageTone(bidPackage?.package_status)}>{bidPackage?.package_status ?? "not built"}</StatusPill>}
-            title="Market-native bid package"
+            title={proposalFraming.packageTitle}
           >
             <div className="mb-4 grid gap-3 md:grid-cols-4">
               <KpiCard
@@ -838,7 +842,7 @@ export default function ExecutionPage({
                 variant="primary"
               />
             }
-            title="Backend proposed market bids"
+            title={proposalFraming.ordersTitle}
           >
             <DataTable
               columns={[
@@ -867,7 +871,7 @@ export default function ExecutionPage({
             />
           </SectionCard>
 
-          <SectionCard title="Position limits">
+          <SectionCard title={proposalFraming.limitsTitle}>
             <DataTable
               columns={["limit", "value", "status"]}
               rows={[
@@ -900,7 +904,7 @@ export default function ExecutionPage({
               ]}
             />
           </SectionCard>
-          <SectionCard title="Proposal history">
+          <SectionCard title={proposalFraming.historyTitle}>
             <DataTable
               columns={[
                 "execution_proposal_id",
@@ -930,6 +934,7 @@ export default function ExecutionPage({
             guardrailSummary={guardrailSummary}
             guardrails={guardrails}
             hardBlockers={hardBlockers}
+            personaId={personaId}
             refetchExecution={refetchExecution}
             recoveryPlan={recovery}
             remediationItems={remediationQueue}
@@ -944,6 +949,7 @@ export default function ExecutionPage({
           paperHistoryRows={formatPaperTradeHistory(paperTradeHistory.data?.paper_trades ?? [])}
           paperTrade={paperTrade}
           paperTradeRunCount={paperTradeHistory.data?.paper_trades?.length ?? 0}
+          personaId={personaId}
           refetchExecution={refetchExecution}
           selectedAssetId={selectedAssetId}
           submission={submission}
@@ -954,6 +960,7 @@ export default function ExecutionPage({
 
       {activeTab === "settlement" ? (
         <ExecutionSettlementPanel
+          personaId={personaId}
           refetchExecution={refetchExecution}
           selectedAssetId={selectedAssetId}
           settlementData={settlementData}
@@ -968,6 +975,8 @@ export default function ExecutionPage({
           auditRows={auditRows}
           automationEvents={eventRows}
           lifecycleRows={lifecycleRows}
+          personaId={personaId}
+          personaLayer={persona.layer}
           paperTrade={paperTrade}
           proposal={proposal}
           settlementData={settlementData}
@@ -979,6 +988,69 @@ export default function ExecutionPage({
       ) : null}
     </>
   );
+}
+
+function getProposalPersonaFraming(personaId: string) {
+  const defaults = {
+    decisionEyebrow: "Bid proposal decision",
+    decisionTitle: "Can the automated bid package advance?",
+    historyTitle: "Proposal history",
+    limitsTitle: "Position limits",
+    nextActionBuilt: "Validate the package with paper trading before live submission.",
+    nextActionMissing: "Build a pre-trade proposal from the selected market route.",
+    ordersTitle: "Backend proposed market bids",
+    packageTitle: "Market-native bid package",
+    pipelineTitle: "Order package automation pipeline",
+  };
+
+  const frames: Record<string, typeof defaults> = {
+    automation_operator: {
+      decisionEyebrow: "Automation proposal decision",
+      decisionTitle: "Can this proposal move to the next automation gate?",
+      historyTitle: "Automation proposal history",
+      limitsTitle: "Automation position limits",
+      nextActionBuilt: "Run paper validation or clear the next automation gate before escalation.",
+      nextActionMissing: "Build the order package from the selected route before automation can progress.",
+      ordersTitle: "Automation-ready proposed bids",
+      packageTitle: "Automation order package",
+      pipelineTitle: "Proposal-to-automation pipeline",
+    },
+    trading_desk: {
+      decisionEyebrow: "Desk proposal decision",
+      decisionTitle: "Can the desk use this bid package?",
+      historyTitle: "Desk proposal history",
+      limitsTitle: "Desk position limits",
+      nextActionBuilt: "Review order sizing, then run paper validation before supervised execution.",
+      nextActionMissing: "Build the bid package from the selected route and dispatch schedule.",
+      ordersTitle: "Desk proposed market bids",
+      packageTitle: "Desk bid package",
+      pipelineTitle: "Bid package desk pipeline",
+    },
+    risk_compliance: {
+      decisionEyebrow: "Governance proposal decision",
+      decisionTitle: "Is this bid package acceptable for risk review?",
+      historyTitle: "Proposal governance history",
+      limitsTitle: "Risk position limits",
+      nextActionBuilt: "Validate risk limits, human gate status, and paper evidence before approval.",
+      nextActionMissing: "Build the proposal before risk can review order limits and evidence.",
+      ordersTitle: "Governed proposed market bids",
+      packageTitle: "Governed bid package",
+      pipelineTitle: "Proposal governance pipeline",
+    },
+    market_operations: {
+      decisionEyebrow: "Market operations proposal decision",
+      decisionTitle: "Is this order package ready for the selected market route?",
+      historyTitle: "Route proposal history",
+      limitsTitle: "Route position limits",
+      nextActionBuilt: "Check adapter, gate closure, order style, and lifecycle status before validation.",
+      nextActionMissing: "Build the route-specific proposal after allocation selects a market adapter.",
+      ordersTitle: "Route-specific proposed bids",
+      packageTitle: "Market-route bid package",
+      pipelineTitle: "Route proposal pipeline",
+    },
+  };
+
+  return frames[personaId] ?? defaults;
 }
 
 function formatProposalHistory(rows: NonNullable<ExecutionProposalHistoryResponse["proposals"]>) {

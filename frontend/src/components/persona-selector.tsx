@@ -3,7 +3,7 @@
 import { Users } from "lucide-react";
 
 import { usePersona } from "@/components/persona-provider";
-import { personaProfiles, VISIBLE_PERSONA_IDS } from "@/lib/personas";
+import { PERSONA_GROUPS, personaProfiles } from "@/lib/personas";
 
 export function PersonaSelector() {
   const { personaId, setPersonaId } = usePersona();
@@ -17,10 +17,18 @@ export function PersonaSelector() {
         onChange={(event) => setPersonaId(event.target.value as typeof personaId)}
         value={personaId}
       >
-        {VISIBLE_PERSONA_IDS.map((id) => (
-          <option className="bg-slate-950 text-slate-100" key={id} value={id}>
-            {personaProfiles[id].label}
-          </option>
+        {PERSONA_GROUPS.map((group) => (
+          <optgroup
+            className="bg-slate-950 text-slate-400"
+            key={group.label}
+            label={group.label}
+          >
+            {group.ids.map((id) => (
+              <option className="bg-slate-950 text-slate-100" key={id} value={id}>
+                {personaProfiles[id].label}
+              </option>
+            ))}
+          </optgroup>
         ))}
       </select>
     </label>

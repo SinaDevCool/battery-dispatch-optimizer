@@ -10,10 +10,12 @@ import { DataTable } from "@/components/data-table";
 import { DecisionBrief, type DecisionBriefTone } from "@/components/decision-brief";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
+import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
 import { apiGet } from "@/lib/api";
 import { formatCurrency, formatNumber } from "@/lib/format";
+import type { PersonaId } from "@/lib/personas";
 import type {
   AutomationControlStatusResponse,
   MarketAdapterReadinessGateResponse,
@@ -24,8 +26,25 @@ import type {
   TableRow,
 } from "@/types/api";
 
+type AllocationPersonaFraming = {
+  blockedTitle: string;
+  candidatesTitle: string;
+  controlsTitle: string;
+  decisionEyebrow: string;
+  decisionTitle: string;
+  description: string;
+  eyebrow: string;
+  gateTitle: string;
+  linksTitle: string;
+  primaryLabel: string;
+  secondaryLabel: string;
+  title: string;
+};
+
 export default function ExecutionMarketAllocationPage() {
   const { selectedAssetId } = useAssetContext();
+  const { personaId } = usePersona();
+  const framing = getAllocationPersonaFraming(personaId);
 
   const allocation = useQuery({
     queryFn: () =>
@@ -92,9 +111,9 @@ export default function ExecutionMarketAllocationPage() {
   return (
     <>
       <PageHeading
-        description="Rank eligible EPEX and regelleistung routes, select primary and secondary execution paths, and feed the bid proposal engine with automation-ready market intent."
-        eyebrow="Automated trading"
-        title="Market allocation"
+        description={framing.description}
+        eyebrow={framing.eyebrow}
+        title={framing.title}
       />
 
       <div className="mb-6">
@@ -103,10 +122,10 @@ export default function ExecutionMarketAllocationPage() {
           blockers={decisionBrief.blockers}
           decision={decisionBrief.decision}
           evidence={decisionBrief.evidence}
-          eyebrow="Route allocation decision"
+          eyebrow={framing.decisionEyebrow}
           nextAction={decisionBrief.nextAction}
           tone={decisionBrief.tone}
-          title="Where should automation trade now?"
+          title={framing.decisionTitle}
         />
       </div>
 
@@ -144,14 +163,14 @@ export default function ExecutionMarketAllocationPage() {
       </div>
 
       <div className="grid gap-5 xl:grid-cols-2">
-        <RouteDecisionCard label="Primary route" route={primary} />
-        <RouteDecisionCard label="Secondary route" route={secondary} />
+        <RouteDecisionCard label={framing.primaryLabel} route={primary} />
+        <RouteDecisionCard label={framing.secondaryLabel} route={secondary} />
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
         <SectionCard
           action={<StatusPill tone={allocationTone(allocation.data?.allocation_status)}>{candidateRows.length}</StatusPill>}
-          title="Ranked candidate routes"
+          title={framing.candidatesTitle}
         >
           <DataTable
             columns={[
@@ -175,7 +194,7 @@ export default function ExecutionMarketAllocationPage() {
           />
         </SectionCard>
 
-        <SectionCard title="Strategy intent and control gates">
+        <SectionCard title={framing.controlsTitle}>
           <div className="space-y-3">
             <AllocationGateRow
               label="Strategy mode"
@@ -208,7 +227,7 @@ export default function ExecutionMarketAllocationPage() {
       <SectionCard
         action={<StatusPill tone={gateTone(readinessGate.data?.gate_status)}>{readinessGate.data?.gate_status ?? "-"}</StatusPill>}
         className="mt-5"
-        title="Market adapter readiness gate"
+        title={framing.gateTitle}
       >
         <DataTable
           columns={[
@@ -229,7 +248,7 @@ export default function ExecutionMarketAllocationPage() {
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
         <SectionCard
           action={<StatusPill tone={excludedRows.length ? "amber" : "emerald"}>{excludedRows.length}</StatusPill>}
-          title="Excluded or blocked routes"
+          title={framing.blockedTitle}
         >
           <DataTable
             columns={[
@@ -244,7 +263,7 @@ export default function ExecutionMarketAllocationPage() {
           />
         </SectionCard>
 
-        <SectionCard title="Allocation workflow links">
+        <SectionCard title={framing.linksTitle}>
           <div className="space-y-3">
             <WorkflowLink href="/market-signals" label="Market Signals" value={String(strategyIntent.data?.dispatch_bias ?? "signal")} />
             <WorkflowLink href="/market-rules" label="Market Rules" value={String(allocation.data?.summary?.readiness_status ?? "-")} />
@@ -256,6 +275,91 @@ export default function ExecutionMarketAllocationPage() {
       </div>
     </>
   );
+}
+
+function getAllocationPersonaFraming(
+  personaId: PersonaId,
+): AllocationPersonaFraming {
+  const defaults: AllocationPersonaFraming = {
+    blockedTitle: "Excluded or blocked routes",
+    candidatesTitle: "Ranked candidate routes",
+    controlsTitle: "Strategy intent and control gates",
+    decisionEyebrow: "Route allocation decision",
+    decisionTitle: "Where should automation trade now?",
+    description:
+      "Rank eligible EPEX and regelleistung routes, select primary and secondary execution paths, and feed the bid proposal engine with automation-ready market intent.",
+    eyebrow: "Automated trading",
+    gateTitle: "Market adapter readiness gate",
+    linksTitle: "Allocation workflow links",
+    primaryLabel: "Primary route",
+    secondaryLabel: "Secondary route",
+    title: "Market allocation",
+  };
+
+  const frames: Partial<Record<PersonaId, AllocationPersonaFraming>> = {
+    trading_desk: {
+      blockedTitle: "Desk-blocked routes",
+      candidatesTitle: "Desk-ranked route candidates",
+      controlsTitle: "Desk strategy intent and gates",
+      decisionEyebrow: "Desk route decision",
+      decisionTitle: "Which route should the desk use for the bid package?",
+      description:
+        "Rank tradable market routes for the desk, choose primary and fallback execution paths, and send the selected route into bid proposal generation.",
+      eyebrow: "Trading desk",
+      gateTitle: "Desk market readiness gate",
+      linksTitle: "Desk allocation workflow links",
+      primaryLabel: "Desk primary route",
+      secondaryLabel: "Desk fallback route",
+      title: "Desk market allocation",
+    },
+    revenue_analyst: {
+      blockedTitle: "Blocked route value",
+      candidatesTitle: "Commercial route ranking",
+      controlsTitle: "Commercial strategy intent and gates",
+      decisionEyebrow: "Revenue route decision",
+      decisionTitle: "Which route creates defensible commercial value?",
+      description:
+        "Compare market routes by expected revenue, eligibility, risk, and blocked upside so allocation economics can feed revenue assurance and reporting evidence.",
+      eyebrow: "Commercial analytics OS",
+      gateTitle: "Commercial market readiness gate",
+      linksTitle: "Commercial allocation workflow links",
+      primaryLabel: "Commercial primary route",
+      secondaryLabel: "Commercial fallback route",
+      title: "Revenue market allocation",
+    },
+    market_operations: {
+      blockedTitle: "Operationally blocked routes",
+      candidatesTitle: "Operational route candidates",
+      controlsTitle: "Route operations gates",
+      decisionEyebrow: "Market operations route decision",
+      decisionTitle: "Which route is operationally ready?",
+      description:
+        "Connect route allocation to adapter readiness, trading clock, connector status, missing controls, and operator next actions before submission readiness.",
+      eyebrow: "Market operations",
+      gateTitle: "Adapter readiness gate",
+      linksTitle: "Route operations workflow links",
+      primaryLabel: "Operational primary route",
+      secondaryLabel: "Operational fallback route",
+      title: "Route allocation operations",
+    },
+    risk_compliance: {
+      blockedTitle: "Governance-blocked routes",
+      candidatesTitle: "Governed route candidates",
+      controlsTitle: "Governance strategy and control gates",
+      decisionEyebrow: "Governance route decision",
+      decisionTitle: "Is the selected route allowed by policy and risk gates?",
+      description:
+        "Review route selection against automation policy, market gate readiness, excluded markets, approval needs, and settlement basis before bid proposal or escalation.",
+      eyebrow: "Risk & compliance",
+      gateTitle: "Governed market readiness gate",
+      linksTitle: "Governance allocation workflow links",
+      primaryLabel: "Governed primary route",
+      secondaryLabel: "Governed fallback route",
+      title: "Governed market allocation",
+    },
+  };
+
+  return frames[personaId] ?? defaults;
 }
 
 function AllocationAction({

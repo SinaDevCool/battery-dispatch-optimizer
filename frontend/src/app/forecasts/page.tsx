@@ -17,11 +17,13 @@ import {
 } from "@/components/forecasts/forecast-workbench-panels";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
+import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
 import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { apiGet } from "@/lib/api";
 import { formatCurrency, formatNumber } from "@/lib/format";
+import type { PersonaId } from "@/lib/personas";
 import type {
   ActualPriceStatusResponse,
   ForecastActualResponse,
@@ -64,9 +66,32 @@ const forecastTabs = [
 
 type ForecastTabId = (typeof forecastTabs)[number]["id"];
 
+type ForecastPersonaFraming = {
+  bridgeTitle: string;
+  decisionEyebrow: string;
+  decisionTitle: string;
+  description: string;
+  fallbackMessage: string;
+  eyebrow: string;
+  nextActionClear: string;
+  nextActionBlocked: string;
+  performanceDescription: string;
+  performanceTitle: string;
+  title: string;
+};
+
 export default function ForecastsPage() {
   const { selectedAssetId } = useAssetContext();
+  const { persona, personaId } = usePersona();
+  const framing = getForecastPersonaFraming(personaId);
   const [activeTab, setActiveTab] = useState<ForecastTabId>("market");
+  const visibleForecastTabs =
+    persona.layer === "client"
+      ? forecastTabs.filter((tab) => tab.id !== "data" && tab.id !== "controls")
+      : forecastTabs;
+  const effectiveActiveTab = visibleForecastTabs.some((tab) => tab.id === activeTab)
+    ? activeTab
+    : "market";
 
   useEffect(() => {
     const syncTabFromHash = () => {
@@ -175,16 +200,14 @@ export default function ForecastsPage() {
     statusStatus: status.data?.status,
   });
   const pageHeading =
-    activeTab === "performance"
+    effectiveActiveTab === "performance"
       ? {
-          description:
-            "Review forecast-vs-actual backtests, model error, realized revenue leakage, and proof gaps before a forecast model is trusted for automated bid sizing.",
-          title: "Model performance",
+          description: framing.performanceDescription,
+          title: framing.performanceTitle,
         }
       : {
-          description:
-            "Decide whether a forecast source is reliable enough to drive automated bid sizing. The page links source quality, actual-price backtests, revenue leakage, and fallback risk before a signal can move toward live trading.",
-          title: "Forecast trust",
+          description: framing.description,
+          title: framing.title,
         };
 
   const refetchForecasts = () =>
@@ -202,13 +225,13 @@ export default function ForecastsPage() {
     <>
       <PageHeading
         description={pageHeading.description}
-        eyebrow="Forecast intelligence"
+        eyebrow={framing.eyebrow}
         title={pageHeading.title}
       />
 
       {currentSignalUsesFallback ? (
         <div className="mb-6">
-          <ErrorState message="Latest signal used a local saved forecast fallback. Treat the dispatch recommendation as advisory until live or validated forecast data is available." />
+          <ErrorState message={framing.fallbackMessage} />
         </div>
       ) : null}
 
@@ -238,13 +261,13 @@ export default function ForecastsPage() {
             ? `${formatCurrency(recommendedProvider.total_pnl_eur)} modelled PnL from recommended source.`
             : "Provider ranking needs a comparison run.",
         ]}
-        eyebrow="Forecast decision"
+        eyebrow={framing.decisionEyebrow}
         nextAction={
           forecastBlockers.length
-            ? "Keep trading in advisory or supervised mode until forecast evidence is current."
-            : "Use this source as the trading confidence input for strategy intent and bid sizing."
+            ? framing.nextActionBlocked
+            : framing.nextActionClear
         }
-        title="Forecast-to-trade decision"
+        title={framing.decisionTitle}
         tone={
           forecastBlockers.length
             ? "amber"
@@ -300,7 +323,7 @@ export default function ForecastsPage() {
           </StatusPill>
         }
         className="mb-6"
-        title="Forecast trust bridge"
+        title={framing.bridgeTitle}
       >
         <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <DataTable
@@ -335,7 +358,7 @@ export default function ForecastsPage() {
       </SectionCard>
 
       <WorkspaceTabs
-        activeTab={activeTab}
+        activeTab={effectiveActiveTab}
         onTabChange={(tab) => {
           setActiveTab(tab);
           window.history.replaceState(
@@ -345,10 +368,10 @@ export default function ForecastsPage() {
           );
           window.dispatchEvent(new Event("locationchange"));
         }}
-        tabs={forecastTabs}
+        tabs={visibleForecastTabs}
       />
 
-      {activeTab === "market" ? (
+      {effectiveActiveTab === "market" ? (
         <ForecastMarketPanel
           actualPrices={actualPrices.data}
           currentProvider={currentProvider}
@@ -358,14 +381,14 @@ export default function ForecastsPage() {
         />
       ) : null}
 
-      {activeTab === "performance" ? (
+      {effectiveActiveTab === "performance" ? (
         <ForecastPerformancePanel
           latestPerformance={latestPerformance}
           performanceRows={performanceRows}
         />
       ) : null}
 
-      {activeTab === "confidence" ? (
+      {effectiveActiveTab === "confidence" ? (
         <ForecastConfidencePanel
           currentSignalUsesFallback={currentSignalUsesFallback}
           latestPerformance={latestPerformance}
@@ -374,14 +397,14 @@ export default function ForecastsPage() {
         />
       ) : null}
 
-      {activeTab === "data" ? (
+      {effectiveActiveTab === "data" ? (
         <ForecastDataQualityPanel
           preview={preview.data}
           status={status.data}
         />
       ) : null}
 
-      {activeTab === "controls" ? (
+      {effectiveActiveTab === "controls" ? (
         <ForecastRunControlsPanel
           refetchForecasts={refetchForecasts}
           selectedAssetId={selectedAssetId}
@@ -389,6 +412,122 @@ export default function ForecastsPage() {
       ) : null}
     </>
   );
+}
+
+function getForecastPersonaFraming(personaId: PersonaId): ForecastPersonaFraming {
+  const defaults: ForecastPersonaFraming = {
+    bridgeTitle: "Forecast trust bridge",
+    decisionEyebrow: "Forecast decision",
+    decisionTitle: "Forecast-to-trade decision",
+    description:
+      "Decide whether a forecast source is reliable enough to drive automated bid sizing. The page links source quality, actual-price backtests, revenue leakage, and fallback risk before a signal can move toward live trading.",
+    fallbackMessage:
+      "Latest signal used a local saved forecast fallback. Treat the dispatch recommendation as advisory until live or validated forecast data is available.",
+    eyebrow: "Forecast intelligence",
+    nextActionBlocked:
+      "Keep trading in advisory or supervised mode until forecast evidence is current.",
+    nextActionClear:
+      "Use this source as the trading confidence input for strategy intent and bid sizing.",
+    performanceDescription:
+      "Review forecast-vs-actual backtests, model error, realized revenue leakage, and proof gaps before a forecast model is trusted for automated bid sizing.",
+    performanceTitle: "Model performance",
+    title: "Forecast trust",
+  };
+
+  const frames: Partial<Record<PersonaId, ForecastPersonaFraming>> = {
+    project_developer: {
+      bridgeTitle: "Forecast-to-development bridge",
+      decisionEyebrow: "Development forecast decision",
+      decisionTitle: "Are forecast assumptions credible enough for scenarios?",
+      description:
+        "Show whether forecast evidence is strong enough to support development scenarios, market eligibility assumptions, and pre-COD commercial planning.",
+      fallbackMessage:
+        "The latest signal used a saved forecast fallback. Treat scenario and development assumptions as provisional until validated forecast evidence exists.",
+      eyebrow: "Development readiness",
+      nextActionBlocked:
+        "Keep development scenarios provisional until forecast evidence and actual-price proof are refreshed.",
+      nextActionClear:
+        "Use this forecast as a credible input for development scenarios and revenue assumptions.",
+      performanceDescription:
+        "Review forecast error and revenue impact so development assumptions do not rely on an untested market view.",
+      performanceTitle: "Development forecast proof",
+      title: "Forecast assumptions",
+    },
+    trading_desk: {
+      bridgeTitle: "Forecast-to-desk bridge",
+      decisionEyebrow: "Desk forecast decision",
+      decisionTitle: "Can the desk trade from this forecast?",
+      description:
+        "Decide whether the current forecast source is reliable enough for bid sizing, supervised execution, and intraday trading decisions.",
+      fallbackMessage:
+        "Latest signal used a saved forecast fallback. Keep desk action advisory or paper-only until live or validated forecast data is available.",
+      eyebrow: "Trading desk",
+      nextActionBlocked:
+        "Keep bids advisory or supervised until forecast proof, actual prices, and source quality are current.",
+      nextActionClear:
+        "Use this forecast source as the desk input for bid sizing and strategy intent.",
+      performanceDescription:
+        "Review forecast error, revenue leakage, and provider ranking before using the model for desk execution.",
+      performanceTitle: "Desk forecast performance",
+      title: "Tradable forecast trust",
+    },
+    forecast_quant: {
+      bridgeTitle: "Model quality bridge",
+      decisionEyebrow: "Model quality decision",
+      decisionTitle: "Is this forecast model good enough for automation?",
+      description:
+        "Evaluate source quality, provider ranking, forecast-vs-actual performance, revenue leakage, and raw data health before model output drives automation.",
+      fallbackMessage:
+        "Latest signal used a saved forecast fallback. Diagnose provider freshness and data health before treating the model as production evidence.",
+      eyebrow: "Model quality OS",
+      nextActionBlocked:
+        "Refresh validation, actual-price evidence, or provider comparison before model output influences automation limits.",
+      nextActionClear:
+        "Use this source as the validated model input for signal generation and automation evidence.",
+      performanceDescription:
+        "Review forecast-vs-actual backtests, model error, revenue leakage, provider ranking, and proof gaps.",
+      performanceTitle: "Model validation evidence",
+      title: "Forecast model trust",
+    },
+    revenue_analyst: {
+      bridgeTitle: "Forecast-to-revenue bridge",
+      decisionEyebrow: "Revenue forecast decision",
+      decisionTitle: "Does forecast error change the revenue case?",
+      description:
+        "Connect forecast quality, provider choice, backtest proof, and revenue leakage to revenue assurance, hedging, and scenario assumptions.",
+      fallbackMessage:
+        "Latest signal used a saved forecast fallback. Treat revenue assumptions as provisional until forecast evidence is current.",
+      eyebrow: "Commercial analytics OS",
+      nextActionBlocked:
+        "Hold revenue, hedge, or allocation assumptions until forecast performance and actual-price evidence are refreshed.",
+      nextActionClear:
+        "Use this forecast evidence to support revenue assurance, hedging, and scenario analysis.",
+      performanceDescription:
+        "Review model error and revenue leakage so commercial assumptions reflect actual forecast risk.",
+      performanceTitle: "Revenue forecast proof",
+      title: "Forecast-backed revenue trust",
+    },
+    executive: {
+      bridgeTitle: "Forecast confidence bridge",
+      decisionEyebrow: "Executive confidence decision",
+      decisionTitle: "Does forecast risk affect commercial confidence?",
+      description:
+        "Summarize whether forecast quality, source reliability, backtest proof, and revenue leakage create a material risk to the commercial story.",
+      fallbackMessage:
+        "Latest signal used a saved forecast fallback. Treat portfolio signal confidence as limited until validated forecast evidence exists.",
+      eyebrow: "Executive view",
+      nextActionBlocked:
+        "Keep the commercial story qualified until forecast evidence is current and revenue impact is understood.",
+      nextActionClear:
+        "Use this forecast confidence summary to support portfolio and revenue decisions.",
+      performanceDescription:
+        "Review forecast error and revenue impact at management level before trusting model-driven value.",
+      performanceTitle: "Forecast confidence evidence",
+      title: "Forecast confidence",
+    },
+  };
+
+  return frames[personaId] ?? defaults;
 }
 
 function buildForecastQualityScore(status?: ForecastStatusResponse) {

@@ -17,10 +17,12 @@ import {
 } from "@/components/intelligence/decision-intelligence-panels";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
+import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
 import { apiGet } from "@/lib/api";
 import { formatCurrency, formatDateTime, formatNumber } from "@/lib/format";
+import type { PersonaId } from "@/lib/personas";
 import type {
   BusinessDecision,
   BusinessDecisionHistoryResponse,
@@ -32,8 +34,23 @@ import type {
   WorkflowRunResponse,
 } from "@/types/api";
 
+type DecisionEvidencePersonaFraming = {
+  briefEyebrow: string;
+  briefTitle: string;
+  description: string;
+  emptyMessage: string;
+  eyebrow: string;
+  gapTitle: string;
+  readyLabel: string;
+  scorecardTitle: string;
+  title: string;
+  workflowActionLabel?: string;
+};
+
 export default function DecisionIntelligencePage() {
   const { selectedAssetId } = useAssetContext();
+  const { personaId } = usePersona();
+  const framing = getDecisionEvidencePersonaFraming(personaId);
 
   const latestWorkflow = useQuery({
     queryFn: () =>
@@ -142,23 +159,25 @@ export default function DecisionIntelligencePage() {
   return (
     <>
       <PageHeading
-        description="Prove whether a trading recommendation is client-defensible by linking forecast, dispatch, revenue, product eligibility, and audit evidence."
-        eyebrow="Decision intelligence"
-        title="Decision evidence"
+        description={framing.description}
+        eyebrow={framing.eyebrow}
+        title={framing.title}
       />
 
-      <div className="mb-6 flex flex-wrap gap-3">
-        <ActionButton
-          endpoint={`/assets/${selectedAssetId}/workflow-runs/run`}
-          label="Run audited workflow"
-          refetch={refetchIntelligence}
-          variant="primary"
-        />
-      </div>
+      {framing.workflowActionLabel ? (
+        <div className="mb-6 flex flex-wrap gap-3">
+          <ActionButton
+            endpoint={`/assets/${selectedAssetId}/workflow-runs/run`}
+            label={framing.workflowActionLabel}
+            refetch={refetchIntelligence}
+            variant="primary"
+          />
+        </div>
+      ) : null}
 
       {latestWorkflow.data?.status === "not_found" ? (
         <div className="mb-6">
-          <ErrorState message="No audited workflow exists yet. Run the audited workflow to connect forecast, dispatch, revenue, and business decision evidence." />
+          <ErrorState message={framing.emptyMessage} />
         </div>
       ) : null}
 
@@ -167,16 +186,16 @@ export default function DecisionIntelligencePage() {
         className="mb-6"
         decision={evidenceDecision.decision}
         evidence={evidenceDecision.evidence}
-        eyebrow="Audit evidence decision"
+        eyebrow={framing.briefEyebrow}
         nextAction={evidenceDecision.nextAction}
-        title="Can this recommendation be trusted?"
+        title={framing.briefTitle}
         tone={evidenceDecision.tone}
       />
 
       <SectionCard
-        action={<StatusPill tone={evidenceDecision.tone}>{evidenceDecision.tone === "emerald" ? "Client-ready" : "Needs evidence"}</StatusPill>}
+        action={<StatusPill tone={evidenceDecision.tone}>{evidenceDecision.tone === "emerald" ? framing.readyLabel : "Needs evidence"}</StatusPill>}
         className="mb-6"
-        title="Client defensibility scorecard"
+        title={framing.scorecardTitle}
       >
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <KpiCard
@@ -217,7 +236,7 @@ export default function DecisionIntelligencePage() {
       <SectionCard
         action={<StatusPill tone={evidenceGapRows.length ? "amber" : "emerald"}>{evidenceGapRows.length} gap(s)</StatusPill>}
         className="mb-6"
-        title="Evidence gaps to close"
+        title={framing.gapTitle}
       >
         <DataTable
           columns={[
@@ -261,6 +280,85 @@ export default function DecisionIntelligencePage() {
       </div>
     </>
   );
+}
+
+function getDecisionEvidencePersonaFraming(
+  personaId: PersonaId,
+): DecisionEvidencePersonaFraming {
+  const defaults: DecisionEvidencePersonaFraming = {
+    briefEyebrow: "Audit evidence decision",
+    briefTitle: "Can this recommendation be trusted?",
+    description:
+      "Prove whether a trading recommendation is client-defensible by linking forecast, dispatch, revenue, product eligibility, and audit evidence.",
+    emptyMessage:
+      "No audited workflow exists yet. Run the audited workflow to connect forecast, dispatch, revenue, and business decision evidence.",
+    eyebrow: "Decision intelligence",
+    gapTitle: "Evidence gaps to close",
+    readyLabel: "Client-ready",
+    scorecardTitle: "Client defensibility scorecard",
+    title: "Decision evidence",
+    workflowActionLabel: "Run audited workflow",
+  };
+
+  const frames: Partial<Record<PersonaId, DecisionEvidencePersonaFraming>> = {
+    client_success: {
+      briefEyebrow: "Client explanation decision",
+      briefTitle: "Can client success explain this recommendation?",
+      description:
+        "Turn optimizer, forecast, revenue, eligibility, and audit records into a client-ready explanation with open gaps and next actions made explicit.",
+      emptyMessage:
+        "No client evidence chain exists yet. Ask the internal team to refresh the audited workflow before using this in a client conversation.",
+      eyebrow: "Client delivery",
+      gapTitle: "Client explanation gaps",
+      readyLabel: "Explainable",
+      scorecardTitle: "Client explanation scorecard",
+      title: "Decision explanation",
+      workflowActionLabel: "Refresh client evidence",
+    },
+    executive: {
+      briefEyebrow: "Executive trust decision",
+      briefTitle: "Is this recommendation board-defensible?",
+      description:
+        "Summarize whether the commercial recommendation is supported by enough forecast, dispatch, revenue, eligibility, and audit evidence for management review.",
+      emptyMessage:
+        "No audited decision chain is available yet. The recommendation should not be used for executive review until the evidence chain exists.",
+      eyebrow: "Executive view",
+      gapTitle: "Board-readiness gaps",
+      readyLabel: "Board-ready",
+      scorecardTitle: "Executive evidence scorecard",
+      title: "Executive decision evidence",
+    },
+    risk_compliance: {
+      briefEyebrow: "Governance evidence decision",
+      briefTitle: "Can risk approve the decision trail?",
+      description:
+        "Validate that the recommendation has a governed evidence chain across forecast, dispatch, revenue, product eligibility, workflow audit, and decision history.",
+      emptyMessage:
+        "No governed workflow exists yet. Run the audited workflow before approving or escalating the recommendation.",
+      eyebrow: "Risk & compliance",
+      gapTitle: "Governance gaps to close",
+      readyLabel: "Governed",
+      scorecardTitle: "Governance evidence scorecard",
+      title: "Decision governance evidence",
+      workflowActionLabel: "Run governed workflow",
+    },
+    forecast_quant: {
+      briefEyebrow: "Model evidence decision",
+      briefTitle: "Does the model evidence support the recommendation?",
+      description:
+        "Trace the recommendation back to forecast quality, signal reliability, optimizer evidence, revenue impact, and product eligibility so model issues are visible before execution.",
+      emptyMessage:
+        "No model-linked workflow exists yet. Run the audited workflow and forecast backtest to connect model evidence to the commercial decision.",
+      eyebrow: "Model quality OS",
+      gapTitle: "Model evidence gaps",
+      readyLabel: "Model-backed",
+      scorecardTitle: "Model evidence scorecard",
+      title: "Model-backed decision evidence",
+      workflowActionLabel: "Run model evidence workflow",
+    },
+  };
+
+  return frames[personaId] ?? defaults;
 }
 
 function buildWorkflowAuditRows(rows: TableRow[]) {

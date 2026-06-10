@@ -9,14 +9,33 @@ import { DataTable } from "@/components/data-table";
 import { DecisionBrief } from "@/components/decision-brief";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
+import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
 import { apiGet } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
+import type { PersonaId } from "@/lib/personas";
 import type { JsonObject, TableRow, TradingOrchestratorResponse } from "@/types/api";
+
+type OrchestratorPersonaFraming = {
+  auditTitle: string;
+  blockersTitle: string;
+  bridgeTitle: string;
+  decisionEyebrow: string;
+  decisionTitle: string;
+  description: string;
+  evidenceTitle: string;
+  eyebrow: string;
+  linksTitle: string;
+  runTitle: string;
+  title: string;
+  workflowTitle: string;
+};
 
 export default function TradingOrchestratorPage() {
   const { selectedAsset, selectedAssetId } = useAssetContext();
+  const { personaId } = usePersona();
+  const framing = getOrchestratorPersonaFraming(personaId);
 
   const orchestrator = useQuery({
     queryFn: () =>
@@ -39,9 +58,9 @@ export default function TradingOrchestratorPage() {
   return (
     <>
       <PageHeading
-        description="Coordinate the automated trading workflow from market signal through proposal, policy, market allocation, paper validation, approval, and supervised submission readiness."
-        eyebrow="Trading operations"
-        title="Trading orchestrator"
+        description={framing.description}
+        eyebrow={framing.eyebrow}
+        title={framing.title}
       />
 
       <DecisionBrief
@@ -61,12 +80,12 @@ export default function TradingOrchestratorPage() {
           `Target market: ${nextAction?.target_market ?? evidence.primary_market ?? "-"}.`,
           `${workflow.length} workflow step(s) tracked across signal, proposal, policy, paper, approval, and submission.`,
         ]}
-        eyebrow="Orchestration decision"
+        eyebrow={framing.decisionEyebrow}
         nextAction={
           nextAction?.message ??
           "Run the orchestrator to progress the next automated trading step."
         }
-        title="What should automation do next?"
+        title={framing.decisionTitle}
         tone={blockerRows.length ? "amber" : stageTone(data?.orchestrator_status)}
       />
 
@@ -97,7 +116,7 @@ export default function TradingOrchestratorPage() {
         />
       </div>
 
-      <SectionCard className="mb-5" title="Orchestrator-to-execution bridge">
+      <SectionCard className="mb-5" title={framing.bridgeTitle}>
         <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <DataTable
             columns={["decision_input", "value"]}
@@ -138,7 +157,7 @@ export default function TradingOrchestratorPage() {
               variant="primary"
             />
           }
-          title="Automation decision"
+          title={framing.runTitle}
         >
           <div className="grid gap-3 md:grid-cols-2">
             <DecisionRow
@@ -167,7 +186,7 @@ export default function TradingOrchestratorPage() {
           </div>
         </SectionCard>
 
-        <SectionCard title="Workflow links">
+        <SectionCard title={framing.linksTitle}>
           <div className="space-y-3">
             <WorkflowLink href="/market-signals" label="Market Signals" value={String(evidence.signal ?? "-")} />
             <WorkflowLink href="/execution/automation-policies" label="Automation Policies" value={String(evidence.policy_decision ?? "-")} />
@@ -182,7 +201,7 @@ export default function TradingOrchestratorPage() {
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(420px,0.8fr)]">
         <SectionCard
           action={<StatusPill tone={stageTone(data?.orchestrator_status)}>{data?.orchestrator_status ?? "-"}</StatusPill>}
-          title="Workflow state"
+          title={framing.workflowTitle}
         >
           <DataTable
             columns={["step", "label", "status", "message"]}
@@ -192,7 +211,7 @@ export default function TradingOrchestratorPage() {
 
         <SectionCard
           action={<StatusPill tone={blockers.length ? "amber" : "emerald"}>{blockers.length}</StatusPill>}
-          title="Blockers and review items"
+          title={framing.blockersTitle}
         >
           <DataTable
             columns={["source", "status", "blocker"]}
@@ -202,14 +221,14 @@ export default function TradingOrchestratorPage() {
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
-        <SectionCard title="Execution evidence">
+        <SectionCard title={framing.evidenceTitle}>
           <DataTable
             columns={["metric", "value"]}
             rows={formatEvidence(evidence).slice(0, 12)}
           />
         </SectionCard>
 
-        <SectionCard title="Orchestrator audit">
+        <SectionCard title={framing.auditTitle}>
           <DataTable
             columns={["event", "actor", "status", "note"]}
             rows={(data?.audit ?? []).slice(0, 8)}
@@ -229,6 +248,91 @@ export default function TradingOrchestratorPage() {
       ) : null}
     </>
   );
+}
+
+function getOrchestratorPersonaFraming(
+  personaId: PersonaId,
+): OrchestratorPersonaFraming {
+  const defaults: OrchestratorPersonaFraming = {
+    auditTitle: "Orchestrator audit",
+    blockersTitle: "Blockers and review items",
+    bridgeTitle: "Orchestrator-to-execution bridge",
+    decisionEyebrow: "Orchestration decision",
+    decisionTitle: "What should automation do next?",
+    description:
+      "Coordinate the automated trading workflow from market signal through proposal, policy, market allocation, paper validation, approval, and supervised submission readiness.",
+    evidenceTitle: "Execution evidence",
+    eyebrow: "Trading operations",
+    linksTitle: "Workflow links",
+    runTitle: "Automation decision",
+    title: "Trading orchestrator",
+    workflowTitle: "Workflow state",
+  };
+
+  const frames: Partial<Record<PersonaId, OrchestratorPersonaFraming>> = {
+    automation_operator: {
+      auditTitle: "Automation run audit",
+      blockersTitle: "Operator blockers and review items",
+      bridgeTitle: "Automation runbook bridge",
+      decisionEyebrow: "Operator orchestration decision",
+      decisionTitle: "Which automation step should run next?",
+      description:
+        "Operate the end-to-end automation runbook from signal to proposal, route, policy, paper validation, approval, and supervised submission readiness.",
+      evidenceTitle: "Automation run evidence",
+      eyebrow: "Internal automation OS",
+      linksTitle: "Operator workflow links",
+      runTitle: "Next automation run step",
+      title: "Automation orchestrator",
+      workflowTitle: "Automation workflow state",
+    },
+    trading_desk: {
+      auditTitle: "Desk handoff audit",
+      blockersTitle: "Desk blockers and review items",
+      bridgeTitle: "Signal-to-desk handoff bridge",
+      decisionEyebrow: "Desk orchestration decision",
+      decisionTitle: "What should the desk do next?",
+      description:
+        "Show the trading desk where the workflow sits between signal, proposal, paper validation, approval, and supervised execution handoff.",
+      evidenceTitle: "Desk execution evidence",
+      eyebrow: "Trading desk",
+      linksTitle: "Desk workflow links",
+      runTitle: "Desk handoff decision",
+      title: "Desk workflow orchestrator",
+      workflowTitle: "Desk workflow state",
+    },
+    risk_compliance: {
+      auditTitle: "Governance orchestration audit",
+      blockersTitle: "Governance blockers and review items",
+      bridgeTitle: "Orchestration-to-governance bridge",
+      decisionEyebrow: "Governance orchestration decision",
+      decisionTitle: "Is the workflow allowed to progress?",
+      description:
+        "Trace each automation step through proposal, policy, paper validation, approval, and submission readiness so governance can defend why the workflow progressed or stopped.",
+      evidenceTitle: "Governance execution evidence",
+      eyebrow: "Risk & compliance",
+      linksTitle: "Governance workflow links",
+      runTitle: "Governed next-step decision",
+      title: "Workflow governance orchestrator",
+      workflowTitle: "Governed workflow state",
+    },
+    market_operations: {
+      auditTitle: "Route operations audit",
+      blockersTitle: "Route blockers and review items",
+      bridgeTitle: "Orchestration-to-route bridge",
+      decisionEyebrow: "Market operations orchestration decision",
+      decisionTitle: "Which route or connector step blocks progress?",
+      description:
+        "Connect orchestration state to market route allocation, connector readiness, paper validation, and submission readiness so market operations can clear the right dependency.",
+      evidenceTitle: "Route execution evidence",
+      eyebrow: "Market operations",
+      linksTitle: "Route workflow links",
+      runTitle: "Route next-step decision",
+      title: "Market route orchestrator",
+      workflowTitle: "Route workflow state",
+    },
+  };
+
+  return frames[personaId] ?? defaults;
 }
 
 function DecisionRow({

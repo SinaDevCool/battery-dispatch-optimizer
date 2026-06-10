@@ -9,10 +9,12 @@ import { DataTable } from "@/components/data-table";
 import { DecisionBrief, type DecisionBriefTone } from "@/components/decision-brief";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
+import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
 import { apiGet } from "@/lib/api";
 import { formatDateTime, formatNumber } from "@/lib/format";
+import type { PersonaId } from "@/lib/personas";
 import type {
   MarketConnectorReadiness,
   MarketConnectorReadinessResponse,
@@ -29,6 +31,7 @@ import type {
 
 export default function MarketConnectorsPage() {
   const { selectedAssetId } = useAssetContext();
+  const { personaId } = usePersona();
 
   const connectors = useQuery({
     queryFn: () =>
@@ -80,13 +83,14 @@ export default function MarketConnectorsPage() {
     ...(data?.recommended_actions ?? []),
     ...(persistenceData?.recommended_actions ?? []),
   ];
+  const framing = getMarketConnectorPersonaFraming(personaId);
 
   return (
     <>
       <PageHeading
-        description="Track the live-automation integration path across forecasts, prices, EMS telemetry, EPEX wholesale markets, regelleistung ancillary services, and settlement evidence."
-        eyebrow="Automated trading"
-        title="Data & Connector Readiness"
+        description={framing.description}
+        eyebrow={framing.eyebrow}
+        title={framing.title}
       />
 
       <div className="mb-6">
@@ -110,12 +114,12 @@ export default function MarketConnectorsPage() {
             `${summary.credentials_required_count ?? 0} credential gap(s) and ${persistenceSummary.blocked ?? 0} persistence blocker(s).`,
             `Average readiness ${formatNumber(summary.average_readiness_score, 1)}/100.`,
           ]}
-          eyebrow="Market access decision"
+          eyebrow={framing.decisionEyebrow}
           nextAction={
             recommendedActions[0] ??
             "Connect price, telemetry, exchange, TSO, and settlement evidence before live automation."
           }
-          title="Can automation reach the market?"
+          title={framing.decisionTitle}
           tone={connectorDecisionTone(data, persistenceData)}
         />
       </div>
@@ -196,7 +200,7 @@ export default function MarketConnectorsPage() {
           </StatusPill>
         }
         className="mb-5"
-        title="Persistence readiness"
+        title={framing.persistenceTitle}
       >
         <div className="mb-4 grid gap-3 md:grid-cols-4">
           <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-4">
@@ -245,7 +249,7 @@ export default function MarketConnectorsPage() {
           </StatusPill>
         }
         className="mt-5"
-        title="Official API compliance"
+        title={framing.officialApiTitle}
       >
         <div className="mb-4 grid gap-3 md:grid-cols-3">
           <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-4">
@@ -305,7 +309,7 @@ export default function MarketConnectorsPage() {
           </StatusPill>
         }
         className="mt-5"
-        title="Official evidence vault"
+        title={framing.officialEvidenceTitle}
       >
         <div className="mb-4 grid gap-3 md:grid-cols-4">
           <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-4">
@@ -381,7 +385,7 @@ export default function MarketConnectorsPage() {
           </StatusPill>
         }
         className="mt-5"
-        title="Route automation certification"
+        title={framing.routeCertificationTitle}
       >
         <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {routeCertifications.slice(0, 6).map((route) => (
@@ -432,7 +436,7 @@ export default function MarketConnectorsPage() {
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.75fr)]">
         <SectionCard
           action={<StatusPill tone={statusTone(data?.connector_status)}>{data?.connector_status ?? "-"}</StatusPill>}
-          title="Live automation integration matrix"
+          title={framing.integrationMatrixTitle}
         >
           <DataTable
             columns={[
@@ -461,7 +465,7 @@ export default function MarketConnectorsPage() {
           />
         </SectionCard>
 
-        <SectionCard title="Trading workflow impact">
+        <SectionCard title={framing.workflowImpactTitle}>
           <div className="space-y-3">
             <WorkflowLink
               href="/forecasts"
@@ -504,7 +508,7 @@ export default function MarketConnectorsPage() {
           </StatusPill>
         }
         className="mt-5"
-        title="Connector contract coverage"
+        title={framing.contractTitle}
       >
         <DataTable
           columns={[
@@ -528,7 +532,7 @@ export default function MarketConnectorsPage() {
           </StatusPill>
         }
         className="mt-5"
-        title="Live connector sandbox certification"
+        title={framing.sandboxTitle}
       >
         <DataTable
           columns={[
@@ -552,7 +556,7 @@ export default function MarketConnectorsPage() {
           </StatusPill>
         }
         className="mt-5"
-        title="Supervised live readiness gate"
+        title={framing.supervisedGateTitle}
       >
         <DataTable
           columns={[
@@ -569,7 +573,7 @@ export default function MarketConnectorsPage() {
         />
       </SectionCard>
 
-      <SectionCard className="mt-5" title="Credential onboarding by route">
+      <SectionCard className="mt-5" title={framing.credentialTitle}>
         <DataTable
           columns={[
             "adapter_id",
@@ -598,7 +602,7 @@ export default function MarketConnectorsPage() {
           </div>
         }
         className="mt-5"
-        title="Live adapter handshake readiness"
+        title={framing.handshakeTitle}
       >
         <div className="space-y-4">
           <DataTable
@@ -749,14 +753,14 @@ export default function MarketConnectorsPage() {
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
-        <SectionCard title="Missing integration controls">
+        <SectionCard title={framing.missingControlsTitle}>
           <DataTable
             columns={["adapter_id", "family", "automation_blocking_level", "missing_credentials", "missing_controls"]}
             rows={formatMissingRows(rows).slice(0, 8)}
           />
         </SectionCard>
 
-        <SectionCard title="Recommended integration actions">
+        <SectionCard title={framing.recommendedActionsTitle}>
           <DataTable
             columns={["priority", "action"]}
             rows={recommendedActions.slice(0, 8).map((action, index) => ({
@@ -768,6 +772,75 @@ export default function MarketConnectorsPage() {
       </div>
     </>
   );
+}
+
+function getMarketConnectorPersonaFraming(personaId: PersonaId) {
+  const defaults = {
+    contractTitle: "Connector contract coverage",
+    credentialTitle: "Credential onboarding by route",
+    decisionEyebrow: "Market access decision",
+    decisionTitle: "Can automation reach the market?",
+    description: "Track the live-automation integration path across forecasts, prices, EMS telemetry, EPEX wholesale markets, regelleistung ancillary services, and settlement evidence.",
+    eyebrow: "Automated trading",
+    handshakeTitle: "Live adapter handshake readiness",
+    integrationMatrixTitle: "Live automation integration matrix",
+    missingControlsTitle: "Missing integration controls",
+    officialApiTitle: "Official API compliance",
+    officialEvidenceTitle: "Official evidence vault",
+    persistenceTitle: "Persistence readiness",
+    recommendedActionsTitle: "Recommended integration actions",
+    routeCertificationTitle: "Route automation certification",
+    sandboxTitle: "Live connector sandbox certification",
+    supervisedGateTitle: "Supervised live readiness gate",
+    title: "Data & Connector Readiness",
+    workflowImpactTitle: "Trading workflow impact",
+  };
+
+  const framing: Partial<Record<PersonaId, typeof defaults>> = {
+    automation_operator: {
+      ...defaults,
+      decisionEyebrow: "Operator market access decision",
+      decisionTitle: "Which live route can automation safely use?",
+      description: "Expose the operator route from signal input through EMS, exchange or TSO adapter, dry-run handshake, and fail-closed blocker evidence.",
+      handshakeTitle: "Operator live adapter handshakes",
+      missingControlsTitle: "Operator unblock queue",
+      recommendedActionsTitle: "Next operator unlocks",
+      title: "Automation Market Access",
+    },
+    market_operations: {
+      ...defaults,
+      decisionEyebrow: "Market operations decision",
+      decisionTitle: "Are the market routes production-ready?",
+      description: "Manage exchange, TSO, EMS, data, and settlement routes as production market access infrastructure with deadlines, credentials, contracts, and route certification.",
+      credentialTitle: "Market route credential onboarding",
+      integrationMatrixTitle: "Market route readiness matrix",
+      missingControlsTitle: "Market access blockers",
+      recommendedActionsTitle: "Market operations actions",
+      title: "Market Access & Data",
+    },
+    risk_compliance: {
+      ...defaults,
+      decisionEyebrow: "Access governance decision",
+      decisionTitle: "Can this route be approved for governed automation?",
+      description: "Review official API proof, access model, evidence vault, persistence, credential readiness, and fail-closed controls before automation escalation.",
+      officialApiTitle: "Official API governance",
+      officialEvidenceTitle: "Access evidence vault",
+      persistenceTitle: "Audit persistence readiness",
+      recommendedActionsTitle: "Governance remediation actions",
+      title: "Market Access Governance",
+    },
+    trading_desk: {
+      ...defaults,
+      decisionEyebrow: "Desk route decision",
+      decisionTitle: "Which market route is usable for the next order package?",
+      description: "Show the desk which exchange or ancillary route can carry a bid package, what lifecycle gate blocks it, and which next action clears submission.",
+      integrationMatrixTitle: "Tradable route matrix",
+      workflowImpactTitle: "Desk workflow impact",
+      title: "Tradable Market Routes",
+    },
+  };
+
+  return framing[personaId] ?? defaults;
 }
 
 function WorkflowLink({

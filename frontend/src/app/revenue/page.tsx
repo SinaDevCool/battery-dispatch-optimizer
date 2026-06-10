@@ -1,13 +1,14 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { useAssetContext } from "@/components/asset-provider";
 import { DecisionBrief } from "@/components/decision-brief";
 import { DataTable } from "@/components/data-table";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
+import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
 import {
@@ -20,6 +21,7 @@ import {
 import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { apiGet } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
+import type { PersonaId } from "@/lib/personas";
 import type {
   AncillaryEligibilityResponse,
   BusinessDecisionResponse,
@@ -62,9 +64,33 @@ const revenueTabs = [
 
 type RevenueTabId = (typeof revenueTabs)[number]["id"];
 
+type RevenuePersonaFraming = {
+  bridgeTitle: string;
+  decisionEyebrow: string;
+  decisionTitle: string;
+  description: string;
+  eyebrow: string;
+  nextActionClear: string;
+  nextActionBlocked: string;
+  readyLabel: string;
+  title: string;
+};
+
 export default function RevenuePage() {
   const { selectedAssetId } = useAssetContext();
+  const { persona, personaId } = usePersona();
+  const framing = getRevenuePersonaFraming(personaId);
   const [activeTab, setActiveTab] = useState<RevenueTabId>("stack");
+  const visibleRevenueTabs = useMemo(
+    () =>
+      persona.layer === "client"
+        ? revenueTabs.filter((tab) => tab.id !== "controls")
+        : revenueTabs,
+    [persona.layer],
+  );
+  const effectiveActiveTab = visibleRevenueTabs.some((tab) => tab.id === activeTab)
+    ? activeTab
+    : "economics";
 
   const stack = useQuery({
     queryFn: () =>
@@ -162,9 +188,9 @@ export default function RevenuePage() {
   return (
     <>
       <PageHeading
-        description="Decide which revenue streams are tradable, how capacity should be allocated, what constraints block value, and how the economics look to owners and investors."
-        eyebrow="Commercial optimizer"
-        title="Revenue stack"
+        description={framing.description}
+        eyebrow={framing.eyebrow}
+        title={framing.title}
       />
 
       <DecisionBrief
@@ -186,13 +212,13 @@ export default function RevenuePage() {
             ? `Decision status: ${businessDecision.data.decision.recommendation_status}.`
             : "Business decision evidence is pending.",
         ]}
-        eyebrow="Commercial decision"
+        eyebrow={framing.decisionEyebrow}
         nextAction={
           commercialBlockers.length
-            ? "Resolve product eligibility, allocation, or review blockers before promising automated revenue capture."
-            : "Use this revenue stack to guide market allocation and trading strategy intent."
+            ? framing.nextActionBlocked
+            : framing.nextActionClear
         }
-        title="Revenue-to-market decision"
+        title={framing.decisionTitle}
         tone={commercialBlockers.length ? "amber" : "emerald"}
       />
 
@@ -206,11 +232,11 @@ export default function RevenuePage() {
       <SectionCard
         action={
           <StatusPill tone={commercialBlockers.length ? "amber" : "emerald"}>
-            {commercialBlockers.length ? "Revenue not fully bankable" : "Bankable stack"}
+            {commercialBlockers.length ? "Revenue not fully bankable" : framing.readyLabel}
           </StatusPill>
         }
         className="mb-5"
-        title="Bankable revenue bridge"
+        title={framing.bridgeTitle}
       >
         <div className="mb-4 grid gap-4 md:grid-cols-3">
           <KpiCard
@@ -239,12 +265,12 @@ export default function RevenuePage() {
       </SectionCard>
 
       <WorkspaceTabs
-        activeTab={activeTab}
+        activeTab={effectiveActiveTab}
         onTabChange={setActiveTab}
-        tabs={revenueTabs}
+        tabs={visibleRevenueTabs}
       />
 
-      {activeTab === "stack" ? (
+      {effectiveActiveTab === "stack" ? (
         <RevenueStackPanel
           ancillary={ancillary.data}
           blockedRows={blockedRows}
@@ -254,7 +280,7 @@ export default function RevenuePage() {
         />
       ) : null}
 
-      {activeTab === "allocation" ? (
+      {effectiveActiveTab === "allocation" ? (
         <RevenueAllocationPanel
           allocationRows={allocationRows}
           metadata={metadata}
@@ -262,7 +288,7 @@ export default function RevenuePage() {
         />
       ) : null}
 
-      {activeTab === "constraints" ? (
+      {effectiveActiveTab === "constraints" ? (
         <RevenueConstraintsPanel
           ancillary={ancillary.data}
           blockedRows={blockedRows}
@@ -271,7 +297,7 @@ export default function RevenuePage() {
         />
       ) : null}
 
-      {activeTab === "economics" ? (
+      {effectiveActiveTab === "economics" ? (
         <RevenueEconomicsPanel
           allocationRows={allocationRows}
           ancillary={ancillary.data}
@@ -285,7 +311,7 @@ export default function RevenuePage() {
         />
       ) : null}
 
-      {activeTab === "controls" ? (
+      {effectiveActiveTab === "controls" ? (
         <RevenueRunControlsPanel
           refetchAllocation={() => allocation.refetch()}
           refetchStack={() => stack.refetch()}
@@ -294,6 +320,126 @@ export default function RevenuePage() {
       ) : null}
     </>
   );
+}
+
+function getRevenuePersonaFraming(personaId: PersonaId): RevenuePersonaFraming {
+  const defaults: RevenuePersonaFraming = {
+    bridgeTitle: "Bankable revenue bridge",
+    decisionEyebrow: "Commercial decision",
+    decisionTitle: "Revenue-to-market decision",
+    description:
+      "Decide which revenue streams are tradable, how capacity should be allocated, what constraints block value, and how the economics look to owners and investors.",
+    eyebrow: "Commercial optimizer",
+    nextActionBlocked:
+      "Resolve product eligibility, allocation, or review blockers before promising automated revenue capture.",
+    nextActionClear:
+      "Use this revenue stack to guide market allocation and trading strategy intent.",
+    readyLabel: "Bankable stack",
+    title: "Revenue stack",
+  };
+
+  const frames: Partial<Record<PersonaId, RevenuePersonaFraming>> = {
+    asset_owner: {
+      bridgeTitle: "Owner revenue assurance bridge",
+      decisionEyebrow: "Owner value decision",
+      decisionTitle: "How much revenue can the owner rely on?",
+      description:
+        "Show the owner which revenue streams are usable now, what value is blocked, and what evidence is needed before expected revenue can be treated as reliable.",
+      eyebrow: "Client evidence portal",
+      nextActionBlocked:
+        "Clear product, allocation, or review blockers before presenting the value as owner-ready.",
+      nextActionClear:
+        "Use this revenue view as the owner-facing basis for performance and trading intent.",
+      readyLabel: "Owner-ready",
+      title: "Owner revenue assurance",
+    },
+    investor_lender: {
+      bridgeTitle: "Bankable revenue bridge",
+      decisionEyebrow: "Investment revenue decision",
+      decisionTitle: "Is this revenue stack bankable enough for diligence?",
+      description:
+        "Separate defensible revenue from upside that still depends on eligibility, allocation evidence, hedge protection, or commercial review.",
+      eyebrow: "Bankability view",
+      nextActionBlocked:
+        "Close eligibility, allocation, and review gaps before using this revenue case in investment or lending review.",
+      nextActionClear:
+        "Use this revenue stack as bankability evidence alongside hedging, settlement, and audit proof.",
+      readyLabel: "Bankable stack",
+      title: "Bankable revenue assurance",
+    },
+    executive: {
+      bridgeTitle: "Portfolio value bridge",
+      decisionEyebrow: "Executive revenue decision",
+      decisionTitle: "Is revenue growth credible and action-ready?",
+      description:
+        "Summarize modelled revenue, blocked value, allocation proof, and commercial blockers so management can judge whether the asset is creating credible value.",
+      eyebrow: "Executive view",
+      nextActionBlocked:
+        "Resolve the top commercial blocker before escalating this value story to management or the board.",
+      nextActionClear:
+        "Use this revenue stack to support portfolio performance and strategic trading decisions.",
+      readyLabel: "Management-ready",
+      title: "Executive revenue assurance",
+    },
+    client_success: {
+      bridgeTitle: "Client revenue explanation bridge",
+      decisionEyebrow: "Client revenue explanation",
+      decisionTitle: "Can we explain the revenue story to the client?",
+      description:
+        "Translate revenue stack, blocked upside, allocation proof, and commercial review gaps into a clear client conversation and next-action story.",
+      eyebrow: "Client delivery",
+      nextActionBlocked:
+        "Explain the open revenue blockers and next actions before sending the client report.",
+      nextActionClear:
+        "Use this revenue story in the client report and settlement follow-up.",
+      readyLabel: "Client-explainable",
+      title: "Client revenue explanation",
+    },
+    project_developer: {
+      bridgeTitle: "Development revenue bridge",
+      decisionEyebrow: "Development revenue decision",
+      decisionTitle: "Which revenue assumptions can support the project case?",
+      description:
+        "Use revenue stack evidence to separate bankable pre-COD assumptions from market access, eligibility, and allocation gaps that still affect the development case.",
+      eyebrow: "Development readiness",
+      nextActionBlocked:
+        "Resolve market eligibility and allocation evidence before relying on the revenue case in development planning.",
+      nextActionClear:
+        "Use this revenue stack as commercial input for scenario planning and stakeholder materials.",
+      readyLabel: "Development-ready",
+      title: "Development revenue case",
+    },
+    revenue_analyst: {
+      bridgeTitle: "Commercial analytics bridge",
+      decisionEyebrow: "Revenue analytics decision",
+      decisionTitle: "Where is tradable value available or blocked?",
+      description:
+        "Quantify revenue by product, allocation route, automation fit, hedge context, and blocker so the commercial model can feed trading and client evidence.",
+      eyebrow: "Commercial analytics OS",
+      nextActionBlocked:
+        "Quantify blocked value and update product eligibility or allocation assumptions before forwarding the stack.",
+      nextActionClear:
+        "Feed eligible revenue streams into allocation, reporting, and owner/investor evidence.",
+      readyLabel: "Analysis-ready",
+      title: "Revenue analytics workbench",
+    },
+    forecast_quant: {
+      bridgeTitle: "Forecast-to-revenue bridge",
+      decisionEyebrow: "Model-to-revenue decision",
+      decisionTitle: "Does the model output create credible revenue?",
+      description:
+        "Connect forecast and signal assumptions to revenue outcomes, blocked products, allocation proof, and economics so model quality is tied to commercial value.",
+      eyebrow: "Model quality OS",
+      nextActionBlocked:
+        "Resolve forecast, eligibility, or allocation evidence gaps before treating the revenue output as model-backed.",
+      nextActionClear:
+        "Use this revenue stack to validate forecast and optimizer assumptions against commercial value.",
+      readyLabel: "Model-backed",
+      title: "Model-backed revenue evidence",
+    },
+  };
+
+  return frames[personaId] ?? defaults;
 }
 
 function normalizeRevenueRows(data?: RevenueStackResponse): TableRow[] {

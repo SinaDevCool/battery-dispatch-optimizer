@@ -7,13 +7,30 @@ import { DataTable } from "@/components/data-table";
 import { DecisionBrief } from "@/components/decision-brief";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
+import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { apiGet } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
+import type { PersonaId } from "@/lib/personas";
 import type { HedgeContract, HedgingRevenueResponse, TableRow } from "@/types/api";
+
+type HedgingPersonaFraming = {
+  bridgeTitle: string;
+  decisionEyebrow: string;
+  decisionTitle: string;
+  description: string;
+  eyebrow: string;
+  nextAction: string;
+  offerTitle: string;
+  optionsTitle: string;
+  title: string;
+  whyThisPageMatters: string;
+};
 
 export default function HedgingPage() {
   const { selectedAssetId } = useAssetContext();
+  const { personaId } = usePersona();
+  const framing = getHedgingPersonaFraming(personaId);
 
   const hedge = useQuery({
     queryFn: () =>
@@ -65,9 +82,9 @@ export default function HedgingPage() {
   return (
     <>
       <PageHeading
-        description="Convert volatile merchant battery revenue into bankable revenue profiles using floors, collars, revenue shares, and availability contracts."
-        eyebrow="Revenue certainty"
-        title="Hedging"
+        description={framing.description}
+        eyebrow={framing.eyebrow}
+        title={framing.title}
       />
 
       {hedge.error ? (
@@ -107,9 +124,9 @@ export default function HedgingPage() {
           `${formatCurrency(downsideProtection)} expected downside protection from the recommended structure.`,
           `${formatCurrency(residualExposure)} merchant revenue is given away under the current best option.`,
         ]}
-        eyebrow="Bankability decision"
-        nextAction="Use the recommended hedge as the owner-facing commercial offer, then keep merchant automation limits aligned with the availability and upside-sharing terms."
-        title="Hedge-to-owner offer"
+        eyebrow={framing.decisionEyebrow}
+        nextAction={framing.nextAction}
+        title={framing.decisionTitle}
         tone={contracts.length ? "emerald" : "amber"}
       />
 
@@ -120,7 +137,7 @@ export default function HedgingPage() {
         <KpiCard accent="amber" label="Merchant revenue given away" value={formatCurrency(residualExposure)} />
       </div>
 
-      <SectionCard className="mb-5" title="Hedge-to-bankability bridge">
+      <SectionCard className="mb-5" title={framing.bridgeTitle}>
         <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <DataTable
             columns={["decision_input", "value"]}
@@ -142,8 +159,7 @@ export default function HedgingPage() {
               },
               {
                 decision_input: "Why this page matters",
-                value:
-                  "It converts volatile merchant optimization value into an owner-facing revenue certainty offer.",
+                value: framing.whyThisPageMatters,
               },
             ]}
           />
@@ -165,11 +181,11 @@ export default function HedgingPage() {
       </SectionCard>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
-        <SectionCard title="Recommended owner offer">
+        <SectionCard title={framing.offerTitle}>
           <DataTable columns={["field", "value"]} rows={recommendedRows} />
         </SectionCard>
 
-        <SectionCard title="Hedge contract options">
+        <SectionCard title={framing.optionsTitle}>
           <DataTable
             columns={[
               "name",
@@ -185,6 +201,104 @@ export default function HedgingPage() {
       </div>
     </>
   );
+}
+
+function getHedgingPersonaFraming(personaId: PersonaId): HedgingPersonaFraming {
+  const defaults: HedgingPersonaFraming = {
+    bridgeTitle: "Hedge-to-bankability bridge",
+    decisionEyebrow: "Bankability decision",
+    decisionTitle: "Hedge-to-owner offer",
+    description:
+      "Convert volatile merchant battery revenue into bankable revenue profiles using floors, collars, revenue shares, and availability contracts.",
+    eyebrow: "Revenue certainty",
+    nextAction:
+      "Use the recommended hedge as the owner-facing commercial offer, then keep merchant automation limits aligned with the availability and upside-sharing terms.",
+    offerTitle: "Recommended owner offer",
+    optionsTitle: "Hedge contract options",
+    title: "Hedging",
+    whyThisPageMatters:
+      "It converts volatile merchant optimization value into an owner-facing revenue certainty offer.",
+  };
+
+  const frames: Partial<Record<PersonaId, HedgingPersonaFraming>> = {
+    asset_owner: {
+      bridgeTitle: "Owner downside-protection bridge",
+      decisionEyebrow: "Owner protection decision",
+      decisionTitle: "Which hedge gives the owner reliable revenue?",
+      description:
+        "Show how much owner revenue can be protected, how much upside remains, and what merchant value is exchanged for downside certainty.",
+      eyebrow: "Client evidence portal",
+      nextAction:
+        "Use the recommended hedge to explain protected revenue, retained upside, and automation constraints to the asset owner.",
+      offerTitle: "Recommended owner revenue protection",
+      optionsTitle: "Owner hedge options",
+      title: "Owner hedging assurance",
+      whyThisPageMatters:
+        "It turns volatile merchant revenue into an owner-ready protection story with explicit upside trade-offs.",
+    },
+    investor_lender: {
+      bridgeTitle: "Hedge-to-bankability bridge",
+      decisionEyebrow: "Financeability decision",
+      decisionTitle: "Does the hedge make revenue bankable?",
+      description:
+        "Compare floor, collar, revenue-share, and availability structures to judge whether revenue certainty is strong enough for investment or lending review.",
+      eyebrow: "Bankability view",
+      nextAction:
+        "Use the recommended hedge as bankability evidence, then verify settlement and audit proof before diligence delivery.",
+      offerTitle: "Recommended bankability structure",
+      optionsTitle: "Financeable hedge options",
+      title: "Bankability hedging",
+      whyThisPageMatters:
+        "It separates merchant upside from protected cash flow so investors and lenders can judge downside risk.",
+    },
+    project_developer: {
+      bridgeTitle: "Development financeability bridge",
+      decisionEyebrow: "Development hedge decision",
+      decisionTitle: "Which hedge supports the project case?",
+      description:
+        "Translate merchant revenue uncertainty into financeable pre-COD assumptions, downside protection, and availability obligations for the development plan.",
+      eyebrow: "Development readiness",
+      nextAction:
+        "Use the hedge case in scenario planning and confirm market eligibility before relying on it for project finance materials.",
+      offerTitle: "Recommended development hedge",
+      optionsTitle: "Development hedge structures",
+      title: "Development hedging case",
+      whyThisPageMatters:
+        "It shows whether the project can convert forecast merchant value into financeable revenue assumptions.",
+    },
+    client_success: {
+      bridgeTitle: "Client hedge explanation bridge",
+      decisionEyebrow: "Client explanation decision",
+      decisionTitle: "Can we explain the hedge trade-off to the client?",
+      description:
+        "Turn hedge economics into a client conversation: protected revenue, retained upside, revenue given away, and the operating obligations behind the offer.",
+      eyebrow: "Client delivery",
+      nextAction:
+        "Explain the recommended hedge in the client report together with revenue, settlement, and open evidence gaps.",
+      offerTitle: "Client-ready hedge explanation",
+      optionsTitle: "Client hedge comparison",
+      title: "Hedge explanation",
+      whyThisPageMatters:
+        "It gives client success a plain-language trade-off between certainty, upside, and operating obligations.",
+    },
+    revenue_analyst: {
+      bridgeTitle: "Hedge economics bridge",
+      decisionEyebrow: "Commercial structure decision",
+      decisionTitle: "Which hedge structure improves the revenue case?",
+      description:
+        "Compare hedge structures against merchant upside, downside protection, availability obligations, and revenue given away so the commercial model stays honest.",
+      eyebrow: "Commercial analytics OS",
+      nextAction:
+        "Feed the preferred hedge structure into revenue assurance, scenario analysis, and owner or investor evidence.",
+      offerTitle: "Recommended commercial structure",
+      optionsTitle: "Hedge structure comparison",
+      title: "Hedge economics",
+      whyThisPageMatters:
+        "It quantifies the trade between protected revenue and merchant value given away by each hedge structure.",
+    },
+  };
+
+  return frames[personaId] ?? defaults;
 }
 
 function formatContractRow(contract: HedgeContract): TableRow {

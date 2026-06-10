@@ -11,10 +11,12 @@ import { DecisionBrief } from "@/components/decision-brief";
 import { ErrorState } from "@/components/error-state";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
+import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
 import { apiGet } from "@/lib/api";
 import { formatCurrency, formatNumber } from "@/lib/format";
+import type { PersonaId } from "@/lib/personas";
 import type {
   ExecutionProposalResponse,
   ExecutionReadinessResponse,
@@ -22,8 +24,26 @@ import type {
   MultiMarketAllocationResponse,
 } from "@/types/api";
 
+type DispatchPersonaFraming = {
+  analyticsTitle: string;
+  bridgeTitle: string;
+  decisionEyebrow: string;
+  decisionTitle: string;
+  description: string;
+  eyebrow: string;
+  nextActionClear: string;
+  nextActionMissing: string;
+  runLabel: string;
+  scheduleTitle: string;
+  summaryTitle: string;
+  title: string;
+  whyThisPageMatters: string;
+};
+
 export default function DispatchPage() {
   const { selectedAssetId } = useAssetContext();
+  const { personaId } = usePersona();
+  const framing = getDispatchPersonaFraming(personaId);
 
   const signal = useQuery({
     queryFn: () =>
@@ -106,9 +126,9 @@ export default function DispatchPage() {
   return (
     <>
       <PageHeading
-        description="Convert the optimizer signal into charge, discharge, SOC, and PnL intervals that can become a bid proposal after forecast, market-route, and risk gates pass."
-        eyebrow="Optimization"
-        title="Dispatch-to-bid schedule"
+        description={framing.description}
+        eyebrow={framing.eyebrow}
+        title={framing.title}
       />
 
       {signal.error ? <ErrorState message="Could not load latest dispatch signal." /> : null}
@@ -116,7 +136,7 @@ export default function DispatchPage() {
       <div className="mb-6 flex flex-wrap gap-3">
         <ActionButton
           endpoint={`/assets/${selectedAssetId}/signal/run-latest`}
-          label="Generate latest signal"
+          label={framing.runLabel}
           refetch={refetchDispatchEvidence}
           variant="primary"
         />
@@ -141,9 +161,9 @@ export default function DispatchPage() {
           `${formatNumber(summary.charged_mwh, 2)} MWh charged and ${formatNumber(summary.discharged_mwh, 2)} MWh discharged.`,
           `${formatCurrency(summary.total_pnl_eur)} expected dispatch economics.`,
         ]}
-        eyebrow="Schedule intent"
-        nextAction="Use this schedule as physical evidence for proposal generation, then validate against forecast confidence and risk gates before automated submission."
-        title="Dispatch-to-bid decision"
+        eyebrow={framing.decisionEyebrow}
+        nextAction={dispatch.length ? framing.nextActionClear : framing.nextActionMissing}
+        title={framing.decisionTitle}
         tone={summary.signal === "ACTION" ? "emerald" : "amber"}
       />
 
@@ -165,7 +185,7 @@ export default function DispatchPage() {
           </StatusPill>
         }
         className="mb-5"
-        title="Dispatch-to-order bridge"
+        title={framing.bridgeTitle}
       >
         <div className="grid gap-5 xl:grid-cols-[minmax(0,0.85fr)_minmax(420px,1.15fr)]">
           <DataTable
@@ -187,7 +207,7 @@ export default function DispatchPage() {
               },
               {
                 decision_input: "Why this page matters",
-                value: "It turns optimizer economics into executable physical intervals.",
+                value: framing.whyThisPageMatters,
               },
             ]}
           />
@@ -219,11 +239,11 @@ export default function DispatchPage() {
       </SectionCard>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
-        <SectionCard title="Dispatch analytics">
+        <SectionCard title={framing.analyticsTitle}>
           {dispatch.length ? <DispatchChart rows={dispatch} /> : <ErrorState message="No dispatch rows found." />}
         </SectionCard>
 
-        <SectionCard title="Bid conversion summary">
+        <SectionCard title={framing.summaryTitle}>
           <DataTable
             columns={["field", "value"]}
             rows={[
@@ -238,7 +258,7 @@ export default function DispatchPage() {
       </div>
 
       <div className="mt-5">
-        <SectionCard title="Automation schedule windows">
+        <SectionCard title={framing.scheduleTitle}>
           <DataTable
             columns={[
               "timestamp",
@@ -255,6 +275,90 @@ export default function DispatchPage() {
       </div>
     </>
   );
+}
+
+function getDispatchPersonaFraming(personaId: PersonaId): DispatchPersonaFraming {
+  const defaults: DispatchPersonaFraming = {
+    analyticsTitle: "Dispatch analytics",
+    bridgeTitle: "Dispatch-to-order bridge",
+    decisionEyebrow: "Schedule intent",
+    decisionTitle: "Dispatch-to-bid decision",
+    description:
+      "Convert the optimizer signal into charge, discharge, SOC, and PnL intervals that can become a bid proposal after forecast, market-route, and risk gates pass.",
+    eyebrow: "Optimization",
+    nextActionClear:
+      "Use this schedule as physical evidence for proposal generation, then validate against forecast confidence and risk gates before automated submission.",
+    nextActionMissing:
+      "Generate a dispatch signal before creating any order package or commercial dispatch claim.",
+    runLabel: "Generate latest signal",
+    scheduleTitle: "Automation schedule windows",
+    summaryTitle: "Bid conversion summary",
+    title: "Dispatch-to-bid schedule",
+    whyThisPageMatters:
+      "It turns optimizer economics into executable physical intervals.",
+  };
+
+  const frames: Partial<Record<PersonaId, DispatchPersonaFraming>> = {
+    trading_desk: {
+      analyticsTitle: "Desk dispatch analytics",
+      bridgeTitle: "Dispatch-to-bid bridge",
+      decisionEyebrow: "Desk execution intent",
+      decisionTitle: "Can this schedule become a bid package?",
+      description:
+        "Convert the optimizer signal into charge and discharge windows the desk can use for proposal generation after forecast, market-route, and risk gates pass.",
+      eyebrow: "Trading desk",
+      nextActionClear:
+        "Build the bid proposal from active windows, then check market allocation and risk gates before supervised submission.",
+      nextActionMissing:
+        "Generate a dispatch signal before the desk builds or reviews any bid package.",
+      runLabel: "Generate desk signal",
+      scheduleTitle: "Desk order windows",
+      summaryTitle: "Bid package summary",
+      title: "Desk dispatch schedule",
+      whyThisPageMatters:
+        "It converts optimizer output into the physical buy, sell, or hold windows used by the trading desk.",
+    },
+    forecast_quant: {
+      analyticsTitle: "Optimizer behavior analytics",
+      bridgeTitle: "Forecast-to-dispatch bridge",
+      decisionEyebrow: "Model behavior intent",
+      decisionTitle: "Does the forecast produce a sensible dispatch plan?",
+      description:
+        "Inspect how forecast and optimizer assumptions translate into SOC movement, action windows, PnL, and active intervals before the model output is trusted.",
+      eyebrow: "Model quality OS",
+      nextActionClear:
+        "Use the schedule to validate optimizer behavior, then connect it to forecast performance and scenario stress evidence.",
+      nextActionMissing:
+        "Generate a signal so model behavior can be inspected against forecast and price assumptions.",
+      runLabel: "Generate model signal",
+      scheduleTitle: "Model action windows",
+      summaryTitle: "Optimizer behavior summary",
+      title: "Model dispatch evidence",
+      whyThisPageMatters:
+        "It shows whether forecast output becomes a physically plausible and commercially useful dispatch plan.",
+    },
+    revenue_analyst: {
+      analyticsTitle: "Commercial dispatch analytics",
+      bridgeTitle: "Dispatch-to-revenue bridge",
+      decisionEyebrow: "Commercial dispatch intent",
+      decisionTitle: "Does this dispatch plan support the revenue case?",
+      description:
+        "Translate charge, discharge, SOC, and expected PnL intervals into commercial evidence for revenue assurance, allocation, and client reporting.",
+      eyebrow: "Commercial analytics OS",
+      nextActionClear:
+        "Use this schedule to support revenue allocation, settlement assumptions, and owner or investor evidence.",
+      nextActionMissing:
+        "Generate a dispatch signal before using dispatch economics in revenue assurance or client reporting.",
+      runLabel: "Generate revenue signal",
+      scheduleTitle: "Revenue schedule windows",
+      summaryTitle: "Commercial dispatch summary",
+      title: "Revenue dispatch evidence",
+      whyThisPageMatters:
+        "It turns optimizer economics into time-based operating evidence that explains where revenue is expected to come from.",
+    },
+  };
+
+  return frames[personaId] ?? defaults;
 }
 
 function buildDispatchBackendConnectionRows({

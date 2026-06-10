@@ -9,11 +9,13 @@ import { DecisionBrief } from "@/components/decision-brief";
 import { ErrorState } from "@/components/error-state";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
+import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
 import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { apiGet } from "@/lib/api";
 import { formatCurrency, formatNumber } from "@/lib/format";
+import type { PersonaId } from "@/lib/personas";
 import type { ApiEnvelope, TableRow } from "@/types/api";
 
 type ScenarioResponse = ApiEnvelope<{
@@ -42,8 +44,31 @@ const scenarioTabs = [
 
 type ScenarioTabId = (typeof scenarioTabs)[number]["id"];
 
+type ScenarioPersonaFraming = {
+  bridgeTitle: string;
+  decisionEyebrow: string;
+  decisionTitle: string;
+  description: string;
+  emptyMessage: string;
+  eyebrow: string;
+  nextActionClear: string;
+  nextActionDownside: string;
+  sizingTitle: string;
+  stressTitle: string;
+  title: string;
+};
+
 export default function ScenariosPage() {
+  const { persona, personaId } = usePersona();
+  const framing = getScenarioPersonaFraming(personaId);
   const [activeTab, setActiveTab] = useState<ScenarioTabId>("asset-sizing");
+  const visibleScenarioTabs =
+    persona.layer === "client"
+      ? scenarioTabs.filter((tab) => tab.id !== "controls")
+      : scenarioTabs;
+  const effectiveActiveTab = visibleScenarioTabs.some((tab) => tab.id === activeTab)
+    ? activeTab
+    : "asset-sizing";
 
   const scenarios = useQuery({
     queryFn: () => apiGet<ScenarioResponse>("/scenarios/latest"),
@@ -96,14 +121,14 @@ export default function ScenariosPage() {
   return (
     <>
       <PageHeading
-        description="Convert optimizer outputs into bankable what-if evidence: asset sizing, downside survival, upside capture, and automation guardrails before committing capital or live strategy limits."
-        eyebrow="Commercial resilience"
-        title="Scenario resilience lab"
+        description={framing.description}
+        eyebrow={framing.eyebrow}
+        title={framing.title}
       />
 
       {scenarios.data?.status === "not_found" && stress.data?.status === "not_found" ? (
         <div className="mb-6">
-          <ErrorState message="No scenario evidence exists yet. Run scenario and price stress analysis from the controls tab after loading a forecast." />
+          <ErrorState message={framing.emptyMessage} />
         </div>
       ) : null}
 
@@ -128,13 +153,13 @@ export default function ScenariosPage() {
             : "No price stress case has been recorded.",
           `${formatNumber(bestScenario?.profit_per_mw_day, 2)} EUR/MW-day best sizing economics.`,
         ]}
-        eyebrow="Automation sizing decision"
+        eyebrow={framing.decisionEyebrow}
         nextAction={
           downsideAtRisk
-            ? "Keep automated trading constrained until the downside stress case is explained or guarded."
-            : "Use the leading sizing case as bankable evidence for automated strategy limits."
+            ? framing.nextActionDownside
+            : framing.nextActionClear
         }
-        title="Scenario-to-automation basis"
+        title={framing.decisionTitle}
         tone={downsideAtRisk || !scenarioRows.length || !stressRows.length ? "amber" : "emerald"}
       />
 
@@ -172,7 +197,7 @@ export default function ScenariosPage() {
           </StatusPill>
         }
         className="mb-6"
-        title="Scenario-to-business-value bridge"
+        title={framing.bridgeTitle}
       >
         <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.1fr)]">
           <DataTable
@@ -187,13 +212,13 @@ export default function ScenariosPage() {
       </SectionCard>
 
       <WorkspaceTabs
-        activeTab={activeTab}
+        activeTab={effectiveActiveTab}
         onTabChange={setActiveTab}
-        tabs={scenarioTabs}
+        tabs={visibleScenarioTabs}
       />
 
-      {activeTab === "asset-sizing" ? (
-        <SectionCard title="Battery sizing scenarios">
+      {effectiveActiveTab === "asset-sizing" ? (
+        <SectionCard title={framing.sizingTitle}>
           <DataTable
             columns={[
               "scenario_name",
@@ -213,8 +238,8 @@ export default function ScenariosPage() {
         </SectionCard>
       ) : null}
 
-      {activeTab === "price-stress" ? (
-        <SectionCard title="Price stress tests">
+      {effectiveActiveTab === "price-stress" ? (
+        <SectionCard title={framing.stressTitle}>
           <DataTable
             columns={[
               "scenario_name",
@@ -231,7 +256,7 @@ export default function ScenariosPage() {
         </SectionCard>
       ) : null}
 
-      {activeTab === "controls" ? (
+      {effectiveActiveTab === "controls" ? (
         <div className="grid gap-5 xl:grid-cols-2">
           <SectionCard title="Run backend analysis">
             <div className="grid gap-3 md:grid-cols-2">
@@ -270,6 +295,116 @@ export default function ScenariosPage() {
       ) : null}
     </>
   );
+}
+
+function getScenarioPersonaFraming(personaId: PersonaId): ScenarioPersonaFraming {
+  const defaults: ScenarioPersonaFraming = {
+    bridgeTitle: "Scenario-to-business-value bridge",
+    decisionEyebrow: "Automation sizing decision",
+    decisionTitle: "Scenario-to-automation basis",
+    description:
+      "Convert optimizer outputs into bankable what-if evidence: asset sizing, downside survival, upside capture, and automation guardrails before committing capital or live strategy limits.",
+    emptyMessage:
+      "No scenario evidence exists yet. Run scenario and price stress analysis from the controls tab after loading a forecast.",
+    eyebrow: "Commercial resilience",
+    nextActionClear:
+      "Use the leading sizing case as bankable evidence for automated strategy limits.",
+    nextActionDownside:
+      "Keep automated trading constrained until the downside stress case is explained or guarded.",
+    sizingTitle: "Battery sizing scenarios",
+    stressTitle: "Price stress tests",
+    title: "Scenario resilience lab",
+  };
+
+  const frames: Partial<Record<PersonaId, ScenarioPersonaFraming>> = {
+    project_developer: {
+      bridgeTitle: "Development scenario bridge",
+      decisionEyebrow: "Development readiness decision",
+      decisionTitle: "Which asset case supports the project plan?",
+      description:
+        "Compare asset sizes and downside price cases so pre-COD planning can separate bankable development assumptions from unresolved market and revenue risk.",
+      emptyMessage:
+        "No development scenario evidence exists yet. Ask the internal team to refresh sizing and price stress analysis after the forecast is available.",
+      eyebrow: "Development readiness",
+      nextActionClear:
+        "Use the leading sizing case in development planning, financing materials, and market eligibility follow-up.",
+      nextActionDownside:
+        "Explain the downside case before using this scenario set in project finance or stakeholder materials.",
+      sizingTitle: "Development sizing cases",
+      stressTitle: "Development downside cases",
+      title: "Development scenario lab",
+    },
+    investor_lender: {
+      bridgeTitle: "Investment resilience bridge",
+      decisionEyebrow: "Bankability stress decision",
+      decisionTitle: "Does the asset survive downside cases?",
+      description:
+        "Show whether projected economics remain financeable under sizing alternatives and price stress, with clear downside exposure before diligence review.",
+      emptyMessage:
+        "No bankability scenario evidence exists yet. Sizing and price stress evidence are needed before investment or lending review.",
+      eyebrow: "Bankability view",
+      nextActionClear:
+        "Use this scenario set as resilience evidence alongside hedging, revenue assurance, and audit proof.",
+      nextActionDownside:
+        "Resolve or mitigate the negative stress case before presenting this asset as bankable.",
+      sizingTitle: "Bankability sizing cases",
+      stressTitle: "Investment downside stress",
+      title: "Bankability scenario evidence",
+    },
+    executive: {
+      bridgeTitle: "Strategic resilience bridge",
+      decisionEyebrow: "Executive scenario decision",
+      decisionTitle: "Is the asset strategy resilient enough to scale?",
+      description:
+        "Summarize the best sizing case, worst downside case, and evidence depth so management can decide whether the asset strategy is credible.",
+      emptyMessage:
+        "No strategic scenario evidence exists yet. The asset strategy should not be escalated until sizing and stress evidence exist.",
+      eyebrow: "Executive view",
+      nextActionClear:
+        "Use the leading scenario as management evidence for asset strategy and commercial planning.",
+      nextActionDownside:
+        "Keep the strategy constrained until the downside case has a mitigation or executive decision.",
+      sizingTitle: "Strategic sizing cases",
+      stressTitle: "Strategic downside cases",
+      title: "Executive scenario evidence",
+    },
+    forecast_quant: {
+      bridgeTitle: "Model stress-test bridge",
+      decisionEyebrow: "Model robustness decision",
+      decisionTitle: "Do forecast and optimizer assumptions survive stress?",
+      description:
+        "Use sizing and price stress runs to test model sensitivity, downside guardrails, and whether one forecast has become an untested trading policy.",
+      emptyMessage:
+        "No model stress evidence exists yet. Run scenario and price stress analysis after loading the latest forecast.",
+      eyebrow: "Model quality OS",
+      nextActionClear:
+        "Use this stress set to validate forecast assumptions and optimizer guardrails.",
+      nextActionDownside:
+        "Investigate the negative stress case before the model output influences automation limits.",
+      sizingTitle: "Model sizing sensitivity",
+      stressTitle: "Forecast price stress",
+      title: "Model scenario lab",
+    },
+    revenue_analyst: {
+      bridgeTitle: "Commercial scenario bridge",
+      decisionEyebrow: "Revenue scenario decision",
+      decisionTitle: "Which scenario changes the commercial case?",
+      description:
+        "Compare sizing, stress, upside, and downside cases so revenue assumptions, hedging choices, and allocation limits stay commercially defensible.",
+      emptyMessage:
+        "No commercial scenario evidence exists yet. Refresh sizing and stress evidence before updating revenue or hedge assumptions.",
+      eyebrow: "Commercial analytics OS",
+      nextActionClear:
+        "Feed the leading scenario into revenue assurance, hedging, and owner or investor evidence.",
+      nextActionDownside:
+        "Quantify the downside breach and update revenue, hedge, or allocation assumptions before delivery.",
+      sizingTitle: "Commercial sizing cases",
+      stressTitle: "Commercial price stress",
+      title: "Commercial scenario lab",
+    },
+  };
+
+  return frames[personaId] ?? defaults;
 }
 
 function buildScenarioEvidenceRows({
