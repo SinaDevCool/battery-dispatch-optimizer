@@ -1,344 +1,488 @@
 # Battery Trader AI
 
-An enterprise battery trading platform for grid-scale storage: forecast, optimize, route, paper-trade, gate, submit, reconcile, and audit automated trading decisions.
+Battery Trader AI is a battery trading intelligence platform for grid-scale storage assets. It combines forecasting, dispatch optimization, revenue assurance, market-route readiness, automation control, settlement evidence, audit evidence, and persona-specific workflows into one product.
 
-## What This Project Does
+The current product direction is not only "optimize a battery schedule." It is a two-layer operating system:
 
-This project takes electricity price forecasts, market rules, asset telemetry, commercial assumptions, and execution evidence and turns them into an automated battery trading workflow.
+- **Client Evidence Portal**: business-facing evidence for asset owners, investors, project developers, executives, and client success teams.
+- **Internal Trading OS**: operational tooling for trading desks, automation operators, risk/compliance, market operations, forecast/quants, and revenue analysts.
 
-It tracks battery state of charge, applies grid and battery constraints, calculates expected PnL, validates dispatch outputs, compares forecast sources, ranks tradable market routes, builds bid packages, runs paper trading, manages human and automation gates, reconciles settlement, and exposes the results through a FastAPI backend and a Next.js product frontend.
+The strategic goal is to compete with enterprise battery trading platforms such as Entrix or Fluence by focusing on a sharper wedge: explainable automated trading, defensible business evidence, and auditable decision workflows from forecast to settlement.
 
-The product direction is an automated trading platform in the spirit of enterprise battery optimizers such as Entrix or Fluence, with a stronger emphasis on explainable automation, auditable business evidence, and persona-specific workflows.
+## What The Product Does
 
-The backend supports:
+Battery Trader AI turns asset configuration, price forecasts, market rules, regulatory assumptions, commercial assumptions, telemetry, execution evidence, settlement feedback, and audit records into a controlled battery trading workflow.
 
-- asset-level battery configuration
-- Germany DE-LU market profile assumptions
-- ENTSO-E forecast ingestion with local fallback
-- rule-based and linear dispatch optimizers
-- audit-grade dispatch validation
-- regulatory assumption checks
-- market product eligibility
-- revenue stack estimates
-- multi-market route allocation
-- automation control and mode gating
-- bid proposal generation
-- paper trading and simulated submission
-- settlement reconciliation
-- connector and persistence readiness checks
-- decision evidence for frontend personas
+The platform can:
 
-## Current Product Scope
+- load grid-scale battery assets and commercial assumptions
+- ingest or generate electricity price forecasts
+- run rule-based or linear dispatch optimization
+- validate dispatch schedules against battery and market constraints
+- estimate revenue stacks across German market products
+- evaluate hedging, scenarios, and downside protection
+- check German regulatory and market-rule assumptions
+- rank market routes across EPEX and regelleistung readiness
+- build pre-trade bid proposals
+- run paper trading and simulated market submission
+- manage automation policy, human gates, and remediation queues
+- reconcile expected, paper, and realized settlement economics
+- expose audit evidence for automated decisions
+- generate client-facing monthly HTML reports
+- adapt navigation and page framing by persona
 
-The current implementation focuses on Germany first, especially DE-LU day-ahead arbitrage with emerging EPEX intraday and regelleistung ancillary-service readiness.
+The system is intentionally gated. Live automation is not treated as a single button. A trade must pass forecast trust, market eligibility, connector readiness, risk policy, paper validation, human approval, settlement evidence, and audit checks before it can be described as production-ready.
 
-The main supported market profile is:
+## Current Scope
+
+The product is Germany-first.
+
+Primary market profile:
 
 ```text
 de_lu_day_ahead
 ```
 
-The German market profile uses:
+Current German assumptions:
 
 ```text
+DE-LU bidding zone
 15-minute intervals
-96 expected intervals per day
-DE_LU bidding zone
+96 intervals per day
 ```
 
-The project currently estimates real day-ahead arbitrage revenue and provides assumption-required placeholders for intraday, reserve capacity, and imbalance products.
+The strongest implemented economics are day-ahead arbitrage and dispatch-derived revenue. EPEX intraday, FCR, aFRR, mFRR, imbalance, and live market connector paths exist as explicit readiness, proposal, paper-trading, or placeholder layers where required data or real submission integrations are not yet available.
 
-The automated trading workflow is intentionally gated. Live automation is not treated as a button-click shortcut; it must pass forecast trust, market eligibility, connector readiness, risk policy, paper trading, human gate policy, settlement evidence, and audit checks.
+## Product Layers
 
-## Features
+### Client Evidence Portal
 
-- Asset-level battery configuration
-- Client and site configuration
-- Grid connection limits
-- Commercial cost assumptions
-- Battery SOC tracking
-- Charge/discharge efficiency
-- Minimum SOC constraint
-- Max charge/discharge power constraints
-- Rule-based dispatch optimizer
-- Linear dynamic-programming optimizer
-- Daily battery signal generation
-- Asset-specific signal storage
-- Signal run history
-- Dispatch validation
-- Forecast upload and validation
-- Forecast quality checks
-- ENTSO-E next-day forecast retrieval
-- Local forecast fallback
-- Demo forecast generation
-- In-house forecast placeholder
-- Forecast profitability comparison
-- Scenario analysis
-- Price stress testing
-- Germany regulatory assumption checks
-- Germany market product catalog
-- Asset product eligibility checks
-- Revenue stack estimates
-- Forecast trust and model performance views
-- EPEX and ancillary market route readiness
-- Multi-market allocation and route ranking
-- Automated strategy intent
-- Bid proposal engine
-- Paper trading validation
-- Automation mode ladder
-- Risk and human-gate controls
-- Settlement evidence and variance feedback
-- Audit evidence and event trail
-- Persona-specific frontend navigation
-- Monthly HTML reports
-- FastAPI backend
-- Streamlit dashboard
-- Next.js enterprise frontend
+This layer answers: "Can a commercial stakeholder trust, fund, explain, or approve the asset strategy?"
 
-## Product Frontend
+Client-facing personas:
 
-The customer-facing frontend is organized around the automated trading workflow rather than backend modules.
+| Persona | Default page | Main decision |
+|---|---:|---|
+| Asset owner | Revenue Assurance | Is the asset creating defensible owner value? |
+| Investor / lender | Hedging | Is the revenue bankable and downside protected? |
+| Project developer | Scenario Lab | Is the project commercially and technically ready? |
+| Executive | Control Room | What is the value, maturity, and top blocker? |
+| Client success | Reports | What can we explain and deliver to the client? |
+
+Client-facing pages emphasize business value, proof completeness, next actions, revenue certainty, settlement explanation, auditability, and report readiness.
+
+### Internal Trading OS
+
+This layer answers: "Can the team operate, route, automate, approve, and improve trading decisions?"
+
+Internal personas:
+
+| Persona | Default page | Main decision |
+|---|---:|---|
+| Trading desk | Mission Control | What should be traded, routed, validated, or held? |
+| Automation operator | Automation Control | Can automation safely escalate? |
+| Risk & compliance | Automation Gates | Can this decision be approved and defended? |
+| Market operations | Market Access & Data | Which routes, credentials, and handshakes are production-ready? |
+| Forecast / quant | Forecast Trust | Can the model output be trusted? |
+| Revenue analyst | Revenue Assurance | What revenue assumptions should change? |
+
+Internal pages keep backend details visible where useful: route status, adapter readiness, forecast confidence, remediation queue, approval state, paper fills, submission lifecycle, and event history.
+
+## Frontend Architecture
+
+The commercial UI is a Next.js application in `frontend/`.
+
+Core frontend concepts:
+
+- `frontend/src/lib/personas.ts` defines persona IDs, layers, default pages, visible navigation, and priorities.
+- `frontend/src/lib/navigation.ts` defines the navigation groups and routes.
+- `frontend/src/components/app-shell.tsx` applies persona-aware navigation and the current lens indicator.
+- `frontend/src/components/persona-selector.tsx` is the single persona switcher.
+- `frontend/src/app/*/page.tsx` contains route-level product pages.
+- Shared components such as `DecisionBrief`, `SectionCard`, `KpiCard`, `DataTable`, and `StatusPill` keep each page decision-first.
 
 Primary navigation groups:
 
 | Group | Purpose |
 |---|---|
-| Portfolio | Control room, asset registry, decision evidence, revenue assurance, and reports |
-| Market Intelligence | Forecast trust, market prices, market signals, market rules, and model performance |
-| Optimization | Trading schedule, revenue stack, scenario lab, hedging, and market eligibility |
-| Automated Trading | Automation control, trading orchestrator, and Mission Control subpages |
-| Risk & Compliance | Automation gates, regulatory compliance, settlement evidence, audit evidence, reports, and settings |
+| Portfolio | Control room, assets, decision evidence, revenue assurance, reports |
+| Market Intelligence | Forecasts, market prices, signals, and rules |
+| Optimization | Dispatch schedule, scenario lab, hedging |
+| Automated Trading | Automation control, orchestrator, mission control |
+| Risk & Compliance | Automation gates, regulation, settlement, audit, reports, settings |
 
-Mission Control is the trading-desk workspace for automated execution. It is split into focused child pages:
-
-| Page | Route | Main user question |
-|---|---|---|
-| Control | `/execution` | What should the automation engine do next? |
-| Market Allocation | `/execution/market-allocation` | Where should automation trade now? |
-| Bid Proposals | `/execution/proposals` | Can the automated bid package advance? |
-| Paper Trading | `/execution/simulation` | Did the paper run validate the package? |
-| Market Access & Data | `/execution/market-connectors` | Can automation reach EPEX, ancillary services, telemetry, and settlement systems? |
-| Settlement Feedback | `/execution/settlement` | Did expected, paper, and realized economics reconcile? |
-| Audit Trail | `/execution/audit` | Is there enough evidence to defend the automated decision? |
-
-Standalone Mission Control child pages avoid repeating the full cockpit summary. Each page opens on the task-specific decision, blockers, evidence, and next action so operators, automation managers, and risk teams do not have to scan raw backend tables first.
-
-## Personas
-
-The frontend supports a small set of practical client personas. They do not change the backend truth; they change navigation emphasis and page language so each stakeholder sees the value they care about.
-
-| Persona | Use |
-|---|---|
-| Full platform | Default cross-functional view for product demos and internal QA |
-| Asset owner | Revenue, bankability, downside protection, reporting, and settlement evidence |
-| Trading desk | Signals, market routes, automated bid proposals, paper trading, and execution feedback |
-| Automation control | Automation modes, remediation queue, connector readiness, and orchestration |
-| Risk & compliance | Human gates, regulatory readiness, settlement evidence, audit trail, and reports |
-| Executive | Portfolio-level value, readiness, revenue assurance, and exceptions |
-
-Hidden/internal personas can still be kept for implementation detail, but the visible selector should stay concise so the product feels enterprise-grade rather than experimental.
-
-## Project Structure
+Current frontend routes:
 
 ```text
-battery-dispatch-optimizer/
-+-- dashboard/
-|   +-- app.py
-|   +-- api_client.py
-|   +-- styles.py
-|   +-- components/
-|   +-- tabs/
-+-- data/
-|   +-- config/
-|   |   +-- assets.json
-|   |   +-- client_config.json
-|   |   +-- market_profiles.json
-|   +-- processed/
-|   |   +-- next_day_price_forecast.csv
-|   +-- outputs/
-|       +-- assets/
-|       +-- runs/
-|       +-- latest_battery_signal.json
-|       +-- portfolio_results.json
-|       +-- revenue_stack_results.json
-|       +-- scenario_results.json
-|       +-- price_stress_results.json
-+-- scripts/
-+-- src/
-|   +-- api/
-|   |   +-- main.py
-|   |   +-- schemas.py
-|   |   +-- routes/
-|   +-- assets/
-|   +-- backtesting/
-|   +-- config/
-|   +-- dispatch/
-|   +-- features/
-|   +-- forecasts/
-|   +-- markets/
-|   |   +-- products/
-|   +-- optimization/
-|   +-- optimizer/
-|   +-- regulatory/
-|   +-- reports/
-|   +-- revenue/
-|   |   +-- calculators/
-|   +-- scenarios/
-|   +-- services/
-|   +-- signals/
-|   +-- validation/
-|   +-- workflows/
-+-- tests/
-+-- requirements.txt
-+-- README.md
+/
+/assets
+/intelligence
+/revenue
+/reports
+/forecasts
+/market-prices
+/market-signals
+/market-rules
+/dispatch
+/scenarios
+/hedging
+/execution/automation-policies
+/execution/orchestrator
+/execution
+/execution/market-allocation
+/execution/proposals
+/execution/simulation
+/execution/market-connectors
+/execution/risk-approval
+/execution/settlement
+/execution/audit
+/regulation
+/settings
 ```
 
 ## Backend Architecture
 
-The backend is organized into focused layers.
+The backend is a FastAPI application in `src/api/main.py`. Route modules are registered through `src/api/routes/__init__.py`.
 
-| Layer | Purpose |
+Major backend areas:
+
+| Area | Purpose |
 |---|---|
-| `src/api/routes/` | FastAPI route modules |
-| `src/assets/` | Battery asset schema, asset loading, portfolio dispatch |
-| `src/config/` | Central paths and default configs |
-| `src/forecasts/` | Forecast loading, ENTSO-E provider, forecast comparison |
-| `src/markets/` | Market profile loading and market data helpers |
-| `src/markets/products/` | Germany market product catalog and eligibility checks |
-| `src/optimization/` | Optimizer registry, rule-based optimizer, linear optimizer |
-| `src/regulatory/` | Germany regulatory and commercial assumption checks |
-| `src/revenue/` | Revenue stack runner and product revenue calculators |
-| `src/services/` | Shared application services |
-| `src/signals/` | Signal generation, explanations, risk flags |
+| `src/api/routes/` | FastAPI HTTP API modules |
+| `src/assets/` | Asset loading, asset schema, portfolio dispatch |
+| `src/backtesting/` | Forecast-vs-actual and historical analysis support |
+| `src/config/` | Paths, app settings, client presets, market config |
+| `src/db/` | SQLite database setup and repository layer |
+| `src/dispatch/` | Dispatch and battery schedule utilities |
+| `src/execution/` | Automation control, market routing, proposals, paper trading, connectors, gates, remediation, submission lifecycle |
+| `src/forecasts/` | Forecast loading, upload, ENTSO-E provider, comparison |
+| `src/markets/` | Market profiles, products, and market data helpers |
+| `src/optimization/` | Optimizer registry and optimization engines |
+| `src/regulatory/` | Germany regulatory and operating assumption checks |
+| `src/reports/` | Monthly client report generation |
+| `src/revenue/` | Revenue stack runner and revenue calculators |
+| `src/scenarios/` | Scenario and stress-test logic |
+| `src/services/` | Shared services and persistence helpers |
+| `src/settlement/` | Settlement variance and reconciliation logic |
+| `src/signals/` | Signal generation, explanations, and risk flags |
+| `src/telemetry/` | Asset telemetry snapshots |
 | `src/validation/` | Dispatch validation |
 | `src/workflows/` | Daily workflow orchestration |
 
-## Installation
+### Execution Control Plane
 
-Install dependencies:
+The most important backend subsystem for the current product is `src/execution/`.
 
-```bash
-pip install -r requirements.txt
+It includes:
+
+- automation policy and mode evaluation
+- automation guardrails
+- remediation queue and next-action orchestration
+- market connector readiness
+- official API compliance evidence
+- live adapter handshake readiness
+- multi-market allocation
+- route automation certification
+- bid package building
+- pre-trade proposal generation
+- paper trading and simulated award logic
+- market submission lifecycle
+- human approval workflow
+- settlement and audit linkage
+
+This is what makes the product more than an analytics dashboard: it models whether a trading decision can move from signal to proposal, paper validation, approval, submission evidence, settlement, and audit.
+
+## Data And Persistence
+
+Main data directories:
+
+```text
+data/config/      asset, client, and market configuration
+data/processed/   forecast and actual-price CSV inputs
+data/outputs/     generated signals, reports, scenario outputs, revenue outputs
+data/db/          local SQLite database
 ```
 
-If ENTSO-E support is missing, install:
+Default SQLite database:
 
-```bash
-pip install entsoe-py beautifulsoup4 python-dotenv
+```text
+data/db/battery_dispatch_optimizer.sqlite
 ```
 
-## Environment Variables
+Repository modules live under:
 
-To fetch ENTSO-E data, set an ENTSO-E API token.
-
-Recommended local setup: create a `.env` file in the project root.
-
-```env
-ENTSOE_API_KEY=your_entsoe_token_here
+```text
+src/db/repositories/
 ```
 
-Make sure `.env` is included in `.gitignore`:
+The app still uses a hybrid persistence model: file outputs for some artifacts and SQLite repositories for asset, forecast, signal, revenue, execution, telemetry, settlement, workflow, and official API evidence records.
 
-```gitignore
-.env
-```
+## Key API Categories
 
-PowerShell alternative:
+The API surface is broad. The most important categories are:
 
-```powershell
-$env:ENTSOE_API_KEY="your_entsoe_token_here"
-```
+| Category | Example endpoints |
+|---|---|
+| Health and system readiness | `/health`, `/system/health`, `/system/persistence-readiness` |
+| Assets | `/assets`, `/assets/{asset_id}/cockpit`, `/assets/{asset_id}/data-completeness` |
+| Forecasts | `/forecast/upload`, `/forecast/status`, `/forecast/demo`, `/forecasts/compare-profitability` |
+| Signals and dispatch | `/assets/{asset_id}/signal/run-latest`, `/assets/{asset_id}/signal/latest`, `/battery/optimizers` |
+| Markets and products | `/markets`, `/markets/products`, `/assets/{asset_id}/eligible-products` |
+| Revenue and hedging | `/assets/{asset_id}/revenue-stack/run`, `/assets/{asset_id}/revenue-stack/latest`, hedging-related asset routes |
+| Regulation | `/regulatory/germany/requirements`, `/assets/{asset_id}/regulatory/germany` |
+| Execution control | `/assets/{asset_id}/execution/automation-control/status`, `/assets/{asset_id}/execution/orchestrator/run` |
+| Market allocation | `/assets/{asset_id}/execution/multi-market/allocation` |
+| Proposals | `/assets/{asset_id}/execution/proposal/build`, `/assets/{asset_id}/execution/proposal/latest` |
+| Paper trading | `/assets/{asset_id}/execution/paper-trade/run`, `/assets/{asset_id}/execution/paper-trade/latest` |
+| Submission simulation | `/assets/{asset_id}/execution/demo-submit`, `/assets/{asset_id}/execution/submissions/latest` |
+| Approval gates | `/assets/{asset_id}/execution/approval/request`, `/approve`, `/reject`, `/latest` |
+| Connector readiness | `/execution/market-connectors/readiness`, `/system/live-adapter-handshake` |
+| Settlement | `/assets/{asset_id}/settlement/reconcile`, `/assets/{asset_id}/settlement/latest` |
+| Reports | `/reports/monthly/latest`, `/reports/monthly/latest/view`, `/assets/{asset_id}/reports/monthly/generate` |
+| Workflow | `/workflow/run-daily`, `/assets/{asset_id}/workflow-runs/run` |
 
-The product can still run without an ENTSO-E token by using local, uploaded, demo, or placeholder forecasts.
-
-## Run the API
-
-Start the FastAPI backend:
-
-```bash
-python -m uvicorn src.api.main:app --reload --port 8000
-```
-
-Open the API documentation:
+OpenAPI docs are available when the backend is running:
 
 ```text
 http://127.0.0.1:8000/docs
 ```
 
-Health check:
+## Installation
 
-```text
-http://127.0.0.1:8000/health
-```
-
-## Run the Dashboard
-
-Open a second terminal and run:
+Backend dependencies:
 
 ```bash
-python -m streamlit run dashboard/app.py
+pip install -r requirements.txt
 ```
 
-Then open:
-
-```text
-http://localhost:8501
-```
-
-Dashboard tabs:
-
-- Overview
-- Forecast
-- Signal
-- Dispatch
-- Scenarios & Stress
-- Reports
-- Settings
-
-## Run the Product Frontend
-
-The commercial UI is a Next.js frontend in:
-
-```text
-frontend/
-```
-
-Start it locally:
+Frontend dependencies:
 
 ```bash
 cd frontend
 npm install
+```
+
+## Environment Variables
+
+Common backend variables:
+
+```env
+APP_ENV=local
+FRONTEND_ORIGIN=http://127.0.0.1:3000
+API_PUBLIC_BASE_URL=http://127.0.0.1:8000
+AUTH_MODE=dev
+STORAGE_BACKEND=local
+ENTSOE_API_KEY=your_entsoe_token_here
+```
+
+The app can run without `ENTSOE_API_KEY` by using local, uploaded, demo, or placeholder forecasts.
+
+Frontend API URL:
+
+```env
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
+```
+
+Azure-related variables are documented in:
+
+```text
+.env.azure.example
+frontend/.env.azure.example
+docs/azure-app-service.md
+```
+
+## Run Locally
+
+Start the backend:
+
+```bash
+python -m uvicorn src.api.main:app --reload --port 8000
+```
+
+Start the frontend:
+
+```bash
+cd frontend
 npm run dev
 ```
 
-Then open:
+Open:
 
 ```text
 http://localhost:3000
 ```
 
-The frontend reads the API URL from:
+API docs:
 
 ```text
-NEXT_PUBLIC_API_BASE_URL
+http://127.0.0.1:8000/docs
 ```
 
-For local development, the default API URL is:
+## Run The Legacy Streamlit Dashboard
+
+The Streamlit dashboard remains useful for internal prototyping, but the Next.js frontend is the commercial product UI.
+
+```bash
+python -m streamlit run dashboard/app.py
+```
+
+Open:
 
 ```text
-http://127.0.0.1:8000
+http://localhost:8501
 ```
 
-For Azure, set:
+## Common Workflows
+
+Create demo forecast:
+
+```bash
+curl.exe -X POST http://127.0.0.1:8000/forecast/demo
+```
+
+Generate asset signal:
+
+```bash
+curl.exe -X POST "http://127.0.0.1:8000/assets/default_site/signal/run-latest?optimizer_engine=linear_v1"
+```
+
+Run revenue stack:
+
+```bash
+curl.exe -X POST "http://127.0.0.1:8000/assets/default_site/revenue-stack/run?optimizer_engine=linear_v1"
+```
+
+Build bid proposal:
+
+```bash
+curl.exe -X POST http://127.0.0.1:8000/assets/default_site/execution/proposal/build
+```
+
+Run paper trading:
+
+```bash
+curl.exe -X POST http://127.0.0.1:8000/assets/default_site/execution/paper-trade/run
+```
+
+Request and approve human gate:
+
+```bash
+curl.exe -X POST http://127.0.0.1:8000/assets/default_site/execution/approval/request
+curl.exe -X POST http://127.0.0.1:8000/assets/default_site/execution/approval/approve
+```
+
+Run orchestrator next action:
+
+```bash
+curl.exe -X POST http://127.0.0.1:8000/assets/default_site/execution/orchestrator/run
+```
+
+Reconcile settlement:
+
+```bash
+curl.exe -X POST http://127.0.0.1:8000/assets/default_site/settlement/reconcile
+```
+
+Generate monthly report:
+
+```bash
+curl.exe -X POST http://127.0.0.1:8000/assets/default_site/reports/monthly/generate
+```
+
+Run daily workflow:
+
+```bash
+curl.exe -X POST "http://127.0.0.1:8000/workflow/run-daily?optimizer_engine=linear_v1"
+```
+
+## Forecast Input Format
+
+Minimum CSV:
+
+```csv
+timestamp,forecast_price
+2026-01-02 00:00:00,35
+2026-01-02 00:15:00,32
+2026-01-02 00:30:00,28
+2026-01-02 00:45:00,25
+```
+
+Optional feature columns:
+
+```csv
+timestamp,forecast_price,load_forecast,generation_forecast,forecast_solar,forecast_wind,forecast_renewables_total,forecast_provider,forecast_model
+```
+
+For Germany day-ahead mode, a full day should contain 96 rows at 15-minute resolution.
+
+Main local forecast path:
 
 ```text
-NEXT_PUBLIC_API_BASE_URL=https://your-backend-app.azurewebsites.net
+data/processed/next_day_price_forecast.csv
 ```
 
-Streamlit is still useful as an internal prototype dashboard, but the Next.js
-frontend is the recommended path for a customer-facing product.
+## Optimizers
 
-Production build:
+Available optimizer engines:
+
+| Optimizer | Description |
+|---|---|
+| `rule_based_v1` | Spread-threshold dispatch logic |
+| `linear_v1` | Discrete SOC dynamic-programming optimizer |
+
+Example:
+
+```bash
+curl.exe -X POST "http://127.0.0.1:8000/battery/signal/run-latest?optimizer_engine=linear_v1"
+```
+
+## Market Products
+
+The Germany product catalog currently includes:
+
+| Product | Type | Current maturity |
+|---|---|---|
+| `day_ahead_arbitrage` | Energy arbitrage | strongest implemented economics |
+| `intraday_arbitrage` | Energy arbitrage | assumption/data dependent |
+| `fcr_capacity` | Reserve capacity | readiness and placeholder economics |
+| `afrr_capacity` | Reserve capacity | readiness and placeholder economics |
+| `mfrr_capacity` | Reserve capacity | readiness and placeholder economics |
+| `imbalance_avoidance` | Risk reduction | assumption/data dependent |
+
+Eligibility check:
+
+```bash
+curl.exe http://127.0.0.1:8000/assets/default_site/eligible-products
+```
+
+## Reports
+
+Monthly reports are generated as standalone HTML files.
+
+Report builder:
+
+```text
+src/reports/monthly_report.py
+```
+
+Output pattern:
+
+```text
+data/outputs/monthly_report_YYYY-MM.html
+data/outputs/monthly_report_{asset_id}_YYYY-MM.html
+```
+
+Current limitation: HTML report delivery is implemented. PDF export is intentionally shown as not connected in the UI until a backend PDF export route is added.
+
+## Testing
+
+Run backend tests:
+
+```bash
+python -m pytest
+```
+
+Run frontend checks:
 
 ```bash
 cd frontend
@@ -346,50 +490,21 @@ npm run lint
 npm run build
 ```
 
-The expected frontend routes include:
+## Deployment Direction
 
-```text
-/
-/assets
-/dispatch
-/execution
-/execution/audit
-/execution/automation-policies
-/execution/market-allocation
-/execution/market-connectors
-/execution/orchestrator
-/execution/proposals
-/execution/risk-approval
-/execution/settlement
-/execution/simulation
-/forecasts
-/hedging
-/intelligence
-/market-prices
-/market-rules
-/market-signals
-/regulation
-/reports
-/revenue
-/scenarios
-/settings
-```
-
-## Azure App Service Deployment
-
-The recommended commercial deployment is App Service-first:
+The intended commercial deployment is:
 
 ```text
 Next.js frontend App Service
 FastAPI backend App Service
-Azure PostgreSQL
+Azure PostgreSQL or managed database
 Azure Blob Storage
 Azure Key Vault
 Microsoft Entra ID
 Application Insights
 ```
 
-Deployment notes are in:
+Deployment notes:
 
 ```text
 docs/azure-app-service.md
@@ -404,489 +519,30 @@ bash startup.sh
 Frontend startup command:
 
 ```bash
-bash startup.sh
+npm run start
 ```
 
-For backend Azure app settings, copy from:
-
-```text
-.env.azure.example
-```
-
-For frontend Azure app settings, copy from:
-
-```text
-frontend/.env.azure.example
-```
-
-## Forecast Input Format
-
-The system expects forecast files with at least:
-
-```csv
-timestamp,forecast_price
-2026-01-02 00:00:00,35
-2026-01-02 00:15:00,32
-2026-01-02 00:30:00,28
-2026-01-02 00:45:00,25
-```
-
-Main forecast path:
-
-```text
-data/processed/next_day_price_forecast.csv
-```
-
-Optional forecast feature columns:
-
-```csv
-timestamp,forecast_price,load_forecast,generation_forecast,forecast_solar,forecast_wind,forecast_renewables_total,forecast_provider,forecast_model
-```
-
-For Germany day-ahead mode, a full-day forecast should contain 96 rows at 15-minute resolution.
-
-## Forecast Sources
-
-| Forecast Source | Description |
-|---|---|
-| `local_saved_forecast` | Current saved CSV forecast |
-| `entsoe` | Live ENTSO-E next-day forecast when available |
-| `demo` | Generated demo forecast |
-| `demo_high_spread` | Demo forecast with stronger price spread |
-| `inhouse_placeholder` | Placeholder for a future internal forecast model |
-| `uploaded` | User-uploaded forecast CSV |
-
-## Forecast Fallback Logic
-
-The daily workflow first tries ENTSO-E.
-
-If ENTSO-E fails but a saved local forecast exists, the workflow continues with:
-
-```text
-local_saved_forecast
-```
-
-This allows the dashboard, signal generation, scenarios, and reports to continue working without live market data.
-
-## Optimizers
-
-Available optimizer engines:
-
-| Optimizer | Description |
-|---|---|
-| `rule_based_v1` | Current rule-based spread dispatch engine |
-| `linear_v1` | Discrete SOC dynamic-programming optimizer |
-
-Example:
-
-```bash
-curl.exe -X POST "http://127.0.0.1:8000/battery/signal/run-latest?optimizer_engine=linear_v1"
-```
-
-## Dispatch Validation
-
-Generated dispatch signals include validation output.
-
-Validation checks:
-
-- SOC stays within battery limits
-- charge/discharge energy respects power and timestep limits
-- dispatch actions are valid
-- dispatch PnL is internally consistent
-- summary PnL matches dispatch PnL
-- dispatch interval matches market profile assumptions
-- required metadata exists
-
-Example validation output:
-
-```json
-{
-  "status": "warning",
-  "errors": [],
-  "warnings": [],
-  "error_count": 0,
-  "warning_count": 1
-}
-```
-
-## Asset Model
-
-Assets are configured in:
-
-```text
-data/config/assets.json
-```
-
-Each asset can define:
-
-- client name
-- site name
-- country
-- market
-- battery configuration
-- strategy configuration
-- commercial assumptions
-- grid connection limits
-- regulatory assumptions
-- forecast file
-- market profile id
-
-Asset-specific signal results are saved under:
-
-```text
-data/outputs/assets/{asset_id}/
-```
-
-## Germany Regulatory Assumptions
-
-The Germany regulatory layer checks whether key commercial assumptions are explicit.
-
-It currently tracks:
-
-- MaStR registration status
-- MaStR unit id
-- grid operator
-- balancing responsible party
-- metering concept
-- technical connection rule
-- grid connection limits
-- grid fee assumptions
-- network tariff model
-- construction cost contribution / BKZ assumptions
-
-Example:
-
-```bash
-curl.exe http://127.0.0.1:8000/assets/default_site/regulatory/germany
-```
-
-## Market Products
-
-The Germany market product catalog currently includes:
-
-| Product | Type |
-|---|---|
-| `day_ahead_arbitrage` | Energy arbitrage |
-| `intraday_arbitrage` | Energy arbitrage |
-| `fcr_capacity` | Reserve capacity |
-| `afrr_capacity` | Reserve capacity |
-| `mfrr_capacity` | Reserve capacity |
-| `imbalance_avoidance` | Risk reduction |
-
-Each product defines:
-
-- country
-- market
-- bidding zone
-- settlement interval
-- revenue type
-- prequalification requirement
-- stackability
-- minimum power
-- minimum duration
-- required assumptions
-- risk notes
-
-Check asset eligibility:
-
-```bash
-curl.exe http://127.0.0.1:8000/assets/default_site/eligible-products
-```
-
-## Revenue Stack
-
-The revenue stack estimates product-level revenue for one asset.
-
-Current behavior:
-
-- `day_ahead_arbitrage` uses the dispatch optimizer and returns a real estimated PnL.
-- `intraday_arbitrage`, `fcr_capacity`, `afrr_capacity`, `mfrr_capacity`, and `imbalance_avoidance` return explicit `assumption_required` results until the required market inputs are available.
-
-Run revenue stack:
-
-```bash
-curl.exe -X POST "http://127.0.0.1:8000/assets/default_site/revenue-stack/run?optimizer_engine=linear_v1"
-```
-
-Load latest revenue stack:
-
-```bash
-curl.exe http://127.0.0.1:8000/assets/default_site/revenue-stack/latest
-```
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/health` | API health check |
-| GET | `/system/health` | System readiness checks |
-| GET | `/status` | Project and endpoint status |
-| GET | `/data/status` | File availability status |
-| POST | `/data/update-entsoe` | Try live ENTSO-E forecast update |
-| GET | `/dashboard/summary` | Dashboard summary |
-| GET | `/assets` | List configured assets |
-| POST | `/assets/{asset_id}/signal/run-latest` | Generate asset-specific signal |
-| GET | `/assets/{asset_id}/signal/latest` | Load latest asset signal |
-| GET | `/assets/{asset_id}/signal/history` | List asset signal history |
-| GET | `/portfolio/latest` | Load latest portfolio results |
-| POST | `/portfolio/run-daily` | Run dispatch across configured assets |
-| GET | `/markets` | List market profiles |
-| GET | `/markets/{market_profile_id}` | Load one market profile |
-| GET | `/markets/products` | List market products |
-| GET | `/markets/products/{product_id}` | Load one market product |
-| GET | `/assets/{asset_id}/eligible-products` | Check product eligibility |
-| GET | `/regulatory/germany/requirements` | Germany regulatory checklist |
-| GET | `/assets/{asset_id}/regulatory/germany` | Asset regulatory assumptions |
-| POST | `/assets/{asset_id}/revenue-stack/run` | Run asset revenue stack |
-| GET | `/assets/{asset_id}/revenue-stack/latest` | Load latest asset revenue stack |
-| GET | `/assets/{asset_id}/execution/automation-control/status` | Load automation mode, permissions, blockers, and next action |
-| POST | `/assets/{asset_id}/execution/remediation/run-next` | Run the next automated remediation item |
-| POST | `/assets/{asset_id}/execution/orchestrator/run` | Run the next automated trading action |
-| GET | `/assets/{asset_id}/execution/strategy-intent` | Load automated strategy intent and target markets |
-| GET | `/assets/{asset_id}/execution/multi-market/allocation` | Rank EPEX and ancillary market routes |
-| GET | `/assets/{asset_id}/execution/proposal/latest` | Load latest automated bid proposal |
-| POST | `/assets/{asset_id}/execution/proposal/build` | Build a pre-trade bid proposal |
-| GET | `/assets/{asset_id}/execution/proposals` | List proposal history |
-| POST | `/assets/{asset_id}/execution/paper-trade/run` | Run automatic paper trading validation |
-| GET | `/assets/{asset_id}/execution/paper-trade/latest` | Load latest paper trade |
-| GET | `/assets/{asset_id}/execution/paper-trades` | List paper-trade history |
-| POST | `/assets/{asset_id}/execution/demo-submit` | Simulate market submission |
-| GET | `/assets/{asset_id}/execution/submissions/latest` | Load latest simulated or submitted market package |
-| GET | `/assets/{asset_id}/execution/approval/latest` | Load latest human-gate decision |
-| POST | `/assets/{asset_id}/execution/approval/request` | Request human approval |
-| POST | `/assets/{asset_id}/execution/approval/approve` | Approve the human gate |
-| POST | `/assets/{asset_id}/execution/approval/reject` | Reject the human gate |
-| GET | `/assets/{asset_id}/execution/readiness` | Load execution readiness evidence |
-| GET | `/assets/{asset_id}/execution/automation-guardrails` | Load automation guardrail status |
-| GET | `/assets/{asset_id}/execution/automation-events` | List automation event history |
-| GET | `/assets/{asset_id}/settlement/latest` | Load latest settlement reconciliation |
-| POST | `/assets/{asset_id}/settlement/reconcile` | Reconcile expected, paper, and realized economics |
-| GET | `/execution/market-connectors/readiness` | Load market connector readiness |
-| GET | `/system/persistence-readiness` | Load database persistence readiness |
-| GET | `/client/config` | Load client config |
-| POST | `/client/config` | Save client config |
-| GET | `/client/presets` | List client presets |
-| POST | `/client/presets/{preset_name}/apply` | Apply client preset |
-| POST | `/forecast/upload` | Upload forecast data |
-| GET | `/forecast/status` | Forecast quality checks |
-| GET | `/forecast/preview` | Forecast preview rows |
-| GET | `/features/forecast` | Forecast feature summary |
-| POST | `/forecast/demo` | Create demo forecast |
-| POST | `/forecast/demo-high-spread` | Create high-spread demo forecast |
-| POST | `/forecast/inhouse-placeholder` | Create in-house placeholder forecast |
-| POST | `/forecasts/compare-profitability` | Compare forecast profitability |
-| GET | `/forecasts/compare-profitability/latest` | Load latest forecast comparison |
-| GET | `/battery/optimizers` | List optimizer engines |
-| GET | `/battery/config` | Default battery and strategy config |
-| GET | `/battery/constraints` | Battery constraint summary |
-| POST | `/battery/signal` | Generate signal from API payload |
-| POST | `/battery/signal/run-latest` | Generate signal from saved forecast |
-| GET | `/battery/signal/latest` | Load latest global battery signal |
-| GET | `/battery/signal/latest/explanation` | Explain latest signal |
-| GET | `/battery/signal/latest/risks` | Risk flags for latest signal |
-| GET | `/battery/signal/history` | List global signal run history |
-| GET | `/battery/signal/history/{file_name}` | Load historical signal run |
-| POST | `/battery/backtest` | Backtest battery signal |
-| POST | `/scenarios/run` | Run scenarios from request data |
-| POST | `/scenarios/run-latest` | Run scenarios from saved forecast |
-| GET | `/scenarios/latest` | Load latest scenario results |
-| POST | `/stress/run-latest` | Run price stress tests |
-| GET | `/stress/latest` | Load latest stress results |
-| GET | `/reports/monthly/latest` | Latest monthly report status |
-| GET | `/reports/monthly/latest/view` | View latest monthly report |
-| POST | `/workflow/run-daily` | Full daily workflow |
-
-## Common Workflows
-
-Create a demo forecast:
-
-```bash
-curl.exe -X POST http://127.0.0.1:8000/forecast/demo
-```
-
-Update ENTSO-E forecast:
-
-```bash
-curl.exe -X POST http://127.0.0.1:8000/data/update-entsoe
-```
-
-Generate latest battery signal:
-
-```bash
-curl.exe -X POST "http://127.0.0.1:8000/battery/signal/run-latest?optimizer_engine=linear_v1"
-```
-
-Generate asset-specific signal:
-
-```bash
-curl.exe -X POST "http://127.0.0.1:8000/assets/default_site/signal/run-latest?optimizer_engine=linear_v1"
-```
-
-Run the full daily workflow:
-
-```bash
-curl.exe -X POST "http://127.0.0.1:8000/workflow/run-daily?optimizer_engine=linear_v1"
-```
-
-Run portfolio dispatch:
-
-```bash
-curl.exe -X POST "http://127.0.0.1:8000/portfolio/run-daily?optimizer_engine=linear_v1"
-```
-
-Run revenue stack:
-
-```bash
-curl.exe -X POST "http://127.0.0.1:8000/assets/default_site/revenue-stack/run?optimizer_engine=linear_v1"
-```
-
-## Daily Workflow
-
-The older daily analytics workflow:
-
-1. Tries to fetch ENTSO-E forecast data.
-2. Falls back to the saved local forecast if ENTSO-E is unavailable.
-3. Dispatches the default asset.
-4. Adds asset metadata.
-5. Adds dispatch validation.
-6. Saves global signal output.
-7. Saves asset-specific signal output.
-8. Runs scenarios.
-9. Saves scenario results.
-
-The automated trading workflow extends this into:
-
-1. Validate forecast and price evidence.
-2. Generate an asset-level signal.
-3. Evaluate market eligibility and connector readiness.
-4. Rank EPEX and ancillary market routes.
-5. Build a bid proposal.
-6. Apply risk, forecast-confidence, and human-gate policies.
-7. Run paper trading.
-8. Simulate or submit market orders only when automation mode allows it.
-9. Reconcile settlement.
-10. Feed variance, blockers, and audit evidence back into the next run.
-
-## Run Scripts
-
-Daily signal:
-
-```bash
-python -m scripts.run_daily_signal
-```
-
-Scenario analysis:
-
-```bash
-python -m scripts.run_scenarios
-```
-
-Historical backtest:
-
-```bash
-python -m scripts.run_historical_backtest
-```
-
-Monthly report:
-
-```bash
-python -m scripts.run_monthly_report
-```
-
-Data update:
-
-```bash
-python -m scripts.update_data
-```
-
-## Run Tests
-
-Run all tests:
-
-```bash
-python -m pytest
-```
-
-Run selected backend tests:
-
-```bash
-python -m pytest tests/test_api.py tests/test_optimization.py tests/test_market_products.py tests/test_revenue_stack.py
-```
-
-## Dashboard Structure
-
-Dashboard entry point:
-
-```text
-dashboard/app.py
-```
-
-Dashboard API helper:
-
-```text
-dashboard/api_client.py
-```
-
-Dashboard styling:
-
-```text
-dashboard/styles.py
-```
-
-Dashboard tabs:
-
-```text
-dashboard/tabs/
-```
-
-## Monthly Reports
-
-Monthly reports are generated as standalone HTML files.
-
-Output location:
-
-```text
-data/outputs/monthly_report_YYYY-MM.html
-```
-
-Report builder:
-
-```text
-src/reports/monthly_report.py
-```
-
-Reports are intentionally styled separately from the Streamlit dashboard because they are standalone HTML documents.
-
-## Notes
-
-This project is intended for analysis, prototyping, and product development.
-
-It is not a financial trading recommendation.
-
-The backend is becoming a stronger commercial battery optimization and automated trading platform, but several areas are still placeholders or simplified:
-
-- intraday market execution
-- FCR/aFRR/mFRR auction and activation modeling
-- imbalance settlement
-- forecast-vs-actual backtesting
-- advanced degradation modeling
-- multi-market co-optimization
-- production-grade market connector credentials
-- authentication and deployment hardening
-
-## Planned Extensions
-
-- Real intraday price integration
-- Reserve capacity price inputs
-- Forecast accuracy tracking
-- Forecast-vs-actual backtesting
-- Multi-market optimization
-- Automated EPEX and ancillary bid lifecycle integration
-- Live EMS telemetry and dispatch confirmation
-- Production settlement import
-- Stronger portfolio-level automated trading policies
-- More detailed German grid fee treatment
-- Portfolio-level revenue stack
-- Database-backed history
-- User authentication
-- Deployment configuration
+## Known Limitations
+
+This repository is a product-development and prototyping system. It is not a financial trading recommendation and not yet a production market submission system.
+
+Important current limitations:
+
+- no production authentication/authorization layer is enforced in local mode
+- HTML monthly reports exist, but PDF export is not implemented yet
+- real EPEX and TSO submission adapters are not connected to production credentials
+- `demo-submit` simulates submission and should not be interpreted as live exchange trading
+- reserve activation-energy logic still contains explicit placeholders
+- intraday, reserve, imbalance, and degradation economics need stronger market data and model depth
+- some artifacts still use local file outputs while others use SQLite repositories
+- Azure deployment hardening is planned but not complete
+
+## Recommended Next Product Improvements
+
+1. Add backend PDF export for client reports.
+2. Replace reserve activation placeholders with real activation-price logic.
+3. Separate simulation, supervised live, and production live adapters more strictly in the UI and backend.
+4. Add production authentication and role-based access.
+5. Move remaining file-based outputs into database/object storage.
+6. Add deeper forecast-vs-actual learning loops into route allocation and revenue assumptions.
+7. Add stronger multi-market co-optimization across day-ahead, intraday, and ancillary products.

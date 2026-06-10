@@ -69,18 +69,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        <div className="mb-4 shrink-0 rounded-lg border border-slate-800 bg-slate-900/45 p-3">
-          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300">
+        <div className="mb-5 shrink-0 border-l border-emerald-400/30 px-3 py-1">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300">
             {getPersonaLayerLabel(persona.layer)}
           </div>
-          <div className="text-xs font-semibold text-sky-200">
+          <div className="mt-1 text-xs font-semibold text-slate-200">
             {persona.label}
           </div>
-          <div className="mt-1 text-xs leading-5 text-slate-400">
-            {persona.focus}
-          </div>
           <Link
-            className="mt-3 inline-flex text-xs font-semibold text-emerald-200 hover:text-emerald-100"
+            className="mt-2 inline-flex text-xs font-semibold text-emerald-200 transition hover:text-emerald-100"
             href={persona.defaultNavigationHref}
           >
             Start: {persona.defaultNavigationLabel}
@@ -202,5 +199,5 @@ function getPersonaLayerLabel(layer: string) {
     return "Internal Trading OS";
   }
 
-  return "Platform";
+  return "Full platform";
 }
