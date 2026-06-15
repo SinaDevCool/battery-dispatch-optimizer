@@ -1,5 +1,5 @@
-from src.assets.asset_schema import BatteryAsset
-from src.regulatory.germany_assumption_engine import (
+﻿from backend.assets.asset_schema import BatteryAsset
+from backend.regulatory.germany_assumption_engine import (
     build_germany_regulatory_assumptions,
 )
 
@@ -73,3 +73,6 @@ def test_germany_regulatory_assumptions_mark_complete_asset_ready():
     assert result["status"] == "ready"
     assert result["warning_count"] == 0
     assert result["assumptions"]["technical_connection_rule"] == "VDE-AR-N 4110"
+
+
+

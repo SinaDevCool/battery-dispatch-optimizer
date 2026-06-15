@@ -1,7 +1,7 @@
-import pandas as pd
+﻿import pandas as pd
 
-from src.signals.explanation_engine import explain_battery_signal
-from src.signals.risk_engine import build_risk_flags
+from backend.signals.explanation_engine import explain_battery_signal
+from backend.signals.risk_engine import build_risk_flags
 
 
 def sample_signal():
@@ -91,3 +91,5 @@ def test_risk_engine_detects_cycle_usage_and_negative_prices():
     assert "negative_price_charging" in risk_types
     assert "medium_cycle_usage" in risk_types
     assert "forecast_negative_prices" in risk_types
+
+

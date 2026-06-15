@@ -1,14 +1,14 @@
-from src.assets.asset_schema import BatteryAsset
-from src.revenue.calculators.imbalance_placeholder import (
+﻿from backend.assets.asset_schema import BatteryAsset
+from backend.revenue.calculators.imbalance_placeholder import (
     calculate_imbalance_revenue,
 )
-from src.revenue.calculators.intraday_placeholder import (
+from backend.revenue.calculators.intraday_placeholder import (
     calculate_intraday_revenue,
 )
-from src.revenue.calculators.reserve_capacity_placeholder import (
+from backend.revenue.calculators.reserve_capacity_placeholder import (
     calculate_reserve_capacity_revenue,
 )
-from src.revenue.revenue_stack_runner import calculate_product_revenue
+from backend.revenue.revenue_stack_runner import calculate_product_revenue
 
 
 def build_test_asset(regulatory=None):
@@ -86,3 +86,6 @@ def test_unsupported_revenue_product_raises_error():
         assert "Unsupported revenue product" in str(error)
     else:
         raise AssertionError("Expected unsupported revenue product to raise ValueError")
+
+
+

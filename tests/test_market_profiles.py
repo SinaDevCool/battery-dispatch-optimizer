@@ -1,7 +1,7 @@
-import pandas as pd
+﻿import pandas as pd
 
-from src.features.forecast_quality_features import build_forecast_quality_features
-from src.markets.market_profile_loader import get_default_market_profile
+from backend.features.forecast_quality_features import build_forecast_quality_features
+from backend.markets.market_profile_loader import get_default_market_profile
 
 
 def test_default_market_profile_is_germany_day_ahead():
@@ -33,3 +33,6 @@ def test_forecast_quality_uses_germany_15_minute_expectations():
     assert features["market_time_unit_minutes"] == 15
     assert features["is_full_market_day"] is True
     assert features["interval_gap_count"] == 0
+
+
+

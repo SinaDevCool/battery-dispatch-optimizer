@@ -1,9 +1,9 @@
-from pathlib import Path
+﻿from pathlib import Path
 
 import pandas as pd
 import pytest
 
-from src.forecasts.forecast_loader import (
+from backend.forecasts.forecast_loader import (
     forecast_dataframe_to_price_data,
     load_forecast_dataframe,
     load_forecast_price_data,
@@ -81,3 +81,5 @@ def test_load_forecast_dataframe(tmp_path):
 def test_load_forecast_price_data_missing_file():
     with pytest.raises(FileNotFoundError):
         load_forecast_price_data(Path("missing_forecast_file.csv"))
+
+

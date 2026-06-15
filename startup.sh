@@ -1,4 +1,5 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 set -e
 
-python -m uvicorn src.api.main:app --host 0.0.0.0 --port "${PORT:-8000}"
+python -m uvicorn backend.api.main:app --host 0.0.0.0 --port "${PORT:-8000}"
+

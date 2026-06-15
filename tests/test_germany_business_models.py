@@ -1,10 +1,10 @@
-﻿from src.ancillary.germany_ancillary_services import assess_germany_ancillary_eligibility
-from src.assets.asset_schema import BatteryAsset
-from src.energy_accounting.energy_origin_ledger import build_energy_origin_ledger
-from src.grid_fees.germany_grid_fee_model import build_germany_grid_fee_sensitivity
-from src.hedging.revenue_contracts import build_hedged_revenue_view
-from src.regulatory.eeg_compliance_checker import check_eeg_compliance
-from src.regulatory.storage_classification import classify_storage_asset
+﻿from backend.ancillary.germany_ancillary_services import assess_germany_ancillary_eligibility
+from backend.assets.asset_schema import BatteryAsset
+from backend.energy_accounting.energy_origin_ledger import build_energy_origin_ledger
+from backend.grid_fees.germany_grid_fee_model import build_germany_grid_fee_sensitivity
+from backend.hedging.revenue_contracts import build_hedged_revenue_view
+from backend.regulatory.eeg_compliance_checker import check_eeg_compliance
+from backend.regulatory.storage_classification import classify_storage_asset
 
 
 def build_test_asset(regulatory=None):
@@ -129,3 +129,6 @@ def test_hedged_revenue_view_returns_best_contract():
     assert result["status"] == "ok"
     assert result["best_contract"] is not None
     assert len(result["contracts"]) >= 1
+
+
+

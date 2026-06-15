@@ -1,5 +1,5 @@
-﻿from src.assets.asset_schema import BatteryAsset
-from src.revenue.revenue_stack_allocator import allocate_revenue_stack
+﻿from backend.assets.asset_schema import BatteryAsset
+from backend.revenue.revenue_stack_allocator import allocate_revenue_stack
 
 
 def build_test_asset():
@@ -64,3 +64,6 @@ def test_allocate_revenue_stack_respects_power_and_energy_constraints():
         and product["exclusion_reason"] == "Product has no numeric revenue estimate."
         for product in result["excluded_products"]
     )
+
+
+

@@ -1,4 +1,4 @@
-# Azure App Service Deployment Plan
+﻿# Azure App Service Deployment Plan
 
 This product is designed to run as two Azure web apps:
 
@@ -31,7 +31,7 @@ bash startup.sh
 Equivalent App Service startup command:
 
 ```bash
-python -m uvicorn src.api.main:app --host 0.0.0.0 --port $PORT
+python -m uvicorn backend.api.main:app --host 0.0.0.0 --port $PORT
 ```
 
 ## Backend App Settings
@@ -101,3 +101,4 @@ bash startup.sh
 6. Add Application Insights dashboards and alerts.
 7. Add API Management when external customers or partners need governed API
    access.
+

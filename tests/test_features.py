@@ -1,10 +1,10 @@
-import pandas as pd
+﻿import pandas as pd
 import pytest
 
-from src.features.forecast_quality_features import build_forecast_quality_features
-from src.features.market_features import build_daily_market_features
-from src.features.negative_price_features import build_negative_price_features
-from src.features.renewable_features import (
+from backend.features.forecast_quality_features import build_forecast_quality_features
+from backend.features.market_features import build_daily_market_features
+from backend.features.negative_price_features import build_negative_price_features
+from backend.features.renewable_features import (
     add_renewable_pressure_labels,
     build_renewable_forecast_features,
 )
@@ -116,3 +116,5 @@ def test_renewable_pressure_labels():
     assert set(result["renewable_pressure"]).issubset(
         {"low", "normal", "high", "unknown"}
     )
+
+

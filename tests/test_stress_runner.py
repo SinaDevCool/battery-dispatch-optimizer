@@ -1,6 +1,6 @@
-import pytest
+﻿import pytest
 
-from src.scenarios.stress_runner import apply_price_stress, run_price_stress_tests
+from backend.scenarios.stress_runner import apply_price_stress, run_price_stress_tests
 
 
 def test_apply_price_stress_add():
@@ -74,3 +74,5 @@ def test_run_price_stress_tests_returns_results():
     assert len(results) > 0
     assert "scenario_name" in results[0]
     assert "total_pnl_eur" in results[0]
+
+

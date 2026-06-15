@@ -1,4 +1,4 @@
-from src.config.paths import (
+﻿from backend.config.paths import (
     CLIENT_CONFIG_FILE,
     FORECAST_FILE,
     LATEST_SIGNAL_FILE,
@@ -30,3 +30,5 @@ def test_forecast_file_name():
 
 def test_latest_signal_file_name():
     assert LATEST_SIGNAL_FILE.name == "latest_battery_signal.json"
+
+

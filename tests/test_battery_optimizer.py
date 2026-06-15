@@ -1,4 +1,4 @@
-from src.optimizer.battery_optimizer import BatteryOptimizer
+﻿from backend.optimization.primitives.battery_optimizer import BatteryOptimizer
 
 
 def test_battery_charges_when_price_is_low():
@@ -159,3 +159,6 @@ def test_soc_never_goes_below_minimum():
 
     assert first_row["action"] == "discharge"
     assert first_row["soc_mwh"] >= 2.0
+
+
+

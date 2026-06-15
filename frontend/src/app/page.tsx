@@ -347,7 +347,7 @@ export default function OverviewPage() {
 
       {isBackendDown ? (
         <div className="mb-6">
-          <ErrorState message="The FastAPI backend is not reachable. Start it with: python -m uvicorn src.api.main:app --reload --port 8000" />
+          <ErrorState message="The FastAPI backend is not reachable. Start it with: python -m uvicorn backend.api.main:app --reload --port 8000" />
         </div>
       ) : null}
 

@@ -1,6 +1,6 @@
-from src.config.battery_config import DEFAULT_BATTERY_CONFIG, DEFAULT_STRATEGY_CONFIG
-from src.config.commercial_config import DEFAULT_COMMERCIAL_CONFIG
-from src.optimization.optimizer_registry import (
+﻿from backend.config.battery_config import DEFAULT_BATTERY_CONFIG, DEFAULT_STRATEGY_CONFIG
+from backend.config.commercial_config import DEFAULT_COMMERCIAL_CONFIG
+from backend.optimization.optimizer_registry import (
     get_dispatch_optimizer,
     list_optimizer_engines,
 )
@@ -62,3 +62,6 @@ def test_linear_optimizer_stays_idle_when_prices_are_flat():
     assert result.summary["signal"] == "NO_ACTION"
     assert result.summary["total_pnl_eur"] == 0.0
     assert all(row["action"] == "idle" for row in result.dispatch)
+
+
+

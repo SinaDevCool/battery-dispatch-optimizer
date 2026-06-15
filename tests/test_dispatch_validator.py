@@ -1,4 +1,4 @@
-from src.validation.dispatch_validator import validate_dispatch_signal
+﻿from backend.validation.dispatch_validator import validate_dispatch_signal
 
 
 def build_test_battery_config():
@@ -98,3 +98,6 @@ def test_validate_dispatch_signal_fails_when_soc_is_below_minimum():
     assert validation["status"] == "fail"
     assert validation["error_count"] == 1
     assert validation["errors"][0]["code"] == "soc_below_minimum"
+
+
+

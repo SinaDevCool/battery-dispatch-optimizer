@@ -17,3 +17,7 @@ __pycache__/
 data/raw/
 data/processed/
 data/outputs/
+data/db/
+!data/README.md
+!data/config/
+!data/config/*.json

@@ -1,5 +1,5 @@
-from src.assets.asset_schema import BatteryAsset
-from src.services.asset_dispatch_service import (
+﻿from backend.assets.asset_schema import BatteryAsset
+from backend.services.asset_dispatch_service import (
     apply_grid_connection_limits,
     build_asset_assumption_flags,
     build_asset_signal_metadata,
@@ -85,3 +85,6 @@ def test_asset_signal_metadata_contains_grid_and_regulatory_context():
     assert metadata["grid_connection"]["max_import_mw"] == 7.0
     assert metadata["regulatory"]["mastr_registered"] is False
     assert metadata["constrained_battery_config"]["max_charge_power_mw"] == 7.0
+
+
+

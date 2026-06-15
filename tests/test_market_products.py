@@ -1,5 +1,5 @@
-from src.assets.asset_schema import BatteryAsset
-from src.markets.products.product_registry import (
+﻿from backend.assets.asset_schema import BatteryAsset
+from backend.markets.products.product_registry import (
     build_asset_product_eligibility_list,
     get_market_product,
     list_market_products,
@@ -90,3 +90,6 @@ def test_asset_product_eligibility_allows_fcr_with_prequalification():
     )
 
     assert fcr_result["eligibility_status"] == "eligible"
+
+
+

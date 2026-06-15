@@ -1,10 +1,10 @@
-from src.db.repositories.revenue_repository import (
+﻿from backend.db.repositories.revenue_repository import (
     get_revenue_stack_run,
     list_revenue_product_results,
     list_revenue_stack_runs,
     save_revenue_stack_run,
 )
-from src.db.repositories.signal_repository import (
+from backend.db.repositories.signal_repository import (
     get_signal_run,
     list_signal_runs,
     save_signal_run,
@@ -108,3 +108,6 @@ def test_revenue_repository_saves_stack_and_product_results(tmp_path):
     assert loaded["payload"]["total_estimated_revenue_eur"] == 100.0
     assert len(products) == 2
     assert products[0]["product_id"] == "day_ahead_arbitrage"
+
+
+

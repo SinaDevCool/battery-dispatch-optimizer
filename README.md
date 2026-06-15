@@ -1,4 +1,4 @@
-# Battery Trader AI
+﻿# Battery Trader AI
 
 Battery Trader AI is a battery trading intelligence platform for grid-scale storage assets. It combines forecasting, dispatch optimization, revenue assurance, market-route readiness, automation control, settlement evidence, audit evidence, and persona-specific workflows into one product.
 
@@ -142,36 +142,74 @@ Current frontend routes:
 
 ## Backend Architecture
 
-The backend is a FastAPI application in `src/api/main.py`. Route modules are registered through `src/api/routes/__init__.py`.
+The backend is a FastAPI application in `backend/api/main.py`. Route modules are registered through `backend/api/routes/__init__.py`.
 
 Major backend areas:
 
 | Area | Purpose |
 |---|---|
-| `src/api/routes/` | FastAPI HTTP API modules |
-| `src/assets/` | Asset loading, asset schema, portfolio dispatch |
-| `src/backtesting/` | Forecast-vs-actual and historical analysis support |
-| `src/config/` | Paths, app settings, client presets, market config |
-| `src/db/` | SQLite database setup and repository layer |
-| `src/dispatch/` | Dispatch and battery schedule utilities |
-| `src/execution/` | Automation control, market routing, proposals, paper trading, connectors, gates, remediation, submission lifecycle |
-| `src/forecasts/` | Forecast loading, upload, ENTSO-E provider, comparison |
-| `src/markets/` | Market profiles, products, and market data helpers |
-| `src/optimization/` | Optimizer registry and optimization engines |
-| `src/regulatory/` | Germany regulatory and operating assumption checks |
-| `src/reports/` | Monthly client report generation |
-| `src/revenue/` | Revenue stack runner and revenue calculators |
-| `src/scenarios/` | Scenario and stress-test logic |
-| `src/services/` | Shared services and persistence helpers |
-| `src/settlement/` | Settlement variance and reconciliation logic |
-| `src/signals/` | Signal generation, explanations, and risk flags |
-| `src/telemetry/` | Asset telemetry snapshots |
-| `src/validation/` | Dispatch validation |
-| `src/workflows/` | Daily workflow orchestration |
+| `backend/api/routes/` | FastAPI HTTP API modules |
+| `backend/assets/` | Asset loading, asset schema, portfolio dispatch |
+| `backend/backtesting/` | Forecast-vs-actual and historical analysis support |
+| `backend/config/` | Paths, app settings, client presets, market config |
+| `backend/db/` | SQLite database setup and repository layer |
+| `backend/dispatch/` | Dispatch and battery schedule utilities |
+| `backend/execution/` | Automation control, market routing, proposals, paper trading, connectors, gates, remediation, submission lifecycle |
+| `backend/forecasts/` | Forecast loading, upload, ENTSO-E provider, comparison |
+| `backend/markets/` | Market profiles, products, and market data helpers |
+| `backend/optimization/` | Optimizer registry and optimization engines |
+| `backend/regulatory/` | Germany regulatory and operating assumption checks |
+| `backend/reports/` | Monthly client report generation |
+| `backend/revenue/` | Revenue stack runner and revenue calculators |
+| `backend/scenarios/` | Scenario and stress-test logic |
+| `backend/services/` | Shared services and persistence helpers |
+| `backend/settlement/` | Settlement variance and reconciliation logic |
+| `backend/signals/` | Signal generation, explanations, and risk flags |
+| `backend/telemetry/` | Asset telemetry snapshots |
+| `backend/validation/` | Dispatch validation |
+| `backend/workflows/` | Daily workflow orchestration |
+
+Optimizer implementations now live under `backend/optimization/`. The old
+`backend/optimizer/` package remains only as a compatibility shim for older callers;
+new code should import from `backend.optimization`.
+
+## Repository Layout
+
+The active application surfaces are:
+
+```text
+backend/     FastAPI backend, domain services, execution control, persistence
+frontend/     Next.js commercial frontend
+```
+
+Supporting and transitional areas are:
+
+```text
+archive/streamlit_dashboard/
+              archived Streamlit dashboard for internal prototyping
+archive/manual_scripts/
+              archived manual CLI utilities for local workflow checks
+tests/        backend test suite
+docs/         deployment and operating notes
+data/config/  checked-in local seed configuration
+```
+
+Runtime/local artifacts are intentionally kept separate from seed
+configuration:
+
+```text
+data/raw/
+data/processed/
+data/outputs/
+data/db/
+```
+
+These runtime folders are ignored for source control and should map to managed
+storage/database services in production.
 
 ### Execution Control Plane
 
-The most important backend subsystem for the current product is `src/execution/`.
+The most important backend subsystem for the current product is `backend/execution/`.
 
 It includes:
 
@@ -212,7 +250,7 @@ data/db/battery_dispatch_optimizer.sqlite
 Repository modules live under:
 
 ```text
-src/db/repositories/
+backend/db/repositories/
 ```
 
 The app still uses a hybrid persistence model: file outputs for some artifacts and SQLite repositories for asset, forecast, signal, revenue, execution, telemetry, settlement, workflow, and official API evidence records.
@@ -296,7 +334,7 @@ docs/azure-app-service.md
 Start the backend:
 
 ```bash
-python -m uvicorn src.api.main:app --reload --port 8000
+python -m uvicorn backend.api.main:app --reload --port 8000
 ```
 
 Start the frontend:
@@ -318,12 +356,12 @@ API docs:
 http://127.0.0.1:8000/docs
 ```
 
-## Run The Legacy Streamlit Dashboard
+## Run The Archived Streamlit Dashboard
 
 The Streamlit dashboard remains useful for internal prototyping, but the Next.js frontend is the commercial product UI.
 
 ```bash
-python -m streamlit run dashboard/app.py
+python -m streamlit run archive/streamlit_dashboard/app.py
 ```
 
 Open:
@@ -462,7 +500,7 @@ Monthly reports are generated as standalone HTML files.
 Report builder:
 
 ```text
-src/reports/monthly_report.py
+backend/reports/monthly_report.py
 ```
 
 Output pattern:
@@ -546,3 +584,5 @@ Important current limitations:
 5. Move remaining file-based outputs into database/object storage.
 6. Add deeper forecast-vs-actual learning loops into route allocation and revenue assumptions.
 7. Add stronger multi-market co-optimization across day-ahead, intraday, and ancillary products.
+
+

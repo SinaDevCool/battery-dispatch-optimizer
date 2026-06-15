@@ -1,6 +1,6 @@
-import pytest
+﻿import pytest
 
-from src.features.battery_usage_features import build_battery_usage_features
+from backend.features.battery_usage_features import build_battery_usage_features
 
 
 def test_battery_usage_features_empty_dispatch():
@@ -54,3 +54,5 @@ def test_battery_usage_features_missing_columns():
             dispatch_rows=dispatch_rows,
             capacity_mwh=20,
         )
+
+

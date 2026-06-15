@@ -1,10 +1,17 @@
 ﻿from fastapi.testclient import TestClient
+import pytest
 
-from src.api.main import app
+from backend.api.main import app
 
 
 client = TestClient(app)
 
+
+@pytest.fixture(autouse=True, scope="module")
+def demo_forecast():
+    response = client.post("/forecast/demo")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
 
 def test_health_endpoint():
     response = client.get("/health")
@@ -1164,3 +1171,7 @@ def test_execution_demo_market_submission_endpoints():
     assert history_data["status"] == "ok"
     assert history_data["asset_id"] == "default_site"
     assert "submissions" in history_data
+
+
+
+
