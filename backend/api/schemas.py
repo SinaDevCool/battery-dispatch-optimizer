@@ -182,6 +182,8 @@ class HedgingRevenueResponse(ApiResponse):
 
 class MonthlyReportResponse(ApiResponse):
     report_name: Optional[str] = None
+    report_title: Optional[str] = None
+    report_period: Optional[str] = None
 
 
 class PricePoint(BaseModel):

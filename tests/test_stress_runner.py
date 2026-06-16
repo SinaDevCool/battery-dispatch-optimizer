@@ -73,6 +73,48 @@ def test_run_price_stress_tests_returns_results():
 
     assert len(results) > 0
     assert "scenario_name" in results[0]
+    assert "investor_case" in results[0]
+    assert "stress_category" in results[0]
     assert "total_pnl_eur" in results[0]
+
+    scenario_names = {row["scenario_name"] for row in results}
+
+    assert "Base case" in scenario_names
+    assert "Low-price downside" in scenario_names
+    assert "High-volatility upside" in scenario_names
+    assert "Dispatch underperformance" in scenario_names
+    assert "Battery degradation / availability reduction" in scenario_names
+
+
+def test_run_price_stress_tests_adds_solar_asset_downside_case():
+    price_data = [
+        {"timestamp": "2026-01-01 00:00:00", "price": 35},
+        {"timestamp": "2026-01-01 01:00:00", "price": 10},
+        {"timestamp": "2026-01-01 02:00:00", "price": 95},
+    ]
+
+    results = run_price_stress_tests(
+        price_data,
+        asset={"asset_type": "solar_colocated_battery"},
+    )
+    scenario_names = {row["scenario_name"] for row in results}
+
+    assert "Solar curtailment/export-limit stress" in scenario_names
+
+
+def test_run_price_stress_tests_adds_industrial_asset_downside_case():
+    price_data = [
+        {"timestamp": "2026-01-01 00:00:00", "price": 35},
+        {"timestamp": "2026-01-01 01:00:00", "price": 10},
+        {"timestamp": "2026-01-01 02:00:00", "price": 95},
+    ]
+
+    results = run_price_stress_tests(
+        price_data,
+        asset={"asset_type": "industrial_behind_the_meter_battery"},
+    )
+    scenario_names = {row["scenario_name"] for row in results}
+
+    assert "Industrial site-load stress" in scenario_names
 
 

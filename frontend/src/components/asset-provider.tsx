@@ -1,10 +1,10 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -22,29 +22,54 @@ type AssetContextValue = {
 
 const DEFAULT_ASSET_ID = "default_site";
 const STORAGE_KEY = "battery_optimizer_selected_asset_id";
+const ASSET_STORAGE_EVENT = "battery-optimizer-selected-asset-change";
 
 const AssetContext = createContext<AssetContextValue | undefined>(undefined);
 
 export function AssetProvider({ children }: { children: React.ReactNode }) {
-  const [selectedAssetId, setSelectedAssetIdState] = useState(() => {
-    if (typeof window === "undefined") {
-      return DEFAULT_ASSET_ID;
-    }
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [isLoadingAssets, setIsLoadingAssets] = useState(true);
+  const [selectedAssetId, setSelectedAssetIdState] = useState(DEFAULT_ASSET_ID);
 
-    return window.localStorage.getItem(STORAGE_KEY) ?? DEFAULT_ASSET_ID;
-  });
+  useEffect(() => {
+    const syncSelectedAssetId = () => {
+      setSelectedAssetIdState(getStoredSelectedAssetId());
+    };
 
-  const assetsQuery = useQuery({
-    queryFn: () => apiGet<AssetListResponse>("/assets"),
-    queryKey: ["assets"],
-  });
+    syncSelectedAssetId();
+    return subscribeToSelectedAssetStorage(syncSelectedAssetId);
+  }, []);
 
-  const assets = useMemo(() => assetsQuery.data?.assets ?? [], [assetsQuery.data]);
+  useEffect(() => {
+    let isCancelled = false;
+
+    apiGet<AssetListResponse>("/assets")
+      .then((response) => {
+        if (!isCancelled) {
+          setAssets(response.assets ?? []);
+          setSelectedAssetIdState(getStoredSelectedAssetId());
+        }
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setAssets([]);
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsLoadingAssets(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   const setSelectedAssetId = useCallback((assetId: string) => {
-    setSelectedAssetIdState(assetId);
     if (typeof window !== "undefined") {
       window.localStorage.setItem(STORAGE_KEY, assetId);
+      window.dispatchEvent(new Event(ASSET_STORAGE_EVENT));
     }
   }, []);
 
@@ -69,15 +94,15 @@ export function AssetProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(
     () => ({
       assets,
-      isLoadingAssets: assetsQuery.isLoading,
+      isLoadingAssets,
       selectedAsset,
       selectedAssetId: effectiveSelectedAssetId,
       setSelectedAssetId,
     }),
     [
       assets,
-      assetsQuery.isLoading,
       effectiveSelectedAssetId,
+      isLoadingAssets,
       selectedAsset,
       setSelectedAssetId,
     ],
@@ -86,6 +111,20 @@ export function AssetProvider({ children }: { children: React.ReactNode }) {
   return (
     <AssetContext.Provider value={value}>{children}</AssetContext.Provider>
   );
+}
+
+function subscribeToSelectedAssetStorage(onStoreChange: () => void) {
+  window.addEventListener("storage", onStoreChange);
+  window.addEventListener(ASSET_STORAGE_EVENT, onStoreChange);
+
+  return () => {
+    window.removeEventListener("storage", onStoreChange);
+    window.removeEventListener(ASSET_STORAGE_EVENT, onStoreChange);
+  };
+}
+
+function getStoredSelectedAssetId() {
+  return window.localStorage.getItem(STORAGE_KEY) ?? DEFAULT_ASSET_ID;
 }
 
 export function useAssetContext() {

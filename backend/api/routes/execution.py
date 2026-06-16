@@ -1,6 +1,7 @@
 ﻿from fastapi import APIRouter
 
 from backend.api.schemas import ApiResponse
+from backend.assets.asset_loader import get_asset
 from backend.execution.approval_workflow import (
     approve_execution_proposal,
     execution_approval_history,
@@ -87,6 +88,7 @@ from backend.db.repositories.execution_repository import (
     get_latest_automation_event,
     list_automation_events,
 )
+from backend.services.asset_provenance import attach_asset_provenance
 
 
 router = APIRouter()
@@ -565,6 +567,12 @@ def build_asset_execution_proposal(asset_id: str):
         "status": "ok",
         "asset_id": asset_id,
         "proposal": proposal,
+        "metadata": build_execution_metadata(
+            asset_id,
+            artifact="execution_proposal",
+            kind="execution_proposal",
+            payload=proposal,
+        ),
     }
 
 
@@ -573,7 +581,14 @@ def build_asset_execution_proposal(asset_id: str):
     response_model=ApiResponse,
 )
 def latest_asset_execution_proposal(asset_id: str):
-    return latest_execution_proposal(asset_id)
+    result = latest_execution_proposal(asset_id)
+    return attach_execution_provenance(
+        result,
+        asset_id,
+        artifact="execution_proposal",
+        kind="execution_proposal",
+        payload=result.get("proposal"),
+    )
 
 
 @router.get(
@@ -620,6 +635,12 @@ def run_asset_execution_paper_trade(asset_id: str):
         "status": "ok",
         "asset_id": asset_id,
         "paper_trade": paper_trade,
+        "metadata": build_execution_metadata(
+            asset_id,
+            artifact="paper_trade",
+            kind="execution_paper_trade",
+            payload=paper_trade,
+        ),
     }
 
 
@@ -628,7 +649,14 @@ def run_asset_execution_paper_trade(asset_id: str):
     response_model=ApiResponse,
 )
 def latest_asset_execution_paper_trade(asset_id: str):
-    return latest_execution_paper_trade(asset_id)
+    result = latest_execution_paper_trade(asset_id)
+    return attach_execution_provenance(
+        result,
+        asset_id,
+        artifact="paper_trade",
+        kind="execution_paper_trade",
+        payload=result.get("paper_trade"),
+    )
 
 
 @router.get(
@@ -907,7 +935,13 @@ def asset_execution_automation_policy_history(asset_id: str, limit: int = 25):
 )
 def asset_execution_readiness(asset_id: str):
     try:
-        return build_execution_readiness(asset_id)
+        result = build_execution_readiness(asset_id)
+        return attach_execution_provenance(
+            result,
+            asset_id,
+            artifact="execution_readiness",
+            kind="execution_readiness",
+        )
     except ValueError as error:
         return {
             "status": "not_found",
@@ -958,6 +992,12 @@ def demo_submit_asset_bids(asset_id: str):
         "status": "ok",
         "asset_id": asset_id,
         "submission": submission,
+        "metadata": build_execution_metadata(
+            asset_id,
+            artifact="market_submission",
+            kind="market_submission",
+            payload=submission,
+        ),
     }
 
 
@@ -966,7 +1006,14 @@ def demo_submit_asset_bids(asset_id: str):
     response_model=ApiResponse,
 )
 def latest_asset_market_submission(asset_id: str):
-    return latest_market_submission(asset_id)
+    result = latest_market_submission(asset_id)
+    return attach_execution_provenance(
+        result,
+        asset_id,
+        artifact="market_submission",
+        kind="market_submission",
+        payload=result.get("submission"),
+    )
 
 
 @router.get(
@@ -995,6 +1042,12 @@ def request_asset_execution_approval(asset_id: str):
         "status": "ok",
         "asset_id": asset_id,
         "approval": approval,
+        "metadata": build_execution_metadata(
+            asset_id,
+            artifact="execution_approval",
+            kind="execution_approval",
+            payload=approval,
+        ),
     }
 
 
@@ -1016,6 +1069,12 @@ def approve_asset_execution(asset_id: str):
         "status": "ok",
         "asset_id": asset_id,
         "approval": approval,
+        "metadata": build_execution_metadata(
+            asset_id,
+            artifact="execution_approval",
+            kind="execution_approval",
+            payload=approval,
+        ),
     }
 
 
@@ -1037,6 +1096,12 @@ def reject_asset_execution(asset_id: str):
         "status": "ok",
         "asset_id": asset_id,
         "approval": approval,
+        "metadata": build_execution_metadata(
+            asset_id,
+            artifact="execution_approval",
+            kind="execution_approval",
+            payload=approval,
+        ),
     }
 
 
@@ -1045,7 +1110,14 @@ def reject_asset_execution(asset_id: str):
     response_model=ApiResponse,
 )
 def latest_asset_execution_approval(asset_id: str):
-    return latest_execution_approval(asset_id)
+    result = latest_execution_approval(asset_id)
+    return attach_execution_provenance(
+        result,
+        asset_id,
+        artifact="execution_approval",
+        kind="execution_approval",
+        payload=result.get("approval"),
+    )
 
 
 @router.get(
@@ -1056,5 +1128,48 @@ def asset_execution_approval_history(asset_id: str, limit: int = 25):
     return execution_approval_history(asset_id=asset_id, limit=limit)
 
 
+def attach_execution_provenance(
+    result: dict,
+    asset_id: str,
+    *,
+    artifact: str,
+    kind: str,
+    payload: dict | None = None,
+):
+    result["metadata"] = build_execution_metadata(
+        asset_id,
+        artifact=artifact,
+        kind=kind,
+        payload=payload,
+    )
+    return result
+
+
+def build_execution_metadata(
+    asset_id: str,
+    *,
+    artifact: str,
+    kind: str,
+    payload: dict | None = None,
+):
+    asset = get_asset(asset_id)
+    payload = payload or {}
+
+    return attach_asset_provenance(
+        {},
+        asset,
+        artifact=artifact,
+        generated_at=(
+            payload.get("generated_at")
+            or payload.get("submitted_at")
+            or payload.get("requested_at")
+            or payload.get("decided_at")
+        ),
+        kind=kind,
+        production_upgrade_path=(
+            "Connect live market adapters, exchange credentials, EMS telemetry, "
+            "approval workflow, and settlement reconciliation before production execution."
+        ),
+    )["metadata"]
 
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { ActionButton } from "@/components/action-button";
@@ -12,6 +12,7 @@ import { PageHeading } from "@/components/page-heading";
 import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
+import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { apiGet } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import type { PersonaId } from "@/lib/personas";
@@ -46,8 +47,29 @@ type MarketPricesPersonaFraming = {
   title: string;
 };
 
+const marketPriceTabs = [
+  {
+    id: "curve",
+    label: "Price Curve",
+    helper: "Forecast price regimes, action windows, and price evidence summary.",
+  },
+  {
+    id: "products",
+    label: "Products",
+    helper: "German product catalog and market context for price-to-revenue logic.",
+  },
+  {
+    id: "evidence",
+    label: "Evidence",
+    helper: "Backend source routes and data-quality handoff into automation.",
+  },
+] as const;
+
+type MarketPriceTabId = (typeof marketPriceTabs)[number]["id"];
+
 export default function MarketPricesPage() {
   const { persona, personaId } = usePersona();
+  const [activeTab, setActiveTab] = useState<MarketPriceTabId>("curve");
   const framing = getMarketPricesPersonaFraming(personaId);
 
   const forecastStatus = useQuery({
@@ -192,124 +214,135 @@ export default function MarketPricesPage() {
         />
       </div>
 
-      <SectionCard
-        action={
-          <StatusPill tone={decisionBrief.tone}>
-            {decisionBrief.blockers.length ? "Advisory prices" : "Automation-ready prices"}
-          </StatusPill>
-        }
-        className="mb-6"
-        title={framing.bridgeTitle}
-      >
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <DataTable
-            columns={["decision_input", "value"]}
-            rows={[
-              {
-                decision_input: "Automated use",
-                value: decisionBrief.blockers.length
-                  ? "Keep bid generation supervised until gaps clear."
-                  : "Feed price curve into signal, allocation, and proposal generation.",
-              },
-              {
-                decision_input: "Charge candidates",
-                value: `${priceStats.negativeHours + priceStats.lowHours} interval(s)`,
-              },
-              {
-                decision_input: "Discharge candidates",
-                value: `${priceStats.highHours + priceStats.scarcityHours} interval(s)`,
-              },
-              {
-                decision_input: "Primary blocker",
-                value: decisionBrief.blockers[0] ?? "No blocking price-data issue.",
-              },
-            ]}
-          />
-          <DataTable
-            columns={["capability", "backend_route", "status", "business_value"]}
-            rows={backendConnectionRows}
-          />
-        </div>
-      </SectionCard>
+      <WorkspaceTabs
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        tabs={marketPriceTabs}
+      />
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
-        <SectionCard
-          action={<StatusPill tone="blue">{forecastRows.length} interval(s)</StatusPill>}
-          title={framing.curveTitle}
-        >
-          <div className="mb-4 grid gap-3 md:grid-cols-4">
-            <MarketPriceRow label="Negative" tone={priceStats.negativeHours ? "amber" : "emerald"} value={priceStats.negativeHours} />
-            <MarketPriceRow label="Low" tone="blue" value={priceStats.lowHours} />
-            <MarketPriceRow label="High" tone="blue" value={priceStats.highHours} />
-            <MarketPriceRow label="Scarcity" tone={priceStats.scarcityHours ? "amber" : "slate"} value={priceStats.scarcityHours} />
-          </div>
-          <DataTable
-            columns={[
-              "timestamp",
-              "forecast_price",
-              "price_regime",
-              "automation_use",
-            ]}
-            rows={actionablePriceRows}
-          />
-          {forecastRows.length ? (
-            <div className="mt-5">
-              <BarComparisonChart
-                data={forecastRows}
-                xKey="timestamp_label"
-                yKey="forecast_price"
-              />
+      {activeTab === "curve" ? (
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
+          <SectionCard
+            action={<StatusPill tone="blue">{forecastRows.length} interval(s)</StatusPill>}
+            title={framing.curveTitle}
+          >
+            <div className="mb-4 grid gap-3 md:grid-cols-4">
+              <MarketPriceRow label="Negative" tone={priceStats.negativeHours ? "amber" : "emerald"} value={priceStats.negativeHours} />
+              <MarketPriceRow label="Low" tone="blue" value={priceStats.lowHours} />
+              <MarketPriceRow label="High" tone="blue" value={priceStats.highHours} />
+              <MarketPriceRow label="Scarcity" tone={priceStats.scarcityHours ? "amber" : "slate"} value={priceStats.scarcityHours} />
             </div>
-          ) : null}
-        </SectionCard>
+            <DataTable
+              columns={[
+                "timestamp",
+                "forecast_price",
+                "price_regime",
+                "automation_use",
+              ]}
+              rows={actionablePriceRows}
+            />
+            {forecastRows.length ? (
+              <div className="mt-5">
+                <BarComparisonChart
+                  data={forecastRows}
+                  xKey="timestamp_label"
+                  yKey="forecast_price"
+                />
+              </div>
+            ) : null}
+          </SectionCard>
 
-        <SectionCard title={framing.summaryTitle}>
-          <div className="space-y-3">
-            <MarketPriceRow label="Average forecast" tone="blue" value={`${formatNumber(priceStats.averagePrice, 2)} EUR/MWh`} />
-            <MarketPriceRow label="Volatility estimate" tone="blue" value={`${formatNumber(priceStats.volatility, 2)} EUR/MWh`} />
-            <MarketPriceRow label="Actual average" tone="emerald" value={`${formatNumber(actualPrices.data?.average_actual_price, 2)} EUR/MWh`} />
-            <MarketPriceRow label="Actual min/max" tone="slate" value={`${formatNumber(actualPrices.data?.min_actual_price, 2)} / ${formatNumber(actualPrices.data?.max_actual_price, 2)}`} />
-            <MarketPriceRow label="Market profiles" tone="blue" value={markets.data?.market_count ?? "-"} />
-          </div>
-        </SectionCard>
-      </div>
-
-      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
-        <SectionCard
-          action={<StatusPill tone="blue">{productRows.length} product(s)</StatusPill>}
-          title={framing.productsTitle}
-        >
-          <DataTable
-            columns={[
-              "product_id",
-              "product_name",
-              "market",
-              "revenue_type",
-              "settlement_granularity",
-              "minimum_power_mw",
-            ]}
-            rows={productRows.slice(0, 8)}
-          />
-        </SectionCard>
-
-        {persona.layer === "client" ? null : (
-          <SectionCard title={framing.controlsTitle}>
-            <div className="grid gap-3">
-              <ActionButton
-                endpoint="/data/update-entsoe"
-                label="Update ENTSO-E forecast"
-                refetch={refetchPrices}
-                variant="primary"
-              />
-              <ActionButton
-                endpoint="/data/update-actual-prices"
-                label="Update actual prices"
-                refetch={refetchPrices}
-              />
+          <SectionCard title={framing.summaryTitle}>
+            <div className="space-y-3">
+              <MarketPriceRow label="Average forecast" tone="blue" value={`${formatNumber(priceStats.averagePrice, 2)} EUR/MWh`} />
+              <MarketPriceRow label="Volatility estimate" tone="blue" value={`${formatNumber(priceStats.volatility, 2)} EUR/MWh`} />
+              <MarketPriceRow label="Actual average" tone="emerald" value={`${formatNumber(actualPrices.data?.average_actual_price, 2)} EUR/MWh`} />
+              <MarketPriceRow label="Actual min/max" tone="slate" value={`${formatNumber(actualPrices.data?.min_actual_price, 2)} / ${formatNumber(actualPrices.data?.max_actual_price, 2)}`} />
+              <MarketPriceRow label="Market profiles" tone="blue" value={markets.data?.market_count ?? "-"} />
             </div>
           </SectionCard>
-        )}
-      </div>
+        </div>
+      ) : null}
+
+      {activeTab === "products" ? (
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
+          <SectionCard
+            action={<StatusPill tone="blue">{productRows.length} product(s)</StatusPill>}
+            title={framing.productsTitle}
+          >
+            <DataTable
+              columns={[
+                "product_id",
+                "product_name",
+                "market",
+                "revenue_type",
+                "settlement_granularity",
+                "minimum_power_mw",
+              ]}
+              rows={productRows.slice(0, 8)}
+            />
+          </SectionCard>
+
+          {persona.layer === "client" ? null : (
+            <SectionCard title={framing.controlsTitle}>
+              <div className="grid gap-3">
+                <ActionButton
+                  endpoint="/data/update-entsoe"
+                  label="Update ENTSO-E forecast"
+                  refetch={refetchPrices}
+                  variant="primary"
+                />
+                <ActionButton
+                  endpoint="/data/update-actual-prices"
+                  label="Update actual prices"
+                  refetch={refetchPrices}
+                />
+              </div>
+            </SectionCard>
+          )}
+        </div>
+      ) : null}
+
+      {activeTab === "evidence" ? (
+        <SectionCard
+          action={
+            <StatusPill tone={decisionBrief.tone}>
+              {decisionBrief.blockers.length ? "Advisory prices" : "Automation-ready prices"}
+            </StatusPill>
+          }
+          title={framing.bridgeTitle}
+        >
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <DataTable
+              columns={["decision_input", "value"]}
+              rows={[
+                {
+                  decision_input: "Automated use",
+                  value: decisionBrief.blockers.length
+                    ? "Keep bid generation supervised until gaps clear."
+                    : "Feed price curve into signal, allocation, and proposal generation.",
+                },
+                {
+                  decision_input: "Charge candidates",
+                  value: `${priceStats.negativeHours + priceStats.lowHours} interval(s)`,
+                },
+                {
+                  decision_input: "Discharge candidates",
+                  value: `${priceStats.highHours + priceStats.scarcityHours} interval(s)`,
+                },
+                {
+                  decision_input: "Primary blocker",
+                  value: decisionBrief.blockers[0] ?? "No blocking price-data issue.",
+                },
+              ]}
+            />
+            <DataTable
+              columns={["capability", "backend_route", "status", "business_value"]}
+              rows={backendConnectionRows}
+            />
+          </div>
+        </SectionCard>
+      ) : null}
     </>
   );
 }

@@ -1,6 +1,5 @@
 ﻿from backend.config.paths import (
     FORECAST_FILE,
-    SCENARIO_RESULTS_FILE,
 )
 from backend.forecasts.entsoe_forecast_provider import EntsoeForecastError
 from backend.scenarios.scenario_runner import run_scenarios
@@ -8,6 +7,10 @@ from backend.services.asset_dispatch_service import (
     add_asset_dispatch_validation,
     build_asset_signal_metadata,
     dispatch_default_asset,
+)
+from backend.services.asset_output_paths import (
+    asset_scenario_results_file,
+    build_asset_output_envelope,
 )
 from backend.services.asset_signal_store import save_asset_signal
 from backend.services.forecast_service import load_next_day_forecast_with_fallback
@@ -82,8 +85,17 @@ def run_daily_battery_workflow(optimizer_engine="rule_based_v1"):
     )
 
     scenario_results = run_scenarios(dispatch_result.price_data)
+    scenario_file = asset_scenario_results_file(asset_dispatch_result.asset.asset_id)
 
-    get_storage_client().write_json(SCENARIO_RESULTS_FILE, scenario_results)
+    get_storage_client().write_json(
+        scenario_file,
+        build_asset_output_envelope(
+            asset=asset_dispatch_result.asset.to_dict(),
+            forecast_file=str(FORECAST_FILE),
+            kind="scenario_results",
+            results=scenario_results,
+        ),
+    )
 
     return {
         "status": "ok",
@@ -97,7 +109,7 @@ def run_daily_battery_workflow(optimizer_engine="rule_based_v1"):
         ),
         "asset_run_file": str(saved_asset_signal_files["asset_run_file"]),
         "signal_id": saved_asset_signal_files["signal_id"],
-        "scenario_file": str(SCENARIO_RESULTS_FILE),
+        "scenario_file": str(scenario_file),
         "forecast_rows": len(forecast_result.dataframe),
         "forecast_columns": forecast_result.dataframe.columns.tolist(),
         "workflow_source": forecast_result.source,

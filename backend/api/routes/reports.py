@@ -19,6 +19,7 @@ from backend.regulatory.germany_assumption_engine import (
 )
 from backend.reports.monthly_report import build_asset_client_report_html
 from backend.revenue.revenue_stack_runner import load_latest_asset_revenue_stack
+from backend.services.asset_provenance import attach_asset_provenance
 from backend.services.asset_signal_store import load_asset_latest_signal
 from backend.services.data_completeness_service import build_asset_data_completeness
 from backend.settlement.settlement_reconciliation import latest_settlement_reconciliation
@@ -43,13 +44,31 @@ def latest_monthly_report(asset_id: str | None = None):
 
     latest_report = report_files[-1]
 
-    return {
+    response = {
         "status": "ok",
         "asset_id": asset_id,
         "report_file": str(latest_report),
         "report_name": latest_report.name,
+        "report_title": build_report_title(latest_report.name),
+        "report_period": report_period_from_name(latest_report.name),
         "viewer_route": build_viewer_route(asset_id),
     }
+    if asset_id:
+        try:
+            return attach_asset_provenance(
+                response,
+                get_asset(asset_id),
+                artifact=str(latest_report),
+                kind="monthly_report",
+                source_file=str(latest_report),
+                production_upgrade_path=(
+                    "Connect production data sources, signed report archive, PDF export, "
+                    "and settlement-backed audit evidence."
+                ),
+            )
+        except ValueError:
+            return response
+    return response
 
 
 @router.get("/reports/monthly/list", response_model=ApiResponse)
@@ -58,19 +77,32 @@ def list_monthly_reports(asset_id: str | None = None):
     storage = get_storage_client()
     report_files = list_report_files(storage, report_dir, asset_id=asset_id)
 
-    return {
+    response = {
         "status": "ok",
         "asset_id": asset_id,
         "report_count": len(report_files),
         "reports": [
             {
                 "report_name": report_file.name,
+                "report_title": build_report_title(report_file.name),
+                "report_period": report_period_from_name(report_file.name),
                 "report_file": str(report_file),
                 "asset_id": asset_id_from_report_name(report_file.name),
             }
             for report_file in reversed(report_files)
         ],
     }
+    if asset_id:
+        try:
+            return attach_asset_provenance(
+                response,
+                get_asset(asset_id),
+                artifact="monthly_report_list",
+                kind="monthly_report_list",
+            )
+        except ValueError:
+            return response
+    return response
 
 
 @router.get("/reports/monthly/latest/view", response_class=HTMLResponse)
@@ -120,14 +152,16 @@ def generate_asset_monthly_report(asset_id: str):
         storage = get_storage_client()
         storage.write_text(report_file, html)
 
-        return {
+        return attach_asset_provenance({
             "status": "ok",
             "asset_id": asset_id,
             "message": "Generated selected-asset client report.",
             "report_file": str(report_file),
             "report_name": report_file.name,
+            "report_title": build_report_title(report_file.name),
+            "report_period": report_period_from_name(report_file.name),
             "viewer_route": build_viewer_route(asset_id),
-        }
+        }, get_asset(asset_id), artifact=str(report_file), kind="monthly_report", source_file=str(report_file))
     except Exception as error:
         return {
             "status": "error",
@@ -168,8 +202,22 @@ def safe_asset_id(asset_id):
 
 
 def asset_id_from_report_name(report_name):
-    match = re.match(r"monthly_report_(.+)_\\d{4}-\\d{2}\\.html$", report_name)
+    match = re.match(r"monthly_report_(.+)_\d{4}-\d{2}\.html$", report_name)
     return match.group(1) if match else None
+
+
+def report_period_from_name(report_name):
+    match = re.search(r"_(\d{4}-\d{2})\.html$", report_name)
+    return match.group(1) if match else None
+
+
+def build_report_title(report_name):
+    period = report_period_from_name(report_name)
+    asset_id = asset_id_from_report_name(report_name)
+    asset_label = asset_id.replace("_", " ").title() if asset_id else "Portfolio"
+    if period:
+        return f"{asset_label} investor evidence report - {period}"
+    return f"{asset_label} investor evidence report"
 
 
 

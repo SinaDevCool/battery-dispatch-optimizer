@@ -7,6 +7,7 @@ import { StatusPill } from "@/components/status-pill";
 import { formatCurrency, formatNumber } from "@/lib/format";
 import type {
   ActualPriceStatusResponse,
+  Asset,
   ForecastPerformanceRun,
   ForecastPreviewResponse,
   ForecastStatusResponse,
@@ -16,12 +17,14 @@ import type {
 
 export function ForecastMarketPanel({
   actualPrices,
+  asset,
   currentProvider,
   currentSignalUsesFallback,
   providerLeaderboard,
   signalMetadata,
 }: {
   actualPrices?: ActualPriceStatusResponse;
+  asset?: Asset;
   currentProvider?: string;
   currentSignalUsesFallback: boolean;
   providerLeaderboard: TableRow[];
@@ -32,6 +35,16 @@ export function ForecastMarketPanel({
       <ForecastProviderLeaderboard providerLeaderboard={providerLeaderboard} />
       <SectionCard title="Market source status">
         <div className="space-y-3">
+          <DecisionRow
+            label="Selected asset"
+            tone="blue"
+            value={asset?.asset_name ?? asset?.site_name ?? asset?.asset_id ?? "-"}
+          />
+          <DecisionRow
+            label="Asset data mode"
+            tone={asset?.data_mode === "production" ? "emerald" : "blue"}
+            value={formatEnumLabel(asset?.data_mode ?? "mock")}
+          />
           <DecisionRow
             label="Current signal source"
             tone={currentSignalUsesFallback ? "amber" : "blue"}
@@ -173,6 +186,7 @@ export function ForecastDataQualityPanel({
   status?: ForecastStatusResponse;
 }) {
   const previewRows = (preview?.preview ?? []).slice(0, 16);
+  const previewColumns = buildPreviewColumns(preview);
 
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(340px,0.7fr)_minmax(0,1.3fr)]">
@@ -187,17 +201,34 @@ export function ForecastDataQualityPanel({
       </SectionCard>
       <SectionCard title="Forecast preview">
         <DataTable
-          columns={[
-            "timestamp",
-            "forecast_price",
-            "forecast_provider",
-            "forecast_model",
-          ]}
+          columns={previewColumns}
           rows={previewRows}
         />
       </SectionCard>
     </div>
   );
+}
+
+function buildPreviewColumns(preview?: ForecastPreviewResponse) {
+  const preferredColumns = [
+    "timestamp",
+    "forecast_price",
+    "forecast_solar_mw",
+    "site_load_mw",
+    "site_peak_limit_mw",
+    "site_export_limit_mw",
+    "scenario_note",
+    "forecast_provider",
+    "forecast_model",
+  ];
+  const availableColumns = new Set(preview?.columns ?? []);
+  const selectedColumns = preferredColumns.filter((column) =>
+    availableColumns.has(column),
+  );
+
+  return selectedColumns.length
+    ? selectedColumns
+    : ["timestamp", "forecast_price", "forecast_provider", "forecast_model"];
 }
 
 export function ForecastRunControlsPanel({
@@ -288,4 +319,12 @@ function DecisionRow({
       <StatusPill tone={tone}>{value}</StatusPill>
     </div>
   );
+}
+
+function formatEnumLabel(value: string) {
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }

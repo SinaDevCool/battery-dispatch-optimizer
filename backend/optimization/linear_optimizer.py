@@ -101,13 +101,21 @@ class LinearDispatchOptimizer(BaseDispatchOptimizer):
             summary=summary,
             dispatch=dispatch_rows,
             metadata={
-                "method": "discrete_soc_dynamic_programming",
+                "method": "linear_dispatch_program",
+                "solver": "dependency_free_discrete_soc_dynamic_programming",
+                "formulation": "linear_objective_with_linear_soc_power_energy_constraints",
                 "soc_state_count": len(soc_states),
                 "soc_step_mwh": self._get_soc_step_mwh(
                     battery_config,
                     strategy_config,
                 ),
                 "objective_value_eur": round(best_path["profit"], 2),
+                "objective_function": self._build_objective_metadata(commercial_config),
+                "constraints": self._build_constraint_metadata(
+                    battery_config=battery_config,
+                    strategy_config=strategy_config,
+                    terminal_soc_mwh=terminal_soc,
+                ),
                 "constraint_status": "feasible",
                 "terminal_soc_mwh": terminal_soc,
             },
@@ -272,6 +280,72 @@ class LinearDispatchOptimizer(BaseDispatchOptimizer):
             * battery_energy_mwh
         )
 
+    def _build_objective_metadata(self, commercial_config):
+        return {
+            "sense": "maximize",
+            "expression": (
+                "sum(discharge_grid_mwh * price) "
+                "- sum(charge_grid_mwh * price) "
+                "- trading_fees - market_access_fees - grid_fees - taxes - degradation_cost"
+            ),
+            "terms": {
+                "discharge_revenue": "discharge_grid_mwh * market_price_eur_per_mwh",
+                "charge_cost": "charge_grid_mwh * market_price_eur_per_mwh",
+                "trading_fee_eur_per_mwh": float(
+                    commercial_config.get("trading_fee_eur_per_mwh", 0.0)
+                ),
+                "market_access_fee_eur_per_mwh": float(
+                    commercial_config.get("market_access_fee_eur_per_mwh", 0.0)
+                ),
+                "grid_fee_import_eur_per_mwh": float(
+                    commercial_config.get("grid_fee_import_eur_per_mwh", 0.0)
+                ),
+                "grid_fee_export_eur_per_mwh": float(
+                    commercial_config.get("grid_fee_export_eur_per_mwh", 0.0)
+                ),
+                "tax_or_levy_eur_per_mwh": float(
+                    commercial_config.get("tax_or_levy_eur_per_mwh", 0.0)
+                ),
+                "degradation_cost_eur_per_mwh_throughput": float(
+                    commercial_config.get(
+                        "degradation_cost_eur_per_mwh_throughput",
+                        0.0,
+                    )
+                ),
+            },
+        }
+
+    def _build_constraint_metadata(
+        self,
+        *,
+        battery_config,
+        strategy_config,
+        terminal_soc_mwh,
+    ):
+        timestep_hours = float(strategy_config.get("timestep_hours", 1.0))
+        return {
+            "soc_balance": "soc[t+1] = soc[t] + charge_battery_mwh[t] - discharge_battery_mwh[t]",
+            "soc_min_mwh": float(battery_config["min_soc_mwh"]),
+            "soc_max_mwh": float(battery_config["capacity_mwh"]),
+            "initial_soc_mwh": float(battery_config["initial_soc_mwh"]),
+            "terminal_soc_mwh_min": float(terminal_soc_mwh),
+            "charge_power_limit_mw": float(battery_config["max_charge_power_mw"]),
+            "discharge_power_limit_mw": float(battery_config["max_discharge_power_mw"]),
+            "charge_energy_limit_per_interval_mwh": round(
+                float(battery_config["max_charge_power_mw"])
+                * timestep_hours
+                * float(battery_config["charge_efficiency"]),
+                6,
+            ),
+            "discharge_energy_limit_per_interval_mwh": round(
+                float(battery_config["max_discharge_power_mw"]) * timestep_hours,
+                6,
+            ),
+            "charge_efficiency": float(battery_config["charge_efficiency"]),
+            "discharge_efficiency": float(battery_config["discharge_efficiency"]),
+            "no_simultaneous_charge_discharge": "enforced_by_single_soc_transition_per_interval",
+        }
+
     def _finalize_dispatch(self, steps):
         total_pnl_eur = 0.0
         dispatch_rows = []
@@ -357,10 +431,16 @@ class LinearDispatchOptimizer(BaseDispatchOptimizer):
             summary=self._empty_summary(),
             dispatch=[],
             metadata={
-                "method": "discrete_soc_dynamic_programming",
+                "method": "linear_dispatch_program",
+                "solver": "dependency_free_discrete_soc_dynamic_programming",
+                "formulation": "linear_objective_with_linear_soc_power_energy_constraints",
                 "constraint_status": "no_data",
             },
         )
+
+
+class LinearProgramDispatchOptimizer(LinearDispatchOptimizer):
+    optimizer_engine = "linear_program_v1"
 
 
 

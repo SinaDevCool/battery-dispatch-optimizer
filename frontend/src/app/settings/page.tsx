@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { ActionButton } from "@/components/action-button";
 import { useAssetContext } from "@/components/asset-provider";
@@ -12,6 +13,7 @@ import { PageHeading } from "@/components/page-heading";
 import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
+import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { apiGet } from "@/lib/api";
 import { formatCurrency, formatNumber } from "@/lib/format";
 import type { PersonaId } from "@/lib/personas";
@@ -32,9 +34,19 @@ import type {
   TableRow,
 } from "@/types/api";
 
+const SETTINGS_TABS = [
+  { helper: "Configuration decision, setup sequence, and evidence readiness.", id: "overview", label: "Overview" },
+  { helper: "Credentials and route onboarding blockers.", id: "access", label: "Access" },
+  { helper: "Live adapter drills, route setup, and environment checklist.", id: "live_setup", label: "Live Setup" },
+  { helper: "Read-only asset, strategy, commercial, and regulatory assumptions.", id: "assumptions", label: "Assumptions" },
+] as const;
+
+type SettingsTabId = (typeof SETTINGS_TABS)[number]["id"];
+
 export default function SettingsPage() {
   const { selectedAsset, selectedAssetId } = useAssetContext();
   const { personaId } = usePersona();
+  const [activeTab, setActiveTab] = useState<SettingsTabId>("overview");
 
   const config = useQuery({
     queryFn: () => apiGet<ClientConfigResponse>("/client/config"),
@@ -93,6 +105,11 @@ export default function SettingsPage() {
   const handshakeBlockers = handshakes.data?.targets?.filter((item) => !["dry_run_ready", "real_ready"].includes(String(item.handshake_status))) ?? [];
   const automationMode = selectedAsset?.auto_trading_enabled ? "Enabled" : "Disabled";
   const framing = getSettingsPersonaFraming(personaId);
+  const credentialRows = formatCredentialRows(credentials.data?.credentials ?? []);
+  const credentialBlockerRows = formatCredentialRows(missingCredentials);
+  const handshakeRows = formatHandshakeRows(handshakes.data?.targets ?? []);
+  const handshakeBlockerRows = formatHandshakeRows(handshakeBlockers);
+  const envActivationRows = formatHandshakeActivationRows(handshakes.data?.env_activation_guide ?? []);
 
   return (
     <>
@@ -178,318 +195,308 @@ export default function SettingsPage() {
         />
       </div>
 
-      <div className="mb-5 grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-        <SectionCard
-          action={
-            <StatusPill tone={credentialTone(credentials.data?.credential_readiness_status)}>
-              {credentials.data?.credential_readiness_status ?? "-"}
-            </StatusPill>
-          }
-          title={framing.credentialTitle}
-        >
-          <DataTable
-            columns={[
-              "group",
-              "label",
-              "status",
-              "configured_env_key",
-              "accepted_env_keys",
-              "blocks_mode",
-              "next_action",
-            ]}
-            rows={formatCredentialRows(credentials.data?.credentials ?? [])}
-          />
-        </SectionCard>
+      <WorkspaceTabs
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        tabs={SETTINGS_TABS}
+      />
 
-        <SectionCard title={framing.routeCredentialTitle}>
-          <DataTable
-            columns={[
-              "adapter_id",
-              "credential_status",
-              "configured",
-              "missing_credentials",
-              "missing_env_keys",
-              "onboarding_next_action",
-            ]}
-            rows={formatCredentialRouteRows(credentials.data?.route_requirements ?? [])}
-          />
-        </SectionCard>
-      </div>
-
-      <div className="mb-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
-        <SectionCard
-          action={
-            <div className="flex flex-wrap items-start gap-2">
-              <ActionButton
-                endpoint={`/system/live-adapter-handshake/run?asset_id=${selectedAssetId}&country=Germany`}
-                label="Run drill"
-                refetch={() => Promise.all([handshakes.refetch(), handshakeHistory.refetch()])}
-                variant="primary"
-              />
-              <StatusPill tone={handshakeTone(handshakes.data?.handshake_readiness_status)}>
-                {handshakes.data?.handshake_readiness_status ?? "-"}
+      {activeTab === "overview" ? (
+        <div className="space-y-5">
+          <SectionCard
+            action={
+              <StatusPill tone={missingEvidence.length || missingCredentials.length || handshakeBlockers.length ? "amber" : "emerald"}>
+                {missingEvidence.length + missingCredentials.length + handshakeBlockers.length} blocker(s)
               </StatusPill>
-            </div>
-          }
-          title={framing.handshakeTitle}
-        >
-          <DataTable
-            columns={[
-              "group",
-              "target",
-              "handshake_status",
-              "endpoint_status",
-              "credential_status",
-              "handshake_mode",
-              "latest_drill",
-              "no_order_submission",
-              "next_handshake_action",
-            ]}
-            rows={formatHandshakeRows(handshakes.data?.targets ?? [])}
-          />
-        </SectionCard>
+            }
+            title={framing.setupSequenceTitle}
+          >
+            <DataTable
+              columns={["step", "status", "evidence", "owner", "next_action"]}
+              rows={buildSettingsSetupRows({
+                automationMode,
+                credentialSummary,
+                envConfiguredCount,
+                envChecklistCount,
+                handshakeSummary,
+                missingCredentials,
+                missingEvidence,
+                selectedAsset,
+              })}
+            />
+          </SectionCard>
+          <DataCompletenessPanel data={completeness.data} title={framing.evidenceTitle} />
+        </div>
+      ) : null}
 
-        <SectionCard title={framing.routeHandshakeTitle}>
-          <div className="space-y-4">
+      {activeTab === "access" ? (
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+          <SectionCard
+            action={
+              <StatusPill tone={credentialTone(credentials.data?.credential_readiness_status)}>
+                {credentials.data?.credential_readiness_status ?? "-"}
+              </StatusPill>
+            }
+            title={framing.credentialTitle}
+          >
+            <DataTable
+              columns={[
+                "group",
+                "label",
+                "status",
+                "configured_env_key",
+                "accepted_env_keys",
+                "blocks_mode",
+                "next_action",
+              ]}
+              rows={credentialBlockerRows.length ? credentialBlockerRows : credentialRows}
+            />
+          </SectionCard>
+
+          <SectionCard title={framing.routeCredentialTitle}>
             <DataTable
               columns={[
                 "adapter_id",
-                "route_handshake_status",
-                "ready_targets",
-                "route_handshake_blockers",
-                "route_handshake_next_action",
+                "credential_status",
+                "configured",
+                "missing_credentials",
+                "missing_env_keys",
+                "onboarding_next_action",
               ]}
-              rows={formatHandshakeRouteRows(handshakes.data?.routes ?? [])}
+              rows={formatCredentialRouteRows(credentials.data?.route_requirements ?? [])}
             />
-            <DataTable
-              columns={[
-                "created_at",
-                "status",
-                "action",
-                "route_id",
-                "passed_count",
-                "blocked_count",
-                "order_submission_performed",
-              ]}
-              rows={formatHandshakeHistoryRows(handshakeHistory.data?.drills ?? [])}
-            />
-          </div>
-        </SectionCard>
-      </div>
-
-      <SectionCard
-        action={
-          <StatusPill tone={Number(handshakeSummary.env_missing_count ?? 0) ? "amber" : "emerald"}>
-            {handshakeSummary.env_missing_count ?? 0} missing
-          </StatusPill>
-        }
-        className="mb-5"
-        title={framing.envActivationTitle}
-      >
-        <div className="mb-4 grid gap-3 md:grid-cols-3">
-          <KpiCard
-            accent={envActivationSetupRouteCount ? "amber" : "emerald"}
-            helper={`${envActivationConfiguredRouteCount} configured`}
-            label="Routes needing setup"
-            value={envActivationSetupRouteCount}
-          />
-          <KpiCard
-            accent="blue"
-            helper="Secret values are never rendered"
-            label="Secret handling"
-            value="hidden"
-          />
-          <KpiCard
-            accent={envMissingCount ? "amber" : "emerald"}
-            helper={`${envConfiguredCount}/${envChecklistCount} configured`}
-            label="Env checklist"
-            value={envMissingCount}
-          />
+          </SectionCard>
         </div>
-        <DataTable
-          columns={[
-            "route_label",
-            "market_family",
-            "activation_status",
-            "configured",
-            "mode_status",
-            "endpoint_status",
-            "next_unlock_label",
-            "missing_env_keys",
-            "secret_env_keys",
-            "drill",
-          ]}
-          rows={formatHandshakeActivationRows(handshakes.data?.env_activation_guide ?? [])}
-        />
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {(handshakes.data?.env_activation_guide ?? []).map((route) => (
-            <div
-              className="rounded-lg border border-slate-800 bg-slate-900/45 p-4"
-              key={route.adapter_id ?? route.route_label}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-slate-100">
-                    {route.route_label ?? route.adapter_id}
-                  </div>
-                  <div className="mt-1 text-xs text-slate-500">
-                    {route.market_family ?? "market route"} / {route.activation_status ?? "not evaluated"}
-                  </div>
-                </div>
-                <StatusPill tone={route.handshake_drill_enabled_after_setup ? "emerald" : "amber"}>
-                  {route.handshake_drill_enabled_after_setup ? "drill ready" : "setup locked"}
-                </StatusPill>
-              </div>
-              <div className="mt-4 text-xs leading-5 text-slate-400">
-                {route.next_action ?? "Complete setup before running a route drill."}
-              </div>
-              <div className="mt-4">
-                {route.handshake_drill_enabled_after_setup && route.system_route_drill_endpoint ? (
+      ) : null}
+
+      {activeTab === "live_setup" ? (
+        <div className="space-y-5">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
+            <SectionCard
+              action={
+                <div className="flex flex-wrap items-start gap-2">
                   <ActionButton
-                    endpoint={route.system_route_drill_endpoint}
-                    label="Run route drill"
+                    endpoint={`/system/live-adapter-handshake/run?asset_id=${selectedAssetId}&country=Germany`}
+                    label="Run drill"
                     refetch={() => Promise.all([handshakes.refetch(), handshakeHistory.refetch()])}
                     variant="primary"
                   />
-                ) : (
-                  <StatusPill tone="blue">
-                    {route.next_unlock_label ?? "Configure route"}
+                  <StatusPill tone={handshakeTone(handshakes.data?.handshake_readiness_status)}>
+                    {handshakes.data?.handshake_readiness_status ?? "-"}
                   </StatusPill>
-                )}
+                </div>
+              }
+              title={framing.handshakeTitle}
+            >
+              <DataTable
+                columns={[
+                  "group",
+                  "target",
+                  "handshake_status",
+                  "endpoint_status",
+                  "credential_status",
+                  "handshake_mode",
+                  "latest_drill",
+                  "no_order_submission",
+                  "next_handshake_action",
+                ]}
+                rows={handshakeBlockerRows.length ? handshakeBlockerRows : handshakeRows}
+              />
+            </SectionCard>
+
+            <SectionCard title={framing.routeHandshakeTitle}>
+              <div className="space-y-4">
+                <DataTable
+                  columns={[
+                    "adapter_id",
+                    "route_handshake_status",
+                    "ready_targets",
+                    "route_handshake_blockers",
+                    "route_handshake_next_action",
+                  ]}
+                  rows={formatHandshakeRouteRows(handshakes.data?.routes ?? [])}
+                />
+                <DataTable
+                  columns={[
+                    "created_at",
+                    "status",
+                    "action",
+                    "route_id",
+                    "passed_count",
+                    "blocked_count",
+                    "order_submission_performed",
+                  ]}
+                  rows={formatHandshakeHistoryRows(handshakeHistory.data?.drills ?? [])}
+                />
               </div>
+            </SectionCard>
+          </div>
+
+          <SectionCard
+            action={
+              <StatusPill tone={Number(handshakeSummary.env_missing_count ?? 0) ? "amber" : "emerald"}>
+                {handshakeSummary.env_missing_count ?? 0} missing
+              </StatusPill>
+            }
+            title={framing.envActivationTitle}
+          >
+            <div className="mb-4 grid gap-3 md:grid-cols-3">
+              <KpiCard
+                accent={envActivationSetupRouteCount ? "amber" : "emerald"}
+                helper={`${envActivationConfiguredRouteCount} configured`}
+                label="Routes needing setup"
+                value={envActivationSetupRouteCount}
+              />
+              <KpiCard
+                accent="blue"
+                helper="Secret values are never rendered"
+                label="Secret handling"
+                value="hidden"
+              />
+              <KpiCard
+                accent={envMissingCount ? "amber" : "emerald"}
+                helper={`${envConfiguredCount}/${envChecklistCount} configured`}
+                label="Env checklist"
+                value={envMissingCount}
+              />
             </div>
-          ))}
+            <DataTable
+              columns={[
+                "route_label",
+                "market_family",
+                "activation_status",
+                "configured",
+                "mode_status",
+                "endpoint_status",
+                "next_unlock_label",
+                "missing_env_keys",
+                "secret_env_keys",
+                "drill",
+              ]}
+              rows={envActivationRows}
+            />
+          </SectionCard>
+
+          <CollapsibleSection
+            badge={`${handshakeSummary.env_missing_count ?? 0} missing`}
+            open={Boolean(handshakeSummary.env_missing_count)}
+            title={framing.envDetailTitle}
+            tone={Number(handshakeSummary.env_missing_count ?? 0) ? "amber" : "emerald"}
+          >
+            <DataTable
+              columns={[
+                "group",
+                "target",
+                "item_type",
+                "status",
+                "env_keys",
+                "required_value",
+                "configured_env_key",
+                "secret",
+                "blocks_routes",
+                "next_action",
+              ]}
+              rows={formatHandshakeEnvRows(handshakes.data?.env_checklist ?? [])}
+            />
+          </CollapsibleSection>
         </div>
-        <div className="mt-4">
-          <DataTable
-            columns={["route_label", "safe_deployment_steps", "secret_values_exposed"]}
-            rows={formatHandshakeActivationSteps(handshakes.data?.env_activation_guide ?? [])}
-          />
+      ) : null}
+
+      {activeTab === "assumptions" ? (
+        <div className="space-y-5">
+          <div className="grid gap-5 xl:grid-cols-2">
+            <SectionCard title={framing.profileTitle}>
+              <DataTable
+                columns={["field", "value"]}
+                rows={[
+                  row("Client name", clientConfig.client_name),
+                  row("Site name", clientConfig.site_name),
+                  row("Country", selectedAsset?.country ?? clientConfig.country),
+                  row("Market", selectedAsset?.market ?? clientConfig.market),
+                  row("Market profile", selectedAsset?.market_profile_id ?? clientConfig.market_profile_id),
+                  row("Forecast file", selectedAsset?.forecast_file),
+                ]}
+              />
+            </SectionCard>
+
+            <SectionCard title={framing.technicalLimitsTitle}>
+              <DataTable
+                columns={["field", "value"]}
+                rows={[
+                  row("Capacity", `${formatNumber(assetBatteryConfig.capacity_mwh ?? batteryConfig.capacity_mwh, 2)} MWh`),
+                  row("Initial SOC", `${formatNumber(assetBatteryConfig.initial_soc_mwh ?? batteryConfig.initial_soc_mwh, 2)} MWh`),
+                  row("Minimum SOC", `${formatNumber(assetBatteryConfig.min_soc_mwh ?? batteryConfig.min_soc_mwh, 2)} MWh`),
+                  row("Max charge power", `${formatNumber(assetBatteryConfig.max_charge_power_mw ?? batteryConfig.max_charge_power_mw, 2)} MW`),
+                  row("Max discharge power", `${formatNumber(assetBatteryConfig.max_discharge_power_mw ?? batteryConfig.max_discharge_power_mw, 2)} MW`),
+                  row("Charge efficiency", `${formatNumber(Number(assetBatteryConfig.charge_efficiency ?? batteryConfig.charge_efficiency) * 100, 1)}%`),
+                  row("Discharge efficiency", `${formatNumber(Number(assetBatteryConfig.discharge_efficiency ?? batteryConfig.discharge_efficiency) * 100, 1)}%`),
+                ]}
+              />
+            </SectionCard>
+          </div>
+
+          <div className="grid gap-5 xl:grid-cols-2">
+            <SectionCard title={framing.strategyTitle}>
+              <DataTable
+                columns={["field", "value"]}
+                rows={[
+                  row("Mode", strategyConfig.mode ?? "rule_based_dispatch"),
+                  row("Low price threshold", `${formatNumber(strategyConfig.low_price_threshold, 2)} EUR/MWh`),
+                  row("High price threshold", `${formatNumber(strategyConfig.high_price_threshold, 2)} EUR/MWh`),
+                  row("Timestep", `${formatNumber(strategyConfig.timestep_hours, 2)} h`),
+                  row("Forecast horizon", `${formatNumber(strategyConfig.forecast_horizon_hours, 0)} h`),
+                  row("Max cycles per day", strategyConfig.max_cycles_per_day),
+                ]}
+              />
+            </SectionCard>
+
+            <SectionCard title={framing.commercialTitle}>
+              <DataTable
+                columns={["field", "value"]}
+                rows={[
+                  row("Trading fee", `${formatNumber(commercialConfig.trading_fee_eur_per_mwh, 2)} EUR/MWh`),
+                  row("Market access fee", `${formatNumber(commercialConfig.market_access_fee_eur_per_mwh, 2)} EUR/MWh`),
+                  row("Grid import fee", `${formatNumber(commercialConfig.grid_fee_import_eur_per_mwh, 2)} EUR/MWh`),
+                  row("Grid export fee", `${formatNumber(commercialConfig.grid_fee_export_eur_per_mwh, 2)} EUR/MWh`),
+                  row("Tax or levy", `${formatNumber(commercialConfig.tax_or_levy_eur_per_mwh, 2)} EUR/MWh`),
+                  row("Degradation cost", `${formatNumber(commercialConfig.degradation_cost_eur_per_mwh_throughput, 2)} EUR/MWh throughput`),
+                  row("Minimum spread", `${formatNumber(commercialConfig.minimum_required_spread_eur_per_mwh, 2)} EUR/MWh`),
+                ]}
+              />
+            </SectionCard>
+          </div>
+
+          <div className="grid gap-5 xl:grid-cols-2">
+            <SectionCard title={framing.regulatoryTitle}>
+              <DataTable
+                columns={["field", "value"]}
+                rows={[
+                  row("Storage mode", assetRegulatoryConfig.storage_mode),
+                  row("Colocated", assetRegulatoryConfig.is_colocated),
+                  row("Charges from grid", assetRegulatoryConfig.charges_from_grid),
+                  row("Charges from renewables", assetRegulatoryConfig.charges_from_renewables),
+                  row("Exports stored renewable power", assetRegulatoryConfig.exports_stored_renewable_power),
+                  row("Uses EEG support", assetRegulatoryConfig.uses_eeg_support),
+                  row("Metering concept", assetRegulatoryConfig.metering_concept),
+                ]}
+              />
+            </SectionCard>
+
+            <SectionCard title={framing.revenueCertaintyTitle}>
+              <DataTable
+                columns={["field", "value"]}
+                rows={[
+                  row("Forecast source", selectedAsset?.forecast_provider ?? "-"),
+                  row("Forecast file", selectedAsset?.forecast_file ?? "-"),
+                  row("Merchant floor", formatCurrency(selectedAsset?.merchant_floor_eur)),
+                  row("Auto trading mode", selectedAsset?.auto_trading_enabled ? "Enabled" : "Disabled"),
+                  row("Approval mode", selectedAsset?.approval_mode ?? "Human required"),
+                ]}
+              />
+            </SectionCard>
+          </div>
         </div>
-      </SectionCard>
-
-      <SectionCard
-        action={
-          <StatusPill tone={Number(handshakeSummary.env_missing_count ?? 0) ? "amber" : "emerald"}>
-            raw checklist
-          </StatusPill>
-        }
-        className="mb-5"
-        title={framing.envDetailTitle}
-      >
-        <DataTable
-          columns={[
-            "group",
-            "target",
-            "item_type",
-            "status",
-            "env_keys",
-            "required_value",
-            "configured_env_key",
-            "secret",
-            "blocks_routes",
-            "next_action",
-          ]}
-          rows={formatHandshakeEnvRows(handshakes.data?.env_checklist ?? [])}
-        />
-      </SectionCard>
-
-      <div className="mb-5 grid gap-5 xl:grid-cols-2">
-        <SectionCard title={framing.profileTitle}>
-          <DataTable
-            columns={["field", "value"]}
-            rows={[
-              row("Client name", clientConfig.client_name),
-              row("Site name", clientConfig.site_name),
-              row("Country", selectedAsset?.country ?? clientConfig.country),
-              row("Market", selectedAsset?.market ?? clientConfig.market),
-              row(
-                "Market profile",
-                selectedAsset?.market_profile_id ?? clientConfig.market_profile_id,
-              ),
-              row("Forecast file", selectedAsset?.forecast_file),
-            ]}
-          />
-        </SectionCard>
-
-        <SectionCard title={framing.technicalLimitsTitle}>
-          <DataTable
-            columns={["field", "value"]}
-            rows={[
-              row("Capacity", `${formatNumber(assetBatteryConfig.capacity_mwh ?? batteryConfig.capacity_mwh, 2)} MWh`),
-              row("Initial SOC", `${formatNumber(assetBatteryConfig.initial_soc_mwh ?? batteryConfig.initial_soc_mwh, 2)} MWh`),
-              row("Minimum SOC", `${formatNumber(assetBatteryConfig.min_soc_mwh ?? batteryConfig.min_soc_mwh, 2)} MWh`),
-              row("Max charge power", `${formatNumber(assetBatteryConfig.max_charge_power_mw ?? batteryConfig.max_charge_power_mw, 2)} MW`),
-              row("Max discharge power", `${formatNumber(assetBatteryConfig.max_discharge_power_mw ?? batteryConfig.max_discharge_power_mw, 2)} MW`),
-              row("Charge efficiency", `${formatNumber(Number(assetBatteryConfig.charge_efficiency ?? batteryConfig.charge_efficiency) * 100, 1)}%`),
-              row("Discharge efficiency", `${formatNumber(Number(assetBatteryConfig.discharge_efficiency ?? batteryConfig.discharge_efficiency) * 100, 1)}%`),
-            ]}
-          />
-        </SectionCard>
-      </div>
-
-      <div className="mb-5 grid gap-5 xl:grid-cols-2">
-        <SectionCard title={framing.strategyTitle}>
-          <DataTable
-            columns={["field", "value"]}
-            rows={[
-              row("Mode", strategyConfig.mode ?? "rule_based_dispatch"),
-              row("Low price threshold", `${formatNumber(strategyConfig.low_price_threshold, 2)} EUR/MWh`),
-              row("High price threshold", `${formatNumber(strategyConfig.high_price_threshold, 2)} EUR/MWh`),
-              row("Timestep", `${formatNumber(strategyConfig.timestep_hours, 2)} h`),
-              row("Forecast horizon", `${formatNumber(strategyConfig.forecast_horizon_hours, 0)} h`),
-              row("Max cycles per day", strategyConfig.max_cycles_per_day),
-            ]}
-          />
-        </SectionCard>
-
-        <SectionCard title={framing.commercialTitle}>
-          <DataTable
-            columns={["field", "value"]}
-            rows={[
-              row("Trading fee", `${formatNumber(commercialConfig.trading_fee_eur_per_mwh, 2)} EUR/MWh`),
-              row("Market access fee", `${formatNumber(commercialConfig.market_access_fee_eur_per_mwh, 2)} EUR/MWh`),
-              row("Grid import fee", `${formatNumber(commercialConfig.grid_fee_import_eur_per_mwh, 2)} EUR/MWh`),
-              row("Grid export fee", `${formatNumber(commercialConfig.grid_fee_export_eur_per_mwh, 2)} EUR/MWh`),
-              row("Tax or levy", `${formatNumber(commercialConfig.tax_or_levy_eur_per_mwh, 2)} EUR/MWh`),
-              row("Degradation cost", `${formatNumber(commercialConfig.degradation_cost_eur_per_mwh_throughput, 2)} EUR/MWh throughput`),
-              row("Minimum spread", `${formatNumber(commercialConfig.minimum_required_spread_eur_per_mwh, 2)} EUR/MWh`),
-            ]}
-          />
-        </SectionCard>
-      </div>
-
-      <div className="mb-5 grid gap-5 xl:grid-cols-2">
-        <SectionCard title={framing.regulatoryTitle}>
-          <DataTable
-            columns={["field", "value"]}
-            rows={[
-              row("Storage mode", assetRegulatoryConfig.storage_mode),
-              row("Colocated", assetRegulatoryConfig.is_colocated),
-              row("Charges from grid", assetRegulatoryConfig.charges_from_grid),
-              row("Charges from renewables", assetRegulatoryConfig.charges_from_renewables),
-              row("Exports stored renewable power", assetRegulatoryConfig.exports_stored_renewable_power),
-              row("Uses EEG support", assetRegulatoryConfig.uses_eeg_support),
-              row("Metering concept", assetRegulatoryConfig.metering_concept),
-            ]}
-          />
-        </SectionCard>
-
-        <SectionCard title={framing.revenueCertaintyTitle}>
-          <DataTable
-            columns={["field", "value"]}
-            rows={[
-              row("Forecast source", selectedAsset?.forecast_provider ?? "-"),
-              row("Forecast file", selectedAsset?.forecast_file ?? "-"),
-              row("Merchant floor", formatCurrency(selectedAsset?.merchant_floor_eur)),
-              row("Auto trading mode", selectedAsset?.auto_trading_enabled ? "Enabled" : "Disabled"),
-              row("Approval mode", selectedAsset?.approval_mode ?? "Human required"),
-            ]}
-          />
-        </SectionCard>
-      </div>
-
-      <DataCompletenessPanel data={completeness.data} title={framing.evidenceTitle} />
+      ) : null}
     </>
   );
 }
@@ -507,11 +514,13 @@ function getSettingsPersonaFraming(personaId: PersonaId) {
     evidenceTitle: "Configuration evidence readiness",
     eyebrow: "Configuration",
     handshakeTitle: "Live adapter handshake",
+    assumptionDetailTitle: "Configuration assumption detail",
     profileTitle: "Client and market profile",
     regulatoryTitle: "Germany regulatory assumptions",
     revenueCertaintyTitle: "Revenue certainty assumptions",
     routeCredentialTitle: "Route credential blockers",
     routeHandshakeTitle: "Route handshake blockers",
+    setupSequenceTitle: "Automation setup sequence",
     strategyTitle: "Dispatch strategy",
     technicalLimitsTitle: "Asset technical limits",
     title: "Settings",
@@ -564,11 +573,113 @@ function objectValue(value: unknown): JsonObject {
   return {};
 }
 
+function buildSettingsSetupRows({
+  automationMode,
+  credentialSummary,
+  envChecklistCount,
+  envConfiguredCount,
+  handshakeSummary,
+  missingCredentials,
+  missingEvidence,
+  selectedAsset,
+}: {
+  automationMode: string;
+  credentialSummary: JsonObject;
+  envChecklistCount: number;
+  envConfiguredCount: number;
+  handshakeSummary: JsonObject;
+  missingCredentials: CredentialReadinessItem[];
+  missingEvidence: Array<{ status?: string }>;
+  selectedAsset?: {
+    approval_mode?: unknown;
+    forecast_file?: unknown;
+  };
+}): TableRow[] {
+  const handshakeReadyCount = Number(handshakeSummary.handshake_ready_count ?? 0);
+  const handshakeTargetCount = Number(handshakeSummary.handshake_target_count ?? 0);
+  const readyCredentialCount = Number(credentialSummary.configured_credential_count ?? 0);
+  const credentialCount = Number(credentialSummary.credential_count ?? 0);
+
+  return [
+    {
+      evidence: selectedAsset?.forecast_file ? "forecast file configured" : "forecast file missing",
+      next_action: selectedAsset?.forecast_file ? "Use selected asset forecast evidence." : "Attach a forecast file before automation review.",
+      owner: "asset setup",
+      status: selectedAsset?.forecast_file ? "complete" : "review",
+      step: "Asset evidence",
+    },
+    {
+      evidence: `${readyCredentialCount}/${credentialCount} credential item(s) configured`,
+      next_action: missingCredentials.length ? "Resolve missing route credentials." : "Keep credentials as the market access baseline.",
+      owner: "market access",
+      status: missingCredentials.length ? "review" : "complete",
+      step: "Credentials",
+    },
+    {
+      evidence: `${handshakeReadyCount}/${handshakeTargetCount} target(s) dry-run ready`,
+      next_action: handshakeReadyCount < handshakeTargetCount ? "Run or unlock blocked dry-run handshakes." : "Use handshake evidence for supervised-live review.",
+      owner: "integration",
+      status: handshakeReadyCount < handshakeTargetCount ? "review" : "complete",
+      step: "Adapter handshakes",
+    },
+    {
+      evidence: `${envConfiguredCount}/${envChecklistCount} env item(s) configured`,
+      next_action: envConfiguredCount < envChecklistCount ? "Configure missing environment keys without exposing secret values." : "Keep raw checklist available for audit.",
+      owner: "deployment",
+      status: envConfiguredCount < envChecklistCount ? "review" : "complete",
+      step: "Environment",
+    },
+    {
+      evidence: `${missingEvidence.length} evidence gap(s); auto trading ${automationMode.toLowerCase()}`,
+      next_action: missingEvidence.length ? "Clear configuration evidence gaps before automation escalation." : "Use settings as the automation approval baseline.",
+      owner: "governance",
+      status: missingEvidence.length ? "review" : "complete",
+      step: "Approval gate",
+    },
+  ];
+}
+
 function row(field: string, value: unknown): TableRow {
   return {
     field,
     value: normalizeValue(value),
   };
+}
+
+function CollapsibleSection({
+  badge,
+  children,
+  className,
+  open = false,
+  title,
+  tone = "slate",
+}: {
+  badge: string;
+  children: React.ReactNode;
+  className?: string;
+  open?: boolean;
+  title: string;
+  tone?: "amber" | "blue" | "emerald" | "red" | "slate";
+}) {
+  return (
+    <section className={className}>
+      <details className="group border-y border-slate-800 py-4" open={open}>
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+          <span className="text-base font-semibold text-slate-100">{title}</span>
+          <span className="flex items-center gap-3">
+            <StatusPill tone={tone}>{badge}</StatusPill>
+            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 group-open:hidden">
+              Open
+            </span>
+            <span className="hidden text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 group-open:inline">
+              Close
+            </span>
+          </span>
+        </summary>
+        <div className="mt-4">{children}</div>
+      </details>
+    </section>
+  );
 }
 
 function formatCredentialRows(rows: CredentialReadinessItem[]): TableRow[] {
@@ -669,16 +780,6 @@ function formatHandshakeActivationRows(
     next_unlock_label: row.next_unlock_label,
     route_label: row.route_label,
     secret_env_keys: row.secret_env_keys ?? [],
-  }));
-}
-
-function formatHandshakeActivationSteps(
-  rows: LiveAdapterHandshakeEnvActivationGuide[],
-): TableRow[] {
-  return rows.map((row) => ({
-    route_label: row.route_label,
-    safe_deployment_steps: row.safe_deployment_steps ?? [],
-    secret_values_exposed: row.secret_values_exposed ? "yes" : "no",
   }));
 }
 

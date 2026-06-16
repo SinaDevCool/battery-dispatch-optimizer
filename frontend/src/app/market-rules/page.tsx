@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { useAssetContext } from "@/components/asset-provider";
@@ -12,6 +12,7 @@ import { PageHeading } from "@/components/page-heading";
 import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
+import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { apiGet } from "@/lib/api";
 import type { PersonaId } from "@/lib/personas";
 import type {
@@ -96,9 +97,18 @@ const marketRuleCatalog = [
   },
 ];
 
+const MARKET_RULE_TABS = [
+  { helper: "Route readiness, automation gates, and unlock plan.", id: "routes", label: "Routes" },
+  { helper: "Product constraints and readiness rules.", id: "products", label: "Products" },
+  { helper: "Asset-specific eligibility and connector contract status.", id: "contracts", label: "Contracts" },
+] as const;
+
+type MarketRuleTabId = (typeof MARKET_RULE_TABS)[number]["id"];
+
 export default function MarketRulesPage() {
   const { selectedAssetId } = useAssetContext();
   const { personaId } = usePersona();
+  const [activeTab, setActiveTab] = useState<MarketRuleTabId>("routes");
   const framing = getMarketRulesPersonaFraming(personaId);
 
   const adapters = useQuery({
@@ -282,6 +292,14 @@ export default function MarketRulesPage() {
         />
       </div>
 
+      <WorkspaceTabs
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        tabs={MARKET_RULE_TABS}
+      />
+
+      {activeTab === "routes" ? (
+        <div className="space-y-5">
       <SectionCard
         action={<StatusPill tone={decisionBrief.tone}>{decisionBrief.actionLabel}</StatusPill>}
         title={framing.bridgeTitle}
@@ -351,7 +369,10 @@ export default function MarketRulesPage() {
           rows={routeUnlockRows}
         />
       </SectionCard>
+        </div>
+      ) : null}
 
+      {activeTab === "products" ? (
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
         <SectionCard title={framing.productTitle}>
           <DataTable
@@ -391,7 +412,9 @@ export default function MarketRulesPage() {
           </div>
         </SectionCard>
       </div>
+      ) : null}
 
+      {activeTab === "contracts" ? (
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
         <SectionCard
           action={<StatusPill tone={blockedProductCount ? "amber" : "emerald"}>{eligibleProductRows.length}</StatusPill>}
@@ -434,6 +457,7 @@ export default function MarketRulesPage() {
           </div>
         </SectionCard>
       </div>
+      ) : null}
     </>
   );
 }

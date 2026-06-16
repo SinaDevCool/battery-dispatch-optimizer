@@ -85,6 +85,7 @@ export type PersonaProfile = {
 
 const allNavigationHrefs = [
   "/",
+  "/investor-demo",
   "/assets",
   "/intelligence",
   "/revenue",
@@ -148,6 +149,7 @@ export const personaProfiles: Record<PersonaId, PersonaProfile> = {
     primaryNavigationGroups: ["portfolio", "optimization", "risk_compliance"],
     allowedNavigationHrefs: [
       "/",
+      "/investor-demo",
       "/assets",
       "/revenue",
       "/reports",
@@ -176,6 +178,7 @@ export const personaProfiles: Record<PersonaId, PersonaProfile> = {
     primaryNavigationGroups: ["portfolio", "optimization", "risk_compliance"],
     allowedNavigationHrefs: [
       "/",
+      "/investor-demo",
       "/assets",
       "/revenue",
       "/hedging",
@@ -205,6 +208,7 @@ export const personaProfiles: Record<PersonaId, PersonaProfile> = {
     primaryNavigationGroups: ["portfolio", "market_intelligence", "optimization", "risk_compliance"],
     allowedNavigationHrefs: [
       "/",
+      "/investor-demo",
       "/assets",
       "/scenarios",
       "/hedging",
@@ -235,6 +239,7 @@ export const personaProfiles: Record<PersonaId, PersonaProfile> = {
     primaryNavigationGroups: ["portfolio", "risk_compliance", "optimization"],
     allowedNavigationHrefs: [
       "/",
+      "/investor-demo",
       "/intelligence",
       "/revenue",
       "/reports",
@@ -263,6 +268,7 @@ export const personaProfiles: Record<PersonaId, PersonaProfile> = {
     primaryNavigationGroups: ["portfolio", "risk_compliance", "optimization"],
     allowedNavigationHrefs: [
       "/",
+      "/investor-demo",
       "/reports",
       "/revenue",
       "/intelligence",

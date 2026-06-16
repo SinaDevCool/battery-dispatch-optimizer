@@ -19,6 +19,7 @@ from backend.revenue.revenue_stack_runner import (
     load_latest_asset_revenue_stack,
     run_asset_revenue_stack,
 )
+from backend.services.asset_provenance import attach_asset_provenance
 from backend.services.asset_signal_store import load_asset_latest_signal
 
 
@@ -34,9 +35,16 @@ def run_asset_revenue_stack_endpoint(
     optimizer_engine: str = "rule_based_v1",
 ):
     try:
-        return run_asset_revenue_stack(
+        result = run_asset_revenue_stack(
             asset_id=asset_id,
             optimizer_engine=optimizer_engine,
+        )
+        return attach_asset_provenance(
+            result,
+            get_asset(asset_id),
+            artifact="latest_revenue_stack.json",
+            kind="revenue_stack",
+            extra={"optimizer_engine": optimizer_engine},
         )
     except ValueError as error:
         return {
@@ -55,7 +63,17 @@ def run_asset_revenue_stack_endpoint(
     response_model=RevenueStackResponse,
 )
 def latest_asset_revenue_stack(asset_id: str):
-    return load_latest_asset_revenue_stack(asset_id)
+    result = load_latest_asset_revenue_stack(asset_id)
+    try:
+        return attach_asset_provenance(
+            result,
+            get_asset(asset_id),
+            artifact="latest_revenue_stack.json",
+            kind="revenue_stack",
+            extra={"optimizer_engine": result.get("optimizer_engine")},
+        )
+    except ValueError:
+        return result
 
 
 @router.post(
@@ -68,10 +86,17 @@ def allocate_asset_revenue_stack(
     refresh_revenue_stack: bool = False,
 ):
     try:
-        return run_revenue_stack_allocation(
+        result = run_revenue_stack_allocation(
             asset_id=asset_id,
             optimizer_engine=optimizer_engine,
             refresh_revenue_stack=refresh_revenue_stack,
+        )
+        return attach_asset_provenance(
+            result,
+            get_asset(asset_id),
+            artifact="latest_revenue_stack_allocation.json",
+            kind="revenue_allocation",
+            extra={"optimizer_engine": optimizer_engine},
         )
     except ValueError as error:
         return {
@@ -90,7 +115,16 @@ def allocate_asset_revenue_stack(
     response_model=RevenueAllocationResponse,
 )
 def latest_asset_revenue_stack_allocation(asset_id: str):
-    return load_latest_revenue_stack_allocation(asset_id)
+    result = load_latest_revenue_stack_allocation(asset_id)
+    try:
+        return attach_asset_provenance(
+            result,
+            get_asset(asset_id),
+            artifact="latest_revenue_stack_allocation.json",
+            kind="revenue_allocation",
+        )
+    except ValueError:
+        return result
 
 
 @router.get(
@@ -118,7 +152,12 @@ def asset_germany_grid_fee_sensitivity(asset_id: str):
     )
     result["signal_status"] = latest_signal.get("status")
 
-    return result
+    return attach_asset_provenance(
+        result,
+        asset,
+        kind="grid_fee_sensitivity",
+        source_file=((latest_signal.get("data") or {}).get("metadata") or {}).get("forecast_file"),
+    )
 
 
 @router.get("/assets/{asset_id}/energy-origin/latest", response_model=ApiResponse)
@@ -142,9 +181,15 @@ def asset_energy_origin_ledger(asset_id: str):
 
     dispatch_rows = latest_signal.get("data", {}).get("dispatch", [])
 
-    return build_energy_origin_ledger(
+    ledger = build_energy_origin_ledger(
         asset=asset,
         dispatch_rows=dispatch_rows,
+    )
+    return attach_asset_provenance(
+        ledger,
+        asset,
+        kind="energy_origin_ledger",
+        source_file=((latest_signal.get("data") or {}).get("metadata") or {}).get("forecast_file"),
     )
 
 
@@ -163,9 +208,15 @@ def asset_hedged_revenue_view(asset_id: str):
 
     merchant_revenue = infer_latest_merchant_revenue(asset_id)
 
-    return build_hedged_revenue_view(
+    result = build_hedged_revenue_view(
         asset=asset,
         merchant_revenue_eur=merchant_revenue,
+    )
+    return attach_asset_provenance(
+        result,
+        asset,
+        kind="hedging_revenue",
+        extra={"merchant_revenue_eur": merchant_revenue},
     )
 
 

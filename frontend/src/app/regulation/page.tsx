@@ -2,6 +2,10 @@
 
 import { useQuery } from "@tanstack/react-query";
 
+import {
+  AssetDataProfileSection,
+  buildAssetDataProfileEvidence,
+} from "@/components/asset-data-profile-section";
 import { useAssetContext } from "@/components/asset-provider";
 import { DataTable } from "@/components/data-table";
 import { DecisionBrief } from "@/components/decision-brief";
@@ -9,7 +13,10 @@ import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
 import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
+import { StatusPill } from "@/components/status-pill";
+import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { apiGet } from "@/lib/api";
+import { useState } from "react";
 import type { PersonaId } from "@/lib/personas";
 import type {
   AncillaryEligibilityResponse,
@@ -21,10 +28,32 @@ import type {
   TableRow,
 } from "@/types/api";
 
+const regulationTabs = [
+  {
+    id: "eligibility",
+    label: "Eligibility",
+    helper: "Regulatory decision inputs, automation gate, and client approval meaning.",
+  },
+  {
+    id: "market-rules",
+    label: "Market Rules",
+    helper: "Storage classification, EEG checks, grid-fee sensitivity, and ancillary eligibility details.",
+  },
+  {
+    id: "proof",
+    label: "Evidence",
+    helper: "Selected asset profile and mock-vs-production regulatory proof.",
+  },
+] as const;
+
+type RegulationTabId = (typeof regulationTabs)[number]["id"];
+
 export default function RegulationPage() {
-  const { selectedAssetId } = useAssetContext();
+  const { selectedAsset, selectedAssetId } = useAssetContext();
   const { persona, personaId } = usePersona();
   const isClientPersona = persona.layer === "client";
+  const [activeTab, setActiveTab] = useState<RegulationTabId>("eligibility");
+  const assetDataProfileEvidence = buildAssetDataProfileEvidence(selectedAsset);
 
   const regulatorySummary = useQuery({
     queryFn: () =>
@@ -75,6 +104,10 @@ export default function RegulationPage() {
   const eegData = eeg.data ?? regulatorySummary.data?.eeg_compliance;
   const ancillaryData =
     ancillary.data ?? regulatorySummary.data?.ancillary_eligibility;
+  const backendRegulatoryKpis = normalizeProofKpis(
+    regulatorySummary.data?.regulatory_proof?.kpis,
+  );
+  const visibleRegulatoryRows = regulatorySummary.data?.regulatory_proof?.rows ?? [];
   const gridFeeRows = gridFees.data?.sensitivity?.length
     ? gridFees.data.sensitivity
     : gridFees.data?.scenarios ?? [];
@@ -151,6 +184,8 @@ export default function RegulationPage() {
           `${framing.storageEvidenceLabel}: ${String(classificationData?.storage_classification ?? classificationData?.storage_mode ?? "-")}.`,
           `${framing.eegEvidenceLabel}: ${String(eegData?.status ?? "-")}.`,
           `${String(ancillaryEligibleCount)} ${framing.ancillaryEvidenceLabel}.`,
+          `Asset type: ${String(selectedAsset?.asset_type ?? "-").replaceAll("_", " ")} / ${String(selectedAsset?.asset_subtype ?? "-").replaceAll("_", " ")}.`,
+          ...assetDataProfileEvidence,
         ]}
         eyebrow={framing.decisionEyebrow}
         nextAction={
@@ -207,179 +242,221 @@ export default function RegulationPage() {
         </div>
       )}
 
-      <SectionCard className="mb-5" title={framing.bridgeTitle}>
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <DataTable
-            columns={["decision_input", "value"]}
-            rows={[
-              {
-                decision_input: "Country rulebook",
-                value: "Germany",
-              },
-              {
-                decision_input: "Automation gate",
-                value: automationBlockers.length
-                  ? isClientPersona
-                    ? "needs review before approval"
-                    : "blocked for live automation"
-                  : isClientPersona
-                    ? "ready for approval narrative"
-                    : "eligible for automated route selection",
-              },
-              {
-                decision_input: isClientPersona ? "Open approval blockers" : "Regulatory blockers",
-                value: automationBlockers.length,
-              },
-              {
-                decision_input: "Why this page matters",
-                value: framing.whyItMatters,
-              },
-            ]}
-          />
-          {isClientPersona ? (
+      <WorkspaceTabs
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        tabs={regulationTabs}
+      />
+
+      {activeTab === "eligibility" ? (
+        <div className="space-y-5">
+          <SectionCard title={framing.bridgeTitle}>
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+              <DataTable
+                columns={["decision_input", "value"]}
+                rows={[
+                  {
+                    decision_input: "Country rulebook",
+                    value: "Germany",
+                  },
+                  {
+                    decision_input: "Automation gate",
+                    value: automationBlockers.length
+                      ? isClientPersona
+                        ? "needs review before approval"
+                        : "blocked for live automation"
+                      : isClientPersona
+                        ? "ready for approval narrative"
+                        : "eligible for automated route selection",
+                  },
+                  {
+                    decision_input: isClientPersona ? "Open approval blockers" : "Regulatory blockers",
+                    value: automationBlockers.length,
+                  },
+                  {
+                    decision_input: "Why this page matters",
+                    value: framing.whyItMatters,
+                  },
+                ]}
+              />
+              {isClientPersona ? (
+                <DataTable
+                  columns={["approval_area", "status", "client_meaning", "next_action"]}
+                  rows={[
+                    {
+                      approval_area: "Asset classification",
+                      client_meaning: "Defines how the asset may participate in German markets.",
+                      next_action: "Use this classification in the client approval narrative.",
+                      status:
+                        classificationData?.storage_classification ??
+                        classificationData?.storage_mode ??
+                        "not loaded",
+                    },
+                    {
+                      approval_area: "EEG and origin risk",
+                      client_meaning: "Shows whether renewable-support or mixed-origin risk needs review.",
+                      next_action: eegData?.eeg_eligible
+                        ? "Include as supporting compliance evidence."
+                        : "Resolve EEG finding before presenting as approval-ready.",
+                      status: eegData?.status ?? "not loaded",
+                    },
+                    {
+                      approval_area: "Market eligibility",
+                      client_meaning: "Shows which market options can be discussed with the client.",
+                      next_action: ancillaryClientNextAction,
+                      status: ancillaryEligibilityStatus,
+                    },
+                  ]}
+                />
+              ) : (
+                <DataTable
+                  columns={["capability", "backend_route", "status", "business_value"]}
+                  rows={[
+                    {
+                      backend_route: `/assets/${selectedAssetId}/storage-classification`,
+                      business_value: "Classifies the asset before market-route selection.",
+                      capability: "Storage classification",
+                      status:
+                        classificationData?.storage_classification ??
+                        classificationData?.storage_mode ??
+                        "not loaded",
+                    },
+                    {
+                      backend_route: `/assets/${selectedAssetId}/eeg-compliance/latest`,
+                      business_value:
+                        "Blocks renewable-support or mixed-origin logic before automated bids.",
+                      capability: "EEG compliance",
+                      status: eegData?.status ?? "not loaded",
+                    },
+                    {
+                      backend_route: `/assets/${selectedAssetId}/grid-fees/germany/sensitivity`,
+                      business_value: "Tests tariff economics before dispatch approval.",
+                      capability: "Grid fee sensitivity",
+                      status: `${gridFeeRows.length} scenario(s)`,
+                    },
+                    {
+                      backend_route: `/assets/${selectedAssetId}/ancillary/germany/eligibility`,
+                      business_value:
+                        "Allows reserve-market bidding only for cleared products.",
+                      capability: "Ancillary eligibility",
+                      status: `${ancillaryEligibleCount} eligible`,
+                    },
+                  ]}
+                />
+              )}
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Automation gate summary">
             <DataTable
-              columns={["approval_area", "status", "client_meaning", "next_action"]}
+              columns={["gate", "status", "automation_use"]}
               rows={[
                 {
-                  approval_area: "Asset classification",
-                  client_meaning: "Defines how the asset may participate in German markets.",
-                  next_action: "Use this classification in the client approval narrative.",
+                  automation_use: "Select tradable market routes",
+                  gate: "Storage classification",
                   status:
                     classificationData?.storage_classification ??
                     classificationData?.storage_mode ??
-                    "not loaded",
+                    "-",
                 },
                 {
-                  approval_area: "EEG and origin risk",
-                  client_meaning: "Shows whether renewable-support or mixed-origin risk needs review.",
-                  next_action: eegData?.eeg_eligible
-                    ? "Include as supporting compliance evidence."
-                    : "Resolve EEG finding before presenting as approval-ready.",
-                  status: eegData?.status ?? "not loaded",
+                  automation_use: "Block unsupported renewable-support logic",
+                  gate: "EEG compliance",
+                  status: eegData?.eeg_eligible ? "eligible" : eegData?.status ?? "-",
                 },
                 {
-                  approval_area: "Market eligibility",
-                  client_meaning: "Shows which market options can be discussed with the client.",
-                  next_action: ancillaryClientNextAction,
+                  automation_use: "Allow ancillary-market bidding only for cleared products",
+                  gate: "Ancillary eligibility",
                   status: ancillaryEligibilityStatus,
                 },
-              ]}
-            />
-          ) : (
-            <DataTable
-              columns={["capability", "backend_route", "status", "business_value"]}
-              rows={[
                 {
-                  backend_route: `/assets/${selectedAssetId}/storage-classification`,
-                  business_value: "Classifies the asset before market-route selection.",
-                  capability: "Storage classification",
-                  status:
-                    classificationData?.storage_classification ??
-                    classificationData?.storage_mode ??
-                    "not loaded",
-                },
-                {
-                  backend_route: `/assets/${selectedAssetId}/eeg-compliance/latest`,
-                  business_value:
-                    "Blocks renewable-support or mixed-origin logic before automated bids.",
-                  capability: "EEG compliance",
-                  status: eegData?.status ?? "not loaded",
-                },
-                {
-                  backend_route: `/assets/${selectedAssetId}/grid-fees/germany/sensitivity`,
-                  business_value: "Tests tariff economics before dispatch approval.",
-                  capability: "Grid fee sensitivity",
-                  status: `${gridFeeRows.length} scenario(s)`,
-                },
-                {
-                  backend_route: `/assets/${selectedAssetId}/ancillary/germany/eligibility`,
-                  business_value:
-                    "Allows reserve-market bidding only for cleared products.",
-                  capability: "Ancillary eligibility",
-                  status: `${ancillaryEligibleCount} eligible`,
+                  automation_use: "Apply tariff economics before dispatch approval",
+                  gate: "Grid fee sensitivity",
+                  status: isClientPersona ? "internal detail" : `${gridFeeRows.length} scenario(s)`,
                 },
               ]}
             />
-          )}
+          </SectionCard>
         </div>
-      </SectionCard>
+      ) : null}
 
-      <div className="grid gap-5 xl:grid-cols-2">
-        <SectionCard title="Automation gate summary">
-          <DataTable
-            columns={["gate", "status", "automation_use"]}
-            rows={[
-              {
-                automation_use: "Select tradable market routes",
-                gate: "Storage classification",
-                status:
-                  classificationData?.storage_classification ??
-                  classificationData?.storage_mode ??
-                  "-",
-              },
-              {
-                automation_use: "Block unsupported renewable-support logic",
-                gate: "EEG compliance",
-                status: eegData?.eeg_eligible ? "eligible" : eegData?.status ?? "-",
-              },
-              {
-                automation_use: "Allow ancillary-market bidding only for cleared products",
-                gate: "Ancillary eligibility",
-                status: ancillaryEligibilityStatus,
-              },
-              {
-                automation_use: "Apply tariff economics before dispatch approval",
-                gate: "Grid fee sensitivity",
-                status: isClientPersona ? "internal detail" : `${gridFeeRows.length} scenario(s)`,
-              },
-            ]}
+      {activeTab === "market-rules" ? (
+        <div className="grid gap-5 xl:grid-cols-2">
+          <SectionCard title="Storage classification detail">
+            <DataTable
+              columns={["field", "value"]}
+              rows={storageRows(classificationData)}
+            />
+          </SectionCard>
+
+          <SectionCard title="EEG and green colocation checks">
+            <DataTable
+              columns={["field", "value"]}
+              rows={eegRows(eegData)}
+            />
+          </SectionCard>
+
+          {!isClientPersona ? (
+            <>
+              <SectionCard title="Grid fee sensitivity">
+                <DataTable
+                  columns={[
+                    "grid_fee_scenario",
+                    "import_grid_fee_eur_per_mwh",
+                    "capacity_charge_eur_per_mw_year",
+                    "annualized_grid_fee_cost_eur",
+                    "description",
+                  ]}
+                  rows={gridFeeRows.slice(0, 6)}
+                />
+              </SectionCard>
+
+              <SectionCard title="Ancillary eligibility">
+                <DataTable
+                  columns={[
+                    "product_id",
+                    "eligibility_status",
+                    "automation_gate",
+                    "market_requirement",
+                    "next_action",
+                  ]}
+                  rows={formatAncillaryGateRows(formattedAncillaryRows).slice(0, 6)}
+                />
+              </SectionCard>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
+      {activeTab === "proof" ? (
+        <div className="space-y-5">
+          <AssetDataProfileSection
+            asset={selectedAsset}
+            title="Selected regulatory asset profile"
           />
-        </SectionCard>
 
-        <SectionCard title="Storage classification detail">
-          <DataTable
-            columns={["field", "value"]}
-            rows={storageRows(classificationData)}
-          />
-        </SectionCard>
-
-        <SectionCard title="EEG and green colocation checks">
-          <DataTable
-            columns={["field", "value"]}
-            rows={eegRows(eegData)}
-          />
-        </SectionCard>
-
-        {!isClientPersona ? (
-          <>
-            <SectionCard title="Grid fee sensitivity">
-              <DataTable
-                columns={[
-                  "grid_fee_scenario",
-                  "import_grid_fee_eur_per_mwh",
-                  "capacity_charge_eur_per_mw_year",
-                  "annualized_grid_fee_cost_eur",
-                  "description",
-                ]}
-                rows={gridFeeRows.slice(0, 6)}
-              />
-            </SectionCard>
-
-            <SectionCard title="Ancillary eligibility">
-              <DataTable
-                columns={[
-                  "product_id",
-                  "eligibility_status",
-                  "automation_gate",
-                  "market_requirement",
-                  "next_action",
-                ]}
-                rows={formatAncillaryGateRows(formattedAncillaryRows).slice(0, 6)}
-              />
-            </SectionCard>
-          </>
-        ) : null}
-      </div>
+          <SectionCard
+            action={<StatusPill tone="blue">{selectedAsset?.data_mode ?? "mock"} regulatory proof</StatusPill>}
+            title="Asset regulatory proof"
+          >
+            <div className="mb-4 grid gap-4 md:grid-cols-3">
+              {backendRegulatoryKpis.map((kpi) => (
+                <KpiCard
+                  accent={kpi.accent}
+                  helper={kpi.helper}
+                  key={kpi.label}
+                  label={kpi.label}
+                  value={kpi.value}
+                />
+              ))}
+            </div>
+            <DataTable
+              columns={["regulatory_driver", "mock_evidence", "investor_meaning", "production_upgrade"]}
+              rows={visibleRegulatoryRows}
+            />
+          </SectionCard>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -428,6 +505,52 @@ function objectToRows(value: JsonObject): TableRow[] {
       field,
       value: rowValue,
     }));
+}
+
+type RegulatoryProofKpi = {
+  accent: "amber" | "blue" | "emerald" | "red" | "slate";
+  helper: string;
+  label: string;
+  value: React.ReactNode;
+};
+
+function normalizeProofKpis(rows?: TableRow[]): RegulatoryProofKpi[] {
+  return (rows ?? []).map((row) => ({
+    accent: normalizeAccent(row.accent),
+    helper: String(row.helper ?? ""),
+    label: String(row.label ?? "Evidence"),
+    value: normalizeKpiValue(row.value),
+  }));
+}
+
+function normalizeAccent(value: unknown): RegulatoryProofKpi["accent"] {
+  if (
+    value === "amber" ||
+    value === "blue" ||
+    value === "emerald" ||
+    value === "red" ||
+    value === "slate"
+  ) {
+    return value;
+  }
+
+  return "slate";
+}
+
+function normalizeKpiValue(value: TableRow[string]): React.ReactNode {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+
+  if (value === null || value === undefined) {
+    return "-";
+  }
+
+  return JSON.stringify(value);
 }
 
 function formatAncillaryRows(rows: TableRow[]): TableRow[] {

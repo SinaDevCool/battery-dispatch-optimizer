@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { ActionButton } from "@/components/action-button";
 import { useAssetContext } from "@/components/asset-provider";
@@ -12,6 +13,7 @@ import { PageHeading } from "@/components/page-heading";
 import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
+import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { apiGet } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import type { PersonaId } from "@/lib/personas";
@@ -32,9 +34,30 @@ type OrchestratorPersonaFraming = {
   workflowTitle: string;
 };
 
+const orchestratorTabs = [
+  {
+    id: "control",
+    label: "Control",
+    helper: "Bridge, next action, and links into the execution workflow.",
+  },
+  {
+    id: "workflow",
+    label: "Workflow",
+    helper: "Current workflow steps plus blockers and review items.",
+  },
+  {
+    id: "evidence",
+    label: "Evidence",
+    helper: "Backend evidence, audit trail, and last run result.",
+  },
+] as const;
+
+type OrchestratorTabId = (typeof orchestratorTabs)[number]["id"];
+
 export default function TradingOrchestratorPage() {
   const { selectedAsset, selectedAssetId } = useAssetContext();
   const { personaId } = usePersona();
+  const [activeTab, setActiveTab] = useState<OrchestratorTabId>("control");
   const framing = getOrchestratorPersonaFraming(personaId);
 
   const orchestrator = useQuery({
@@ -116,134 +139,148 @@ export default function TradingOrchestratorPage() {
         />
       </div>
 
-      <SectionCard className="mb-5" title={framing.bridgeTitle}>
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <DataTable
-            columns={["decision_input", "value"]}
-            rows={[
-              {
-                decision_input: "Control purpose",
-                value:
-                  "Selects the next automated trading step so the platform moves from signal to proposal, allocation, validation, approval, and submission without siloed operator handoffs.",
-              },
-              {
-                decision_input: "Current owner",
-                value: nextAction?.owner ?? "not assigned",
-              },
-              {
-                decision_input: "Current action",
-                value: nextAction?.action ?? "-",
-              },
-              {
-                decision_input: "Run endpoint",
-                value: `/assets/${selectedAssetId}/execution/orchestrator/run`,
-              },
-            ]}
-          />
-          <DataTable
-            columns={["capability", "backend_route", "status", "business_value"]}
-            rows={orchestratorBridgeRows(selectedAssetId, evidence, data?.orchestrator_status)}
-          />
+      <WorkspaceTabs
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        tabs={orchestratorTabs}
+      />
+
+      {activeTab === "control" ? (
+        <div className="space-y-5">
+          <SectionCard title={framing.bridgeTitle}>
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+              <DataTable
+                columns={["decision_input", "value"]}
+                rows={[
+                  {
+                    decision_input: "Control purpose",
+                    value:
+                      "Selects the next automated trading step so the platform moves from signal to proposal, allocation, validation, approval, and submission without siloed operator handoffs.",
+                  },
+                  {
+                    decision_input: "Current owner",
+                    value: nextAction?.owner ?? "not assigned",
+                  },
+                  {
+                    decision_input: "Current action",
+                    value: nextAction?.action ?? "-",
+                  },
+                  {
+                    decision_input: "Run endpoint",
+                    value: `/assets/${selectedAssetId}/execution/orchestrator/run`,
+                  },
+                ]}
+              />
+              <DataTable
+                columns={["capability", "backend_route", "status", "business_value"]}
+                rows={orchestratorBridgeRows(selectedAssetId, evidence, data?.orchestrator_status)}
+              />
+            </div>
+          </SectionCard>
+
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.75fr)]">
+            <SectionCard
+              action={
+                <ActionButton
+                  endpoint={`/assets/${selectedAssetId}/execution/orchestrator/run`}
+                  label="Run next step"
+                  refetch={() => orchestrator.refetch()}
+                  variant="primary"
+                />
+              }
+              title={framing.runTitle}
+            >
+              <div className="grid gap-3 md:grid-cols-2">
+                <DecisionRow
+                  label="Stage"
+                  tone={stageTone(data?.orchestrator_status)}
+                  value={data?.stage?.status ?? "-"}
+                />
+                <DecisionRow
+                  label="Action"
+                  tone={actionTone(nextAction?.action)}
+                  value={nextAction?.action ?? "-"}
+                />
+                <DecisionRow
+                  label="Owner"
+                  tone="blue"
+                  value={nextAction?.owner ?? "-"}
+                />
+                <DecisionRow
+                  label="Generated"
+                  tone="slate"
+                  value={formatDateTime(data?.generated_at)}
+                />
+              </div>
+              <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900/45 p-4 text-sm leading-6 text-slate-300">
+                {nextAction?.message ?? "The orchestrator has not returned a next action yet."}
+              </div>
+            </SectionCard>
+
+            <SectionCard title={framing.linksTitle}>
+              <div className="space-y-3">
+                <WorkflowLink href="/market-signals" label="Market Signals" value={String(evidence.signal ?? "-")} />
+                <WorkflowLink href="/execution/automation-policies" label="Automation Policies" value={String(evidence.policy_decision ?? "-")} />
+                <WorkflowLink href="/execution/market-allocation" label="Market Allocation" value={String(evidence.allocation_status ?? "-")} />
+                <WorkflowLink href="/execution/proposals" label="Bid Proposals" value={String(evidence.execution_proposal_id ?? "No proposal")} />
+                <WorkflowLink href="/execution/simulation" label="Simulation" value={String(evidence.paper_trade_id ?? "No paper trade")} />
+                <WorkflowLink href="/execution/risk-approval" label="Risk & Approval" value={String(evidence.approval_status ?? "No approval")} />
+              </div>
+            </SectionCard>
+          </div>
         </div>
-      </SectionCard>
+      ) : null}
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.75fr)]">
-        <SectionCard
-          action={
-            <ActionButton
-              endpoint={`/assets/${selectedAssetId}/execution/orchestrator/run`}
-              label="Run next step"
-              refetch={() => orchestrator.refetch()}
-              variant="primary"
-            />
-          }
-          title={framing.runTitle}
-        >
-          <div className="grid gap-3 md:grid-cols-2">
-            <DecisionRow
-              label="Stage"
-              tone={stageTone(data?.orchestrator_status)}
-              value={data?.stage?.status ?? "-"}
-            />
-            <DecisionRow
-              label="Action"
-              tone={actionTone(nextAction?.action)}
-              value={nextAction?.action ?? "-"}
-            />
-            <DecisionRow
-              label="Owner"
-              tone="blue"
-              value={nextAction?.owner ?? "-"}
-            />
-            <DecisionRow
-              label="Generated"
-              tone="slate"
-              value={formatDateTime(data?.generated_at)}
-            />
-          </div>
-          <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900/45 p-4 text-sm leading-6 text-slate-300">
-            {nextAction?.message ?? "The orchestrator has not returned a next action yet."}
-          </div>
-        </SectionCard>
-
-        <SectionCard title={framing.linksTitle}>
-          <div className="space-y-3">
-            <WorkflowLink href="/market-signals" label="Market Signals" value={String(evidence.signal ?? "-")} />
-            <WorkflowLink href="/execution/automation-policies" label="Automation Policies" value={String(evidence.policy_decision ?? "-")} />
-            <WorkflowLink href="/execution/market-allocation" label="Market Allocation" value={String(evidence.allocation_status ?? "-")} />
-            <WorkflowLink href="/execution/proposals" label="Bid Proposals" value={String(evidence.execution_proposal_id ?? "No proposal")} />
-            <WorkflowLink href="/execution/simulation" label="Simulation" value={String(evidence.paper_trade_id ?? "No paper trade")} />
-            <WorkflowLink href="/execution/risk-approval" label="Risk & Approval" value={String(evidence.approval_status ?? "No approval")} />
-          </div>
-        </SectionCard>
-      </div>
-
-      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(420px,0.8fr)]">
-        <SectionCard
-          action={<StatusPill tone={stageTone(data?.orchestrator_status)}>{data?.orchestrator_status ?? "-"}</StatusPill>}
-          title={framing.workflowTitle}
-        >
-          <DataTable
-            columns={["step", "label", "status", "message"]}
-            rows={formatWorkflow(activeWorkflow.length ? activeWorkflow : workflow.slice(0, 8))}
-          />
-        </SectionCard>
-
-        <SectionCard
-          action={<StatusPill tone={blockers.length ? "amber" : "emerald"}>{blockers.length}</StatusPill>}
-          title={framing.blockersTitle}
-        >
-          <DataTable
-            columns={["source", "status", "blocker"]}
-            rows={blockerRows}
-          />
-        </SectionCard>
-      </div>
-
-      <div className="mt-5 grid gap-5 xl:grid-cols-2">
-        <SectionCard title={framing.evidenceTitle}>
-          <DataTable
-            columns={["metric", "value"]}
-            rows={formatEvidence(evidence).slice(0, 12)}
-          />
-        </SectionCard>
-
-        <SectionCard title={framing.auditTitle}>
-          <DataTable
-            columns={["event", "actor", "status", "note"]}
-            rows={(data?.audit ?? []).slice(0, 8)}
-          />
-        </SectionCard>
-      </div>
-
-      {data?.executed_actions?.length ? (
-        <div className="mt-5">
-          <SectionCard title="Last run result">
+      {activeTab === "workflow" ? (
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(420px,0.8fr)]">
+          <SectionCard
+            action={<StatusPill tone={stageTone(data?.orchestrator_status)}>{data?.orchestrator_status ?? "-"}</StatusPill>}
+            title={framing.workflowTitle}
+          >
             <DataTable
-              columns={["action", "status", "message", "record_id"]}
-              rows={data.executed_actions}
+              columns={["step", "label", "status", "message"]}
+              rows={formatWorkflow(activeWorkflow.length ? activeWorkflow : workflow.slice(0, 8))}
             />
           </SectionCard>
+
+          <SectionCard
+            action={<StatusPill tone={blockers.length ? "amber" : "emerald"}>{blockers.length}</StatusPill>}
+            title={framing.blockersTitle}
+          >
+            <DataTable
+              columns={["source", "status", "blocker"]}
+              rows={blockerRows}
+            />
+          </SectionCard>
+        </div>
+      ) : null}
+
+      {activeTab === "evidence" ? (
+        <div className="space-y-5">
+          <div className="grid gap-5 xl:grid-cols-2">
+            <SectionCard title={framing.evidenceTitle}>
+              <DataTable
+                columns={["metric", "value"]}
+                rows={formatEvidence(evidence).slice(0, 12)}
+              />
+            </SectionCard>
+
+            <SectionCard title={framing.auditTitle}>
+              <DataTable
+                columns={["event", "actor", "status", "note"]}
+                rows={(data?.audit ?? []).slice(0, 8)}
+              />
+            </SectionCard>
+          </div>
+
+          {data?.executed_actions?.length ? (
+            <SectionCard title="Last run result">
+              <DataTable
+                columns={["action", "status", "message", "record_id"]}
+                rows={data.executed_actions}
+              />
+            </SectionCard>
+          ) : null}
         </div>
       ) : null}
     </>

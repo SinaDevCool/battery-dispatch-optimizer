@@ -1,16 +1,18 @@
 "use client";
 
-import { Zap } from "lucide-react";
+import { ShieldCheck, Zap } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
 import { AssetSelector } from "@/components/asset-selector";
+import { useAssetContext } from "@/components/asset-provider";
 import { PersonaSelector } from "@/components/persona-selector";
 import { usePersona } from "@/components/persona-provider";
 import { cn } from "@/lib/utils";
 import { StatusPill } from "@/components/status-pill";
 import { useApiBaseUrl } from "@/hooks/use-api-base-url";
+import { demoStatusTone, formatDemoStatus } from "@/lib/demo-status";
 import {
   flattenNavigationGroups,
   isNavigationActive,
@@ -22,7 +24,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [searchString, setSearchString] = useState("");
   const apiBaseUrl = useApiBaseUrl();
   const { persona } = usePersona();
+  const { selectedAsset } = useAssetContext();
   const isClientPersona = persona.layer === "client";
+  const selectedDataMode = selectedAsset?.data_mode ?? "mock";
+  const isProductionAsset = selectedDataMode === "production";
   const visibleNavigationGroups = navigationGroups
     .filter((group) =>
       persona.id === "all" || persona.primaryNavigationGroups.includes(group.id),
@@ -149,9 +154,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Battery Trading Intelligence
               </div>
-              <h1 className="mt-1 text-xl font-semibold text-white">
+              <div className="mt-1 text-xl font-semibold text-white">
                 Forecast, optimize, and execute
-              </h1>
+              </div>
             </div>
 
             <div className="hidden items-center gap-3 md:flex">
@@ -160,6 +165,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               ) : null}
               <PersonaSelector />
               <AssetSelector />
+            </div>
+          </div>
+
+          <div className="border-t border-slate-900 bg-slate-950/80 px-5 py-2.5 lg:px-8">
+            <div className="mx-auto flex max-w-[1500px] flex-col gap-2 text-xs text-slate-400 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-sky-300" />
+                <span className="font-semibold text-slate-200">
+                  {isProductionAsset ? "Production asset selected" : "Investor demo mode"}
+                </span>
+                <span className="hidden text-slate-500 sm:inline">/</span>
+                <span className="leading-5">
+                  {isProductionAsset
+                    ? "Live-data claims still depend on connector, telemetry, settlement, and approval evidence."
+                    : "Mock data is active; production connectors are intentionally gated."}
+                </span>
+              </div>
+              <StatusPill tone={demoStatusTone(selectedDataMode)}>
+                {formatDemoStatus(selectedDataMode)}
+              </StatusPill>
             </div>
           </div>
 

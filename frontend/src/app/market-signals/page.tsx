@@ -2,8 +2,13 @@
 
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { ActionButton } from "@/components/action-button";
+import {
+  AssetDataProfileSection,
+  buildAssetDataProfileEvidence,
+} from "@/components/asset-data-profile-section";
 import { useAssetContext } from "@/components/asset-provider";
 import { DataTable } from "@/components/data-table";
 import { DecisionBrief, type DecisionBriefTone } from "@/components/decision-brief";
@@ -12,6 +17,7 @@ import { PageHeading } from "@/components/page-heading";
 import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
+import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { apiGet } from "@/lib/api";
 import { formatCurrency, formatDateTime, formatNumber } from "@/lib/format";
 import type { PersonaId } from "@/lib/personas";
@@ -27,6 +33,26 @@ import type {
   StrategyIntentResponse,
   TableRow,
 } from "@/types/api";
+
+const marketSignalTabs = [
+  {
+    id: "decision",
+    label: "Decision",
+    helper: "Signal-to-order path, market route, and automation state.",
+  },
+  {
+    id: "workflow",
+    label: "Workflow",
+    helper: "Blockers, dispatch intervals, market candidates, and action controls.",
+  },
+  {
+    id: "evidence",
+    label: "Evidence",
+    helper: "Selected asset profile and mock-vs-production signal proof.",
+  },
+] as const;
+
+type MarketSignalTabId = (typeof marketSignalTabs)[number]["id"];
 
 type MarketSignalsPersonaFraming = {
   automationControlsTitle: string;
@@ -44,9 +70,11 @@ type MarketSignalsPersonaFraming = {
 };
 
 export default function MarketSignalsPage() {
-  const { selectedAssetId } = useAssetContext();
+  const { selectedAsset, selectedAssetId } = useAssetContext();
   const { personaId } = usePersona();
+  const [activeTab, setActiveTab] = useState<MarketSignalTabId>("decision");
   const framing = getMarketSignalsPersonaFraming(personaId);
+  const assetDataProfileEvidence = buildAssetDataProfileEvidence(selectedAsset);
 
   const signal = useQuery({
     queryFn: () =>
@@ -138,6 +166,23 @@ export default function MarketSignalsPage() {
     signalSummary,
     strategyIntent: strategyIntent.data,
   });
+  const selectedAssetDecisionBrief = {
+    ...decisionBrief,
+    evidence: [...decisionBrief.evidence, ...assetDataProfileEvidence],
+  };
+  const fallbackSignalProof = buildFallbackSignalProof({
+    activeRows,
+    metadata,
+    signalSummary,
+  });
+  const backendSignalProofKpis = normalizeProofKpis(signal.data?.signal_proof?.kpis);
+  const backendSignalProofRows = signal.data?.signal_proof?.rows ?? [];
+  const visibleSignalProofKpis = backendSignalProofKpis.length
+    ? backendSignalProofKpis
+    : fallbackSignalProof.kpis;
+  const visibleSignalProofRows = backendSignalProofRows.length
+    ? backendSignalProofRows
+    : fallbackSignalProof.rows;
   const backendConnectionRows = buildSignalBackendConnectionRows({
     allocationStatus: allocation.data?.allocation_status,
     automationStatus: automationControl.data?.automation_status,
@@ -173,20 +218,20 @@ export default function MarketSignalsPage() {
           action={
             <ActionButton
               endpoint={
-                decisionBrief.actionEndpoint ??
+                selectedAssetDecisionBrief.actionEndpoint ??
                 `/assets/${selectedAssetId}/signal/run-latest`
               }
-              label={decisionBrief.actionLabel}
+              label={selectedAssetDecisionBrief.actionLabel}
               refetch={refetchSignals}
               variant="primary"
             />
           }
-          blockers={decisionBrief.blockers}
-          decision={decisionBrief.decision}
-          evidence={decisionBrief.evidence}
+          blockers={selectedAssetDecisionBrief.blockers}
+          decision={selectedAssetDecisionBrief.decision}
+          evidence={selectedAssetDecisionBrief.evidence}
           eyebrow={framing.decisionEyebrow}
-          nextAction={decisionBrief.nextAction}
-          tone={decisionBrief.tone}
+          nextAction={selectedAssetDecisionBrief.nextAction}
+          tone={selectedAssetDecisionBrief.tone}
           title={framing.decisionTitle}
         />
       </div>
@@ -218,174 +263,322 @@ export default function MarketSignalsPage() {
         />
       </div>
 
-      <SectionCard
-        action={
-          <StatusPill tone={decisionBrief.tone}>
-            {automationMode === "blocked" ? "Order blocked" : "Order path evaluated"}
-          </StatusPill>
-        }
-        className="mb-6"
-        title={framing.bridgeTitle}
-      >
-        <DataTable
-          columns={["capability", "backend_route", "status", "business_value"]}
-          rows={backendConnectionRows}
-        />
-      </SectionCard>
+      <WorkspaceTabs
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        tabs={marketSignalTabs}
+      />
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
-        <SectionCard
-          action={<StatusPill tone={automationTone(automationMode)}>{automationMode}</StatusPill>}
-          title={framing.orderDecisionTitle}
-        >
-          <div className="grid gap-3 md:grid-cols-2">
-            <AutomationDecisionRow
-              label="Recommended action"
-              tone={automationTone(automationMode)}
-              value={recommendedAction}
+      {activeTab === "decision" ? (
+        <div className="space-y-5">
+          <SectionCard
+            action={
+              <StatusPill tone={selectedAssetDecisionBrief.tone}>
+                {automationMode === "blocked" ? "Order blocked" : "Order path evaluated"}
+              </StatusPill>
+            }
+            title={framing.bridgeTitle}
+          >
+            <DataTable
+              columns={["capability", "backend_route", "status", "business_value"]}
+              rows={backendConnectionRows}
             />
-            <AutomationDecisionRow
-              label="Target market"
-              tone={primaryMarket ? "blue" : "amber"}
-              value={primaryMarket?.market_name ?? "No market route selected"}
-            />
-            <AutomationDecisionRow
-              label="Market allocation"
-              tone={allocationTone(allocation.data?.allocation_status)}
-              value={allocation.data?.allocation_status ?? "-"}
-            />
-            <AutomationDecisionRow
-              label="Forecast provider"
-              tone="slate"
-              value={metadata.forecast_provider ?? metadata.source ?? "-"}
-            />
+          </SectionCard>
+
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
+            <SectionCard
+              action={<StatusPill tone={automationTone(automationMode)}>{automationMode}</StatusPill>}
+              title={framing.orderDecisionTitle}
+            >
+              <div className="grid gap-3 md:grid-cols-2">
+                <AutomationDecisionRow
+                  label="Recommended action"
+                  tone={automationTone(automationMode)}
+                  value={recommendedAction}
+                />
+                <AutomationDecisionRow
+                  label="Target market"
+                  tone={primaryMarket ? "blue" : "amber"}
+                  value={primaryMarket?.market_name ?? "No market route selected"}
+                />
+                <AutomationDecisionRow
+                  label="Market allocation"
+                  tone={allocationTone(allocation.data?.allocation_status)}
+                  value={allocation.data?.allocation_status ?? "-"}
+                />
+                <AutomationDecisionRow
+                  label="Forecast provider"
+                  tone="slate"
+                  value={metadata.forecast_provider ?? metadata.source ?? "-"}
+                />
+              </div>
+
+              <div className="mt-5 grid gap-3 md:grid-cols-3">
+                <KpiCard
+                  accent="emerald"
+                  helper="Forecast dispatch economics"
+                  label="Expected PnL"
+                  value={formatCurrency(signalSummary.total_pnl_eur)}
+                />
+                <KpiCard
+                  accent="blue"
+                  helper="Intervals with charge/discharge intent"
+                  label="Active intervals"
+                  value={activeRows.length}
+                />
+                <KpiCard
+                  accent={primaryMarket ? "emerald" : "amber"}
+                  helper={primaryMarket?.operator_next_action ?? "Market allocation required"}
+                  label="Primary route score"
+                  value={formatNumber(primaryMarket?.allocation_score, 1)}
+                />
+              </div>
+            </SectionCard>
+
+            <SectionCard title={framing.nextStepTitle}>
+              <div className="space-y-3">
+                <AutomationStepLink
+                  href="/forecasts"
+                  label="Validate forecast confidence"
+                  status={confidence.data?.automation_eligibility ?? "not evaluated"}
+                />
+                <AutomationStepLink
+                  href="/execution/market-allocation"
+                  label="Confirm market route"
+                  status={primaryMarket?.market_name ?? "allocation pending"}
+                />
+                <AutomationStepLink
+                  href="/execution/proposals"
+                  label="Build bid proposal"
+                  status={signalSummary.signal === "ACTION" ? "ready to build" : "wait for action signal"}
+                />
+                <AutomationStepLink
+                  href="/execution/risk-approval"
+                  label="Apply guardrails and approval"
+                  status={guardrails.data?.automation_status ?? "not evaluated"}
+                />
+                <AutomationStepLink
+                  href="/execution/simulation"
+                  label="Run paper market validation"
+                  status={automationMode === "blocked" ? "blocked" : "next validation step"}
+                />
+              </div>
+            </SectionCard>
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === "workflow" ? (
+        <div className="space-y-5">
+          <div className="grid gap-5 xl:grid-cols-2">
+            <SectionCard
+              action={<StatusPill tone={blockers.length ? "amber" : "emerald"}>{blockers.length}</StatusPill>}
+              title={framing.blockersTitle}
+            >
+              <div className="mb-4 grid gap-3 md:grid-cols-3">
+                <AutomationDecisionRow label="Readiness" tone={blockerSummary.readiness ? "amber" : "emerald"} value={blockerSummary.readiness} />
+                <AutomationDecisionRow label="Guardrails" tone={blockerSummary.guardrails ? "amber" : "emerald"} value={blockerSummary.guardrails} />
+                <AutomationDecisionRow label="Market route" tone={blockerSummary.market ? "amber" : "emerald"} value={blockerSummary.market} />
+              </div>
+              <DataTable columns={["source", "blocker"]} rows={blockers.slice(0, 8)} />
+            </SectionCard>
+
+            <SectionCard
+              action={<StatusPill tone="blue">{activeRows.length} active</StatusPill>}
+              title={framing.dispatchTitle}
+            >
+              <DataTable
+                columns={[
+                  "timestamp",
+                  "action",
+                  "price",
+                  "grid_energy_mwh",
+                  "battery_energy_mwh",
+                  "pnl_eur",
+                  "total_pnl_eur",
+                ]}
+                rows={formatDispatchRows(activeRows.slice(0, 12))}
+              />
+            </SectionCard>
           </div>
 
-          <div className="mt-5 grid gap-3 md:grid-cols-3">
-            <KpiCard
-              accent="emerald"
-              helper="Forecast dispatch economics"
-              label="Expected PnL"
-              value={formatCurrency(signalSummary.total_pnl_eur)}
-            />
-            <KpiCard
-              accent="blue"
-              helper="Intervals with charge/discharge intent"
-              label="Active intervals"
-              value={activeRows.length}
-            />
-            <KpiCard
-              accent={primaryMarket ? "emerald" : "amber"}
-              helper={primaryMarket?.operator_next_action ?? "Market allocation required"}
-              label="Primary route score"
-              value={formatNumber(primaryMarket?.allocation_score, 1)}
-            />
-          </div>
-        </SectionCard>
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
+            <SectionCard title={framing.routeTitle}>
+              <DataTable
+                columns={[
+                  "adapter_id",
+                  "market_name",
+                  "recommendation_status",
+                  "allocation_score",
+                  "risk_score",
+                  "allocated_power_mw",
+                  "expected_revenue_eur",
+                  "operator_next_action",
+                ]}
+                rows={formatMarketCandidates((allocation.data?.allocation ?? []).slice(0, 8))}
+              />
+            </SectionCard>
 
-        <SectionCard title={framing.nextStepTitle}>
-          <div className="space-y-3">
-            <AutomationStepLink
-              href="/forecasts"
-              label="Validate forecast confidence"
-              status={confidence.data?.automation_eligibility ?? "not evaluated"}
-            />
-            <AutomationStepLink
-              href="/execution/market-allocation"
-              label="Confirm market route"
-              status={primaryMarket?.market_name ?? "allocation pending"}
-            />
-            <AutomationStepLink
-              href="/execution/proposals"
-              label="Build bid proposal"
-              status={signalSummary.signal === "ACTION" ? "ready to build" : "wait for action signal"}
-            />
-            <AutomationStepLink
-              href="/execution/risk-approval"
-              label="Apply guardrails and approval"
-              status={guardrails.data?.automation_status ?? "not evaluated"}
-            />
-            <AutomationStepLink
-              href="/execution/simulation"
-              label="Run paper market validation"
-              status={automationMode === "blocked" ? "blocked" : "next validation step"}
-            />
+            <SectionCard title={framing.automationControlsTitle}>
+              <div className="grid gap-3">
+                <ActionButton
+                  endpoint={`/assets/${selectedAssetId}/signal/run-latest`}
+                  label="Refresh signal"
+                  refetch={refetchSignals}
+                  variant="primary"
+                />
+                <ActionButton
+                  endpoint={`/assets/${selectedAssetId}/execution/proposal/build`}
+                  label="Build proposal"
+                  refetch={refetchSignals}
+                />
+                <ActionButton
+                  endpoint={`/assets/${selectedAssetId}/execution/paper-trade/run`}
+                  label="Run paper trade"
+                  refetch={refetchSignals}
+                />
+              </div>
+            </SectionCard>
           </div>
-        </SectionCard>
-      </div>
+        </div>
+      ) : null}
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-2">
-        <SectionCard
-          action={<StatusPill tone={blockers.length ? "amber" : "emerald"}>{blockers.length}</StatusPill>}
-          title={framing.blockersTitle}
-        >
-          <div className="mb-4 grid gap-3 md:grid-cols-3">
-            <AutomationDecisionRow label="Readiness" tone={blockerSummary.readiness ? "amber" : "emerald"} value={blockerSummary.readiness} />
-            <AutomationDecisionRow label="Guardrails" tone={blockerSummary.guardrails ? "amber" : "emerald"} value={blockerSummary.guardrails} />
-            <AutomationDecisionRow label="Market route" tone={blockerSummary.market ? "amber" : "emerald"} value={blockerSummary.market} />
-          </div>
-          <DataTable columns={["source", "blocker"]} rows={blockers.slice(0, 8)} />
-        </SectionCard>
-
-        <SectionCard
-          action={<StatusPill tone="blue">{activeRows.length} active</StatusPill>}
-          title={framing.dispatchTitle}
-        >
-          <DataTable
-            columns={[
-              "timestamp",
-              "action",
-              "price",
-              "grid_energy_mwh",
-              "battery_energy_mwh",
-              "pnl_eur",
-              "total_pnl_eur",
-            ]}
-            rows={formatDispatchRows(activeRows.slice(0, 12))}
+      {activeTab === "evidence" ? (
+        <div className="space-y-5">
+          <AssetDataProfileSection
+            asset={selectedAsset}
+            title="Selected signal asset profile"
           />
-        </SectionCard>
-      </div>
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
-        <SectionCard title={framing.routeTitle}>
-          <DataTable
-            columns={[
-              "adapter_id",
-              "market_name",
-              "recommendation_status",
-              "allocation_score",
-              "risk_score",
-              "allocated_power_mw",
-              "expected_revenue_eur",
-              "operator_next_action",
-            ]}
-            rows={formatMarketCandidates((allocation.data?.allocation ?? []).slice(0, 8))}
-          />
-        </SectionCard>
-
-        <SectionCard title={framing.automationControlsTitle}>
-          <div className="grid gap-3">
-            <ActionButton
-              endpoint={`/assets/${selectedAssetId}/signal/run-latest`}
-              label="Refresh signal"
-              refetch={refetchSignals}
-              variant="primary"
+          <SectionCard
+            action={<StatusPill tone="blue">{selectedAsset?.data_mode ?? "mock"} signal proof</StatusPill>}
+            title="Asset signal proof"
+          >
+            <div className="mb-4 grid gap-4 md:grid-cols-3">
+              {visibleSignalProofKpis.map((kpi) => (
+                <KpiCard
+                  accent={kpi.accent}
+                  helper={kpi.helper}
+                  key={kpi.label}
+                  label={kpi.label}
+                  value={kpi.value}
+                />
+              ))}
+            </div>
+            <DataTable
+              columns={["signal_driver", "mock_evidence", "investor_meaning", "production_upgrade"]}
+              rows={visibleSignalProofRows}
             />
-            <ActionButton
-              endpoint={`/assets/${selectedAssetId}/execution/proposal/build`}
-              label="Build proposal"
-              refetch={refetchSignals}
-            />
-            <ActionButton
-              endpoint={`/assets/${selectedAssetId}/execution/paper-trade/run`}
-              label="Run paper trade"
-              refetch={refetchSignals}
-            />
-          </div>
-        </SectionCard>
-      </div>
+          </SectionCard>
+        </div>
+      ) : null}
     </>
   );
+}
+
+type SignalProofKpi = {
+  accent: "amber" | "blue" | "emerald" | "red" | "slate";
+  helper: string;
+  label: string;
+  value: React.ReactNode;
+};
+
+function normalizeProofKpis(rows?: TableRow[]): SignalProofKpi[] {
+  return (rows ?? []).map((row) => ({
+    accent: normalizeAccent(row.accent),
+    helper: String(row.helper ?? ""),
+    label: String(row.label ?? "Evidence"),
+    value: normalizeKpiValue(row.value),
+  }));
+}
+
+function normalizeAccent(value: unknown): SignalProofKpi["accent"] {
+  if (
+    value === "amber" ||
+    value === "blue" ||
+    value === "emerald" ||
+    value === "red" ||
+    value === "slate"
+  ) {
+    return value;
+  }
+
+  return "slate";
+}
+
+function normalizeKpiValue(value: TableRow[string]): React.ReactNode {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+
+  if (value === null || value === undefined) {
+    return "-";
+  }
+
+  return JSON.stringify(value);
+}
+
+function buildFallbackSignalProof({
+  activeRows,
+  metadata,
+  signalSummary,
+}: {
+  activeRows: TableRow[];
+  metadata: TableRow;
+  signalSummary: SignalSummary;
+}) {
+  return {
+    kpis: [
+      {
+        accent: signalSummary.signal === "ACTION" ? "emerald" as const : "amber" as const,
+        helper: String(signalSummary.opportunity_level ?? "Latest optimizer recommendation."),
+        label: "Signal",
+        value: String(signalSummary.signal ?? "-"),
+      },
+      {
+        accent: "blue" as const,
+        helper: "Intervals available for dispatch-to-order conversion.",
+        label: "Active intervals",
+        value: activeRows.length,
+      },
+      {
+        accent: "emerald" as const,
+        helper: "Forecast dispatch economics backing the signal.",
+        label: "Expected PnL",
+        value: formatCurrency(signalSummary.total_pnl_eur),
+      },
+    ],
+    rows: [
+      {
+        investor_meaning:
+          "The signal is backed by active dispatch intervals before proposal generation.",
+        mock_evidence: `${activeRows.length} active interval(s) / ${formatCurrency(signalSummary.total_pnl_eur)} expected PnL`,
+        production_upgrade:
+          "Connect forecast snapshot IDs, forecast-vs-actual evidence, and metered dispatch outcomes.",
+        signal_driver: "Forecast-to-action trace",
+      },
+      {
+        investor_meaning:
+          "The forecast source behind the current signal remains visible for diligence.",
+        mock_evidence: String(metadata.forecast_file ?? metadata.source ?? "-"),
+        production_upgrade:
+          "Persist provider, model version, forecast snapshot, and actuals comparison.",
+        signal_driver: "Forecast source",
+      },
+      {
+        investor_meaning:
+          "The signal should only progress to orders after market allocation and guardrails agree.",
+        mock_evidence: String(signalSummary.signal ?? "-"),
+        production_upgrade:
+          "Connect live route readiness, official API handshake, and approval evidence.",
+        signal_driver: "Signal-to-order gate",
+      },
+    ],
+  };
 }
 
 function getMarketSignalsPersonaFraming(

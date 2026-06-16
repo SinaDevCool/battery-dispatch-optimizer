@@ -12,6 +12,7 @@ from backend.api.schemas import (
     ForecastProfitabilityResponse,
     ForecastStatusResponse,
 )
+from backend.assets.asset_loader import get_asset
 from backend.config.client_config import load_client_config
 from backend.config.paths import (
     ACTUAL_PRICE_FILE,
@@ -36,6 +37,8 @@ from backend.markets.actual_price_provider import (
 from backend.markets.market_profile_loader import get_default_market_profile
 from backend.scenarios.scenario_runner import run_scenarios
 from backend.services.forecast_service import save_forecast_dataframe
+from backend.services.investor_evidence import build_forecast_proof
+from backend.services.asset_provenance import attach_asset_provenance
 from backend.services.signal_service import save_signal_outputs
 from backend.signals.signal_engine import generate_battery_signal
 from backend.storage import get_storage_client
@@ -326,7 +329,32 @@ def upload_forecast(request: BatterySignalRequest):
 
 @router.get("/forecast/status", response_model=ForecastStatusResponse)
 def forecast_status():
-    forecast_file = FORECAST_FILE
+    return build_forecast_status(FORECAST_FILE)
+
+
+@router.get(
+    "/assets/{asset_id}/forecast/status",
+    response_model=ForecastStatusResponse,
+)
+def asset_forecast_status(asset_id: str):
+    try:
+        asset = get_asset(asset_id)
+    except ValueError as error:
+        return {
+            "status": "not_found",
+            "message": str(error),
+        }
+
+    status = build_forecast_status(Path(asset.forecast_file or FORECAST_FILE))
+
+    return attach_asset_provenance({
+        "asset_id": asset_id,
+        **status,
+        "forecast_proof": build_forecast_proof(asset=asset.to_dict(), status=status),
+    }, asset, kind="forecast_status", source_file=status.get("forecast_file"))
+
+
+def build_forecast_status(forecast_file):
     storage = get_storage_client()
 
     if not storage.exists(forecast_file):
@@ -355,7 +383,35 @@ def forecast_status():
 
 @router.get("/forecast/preview", response_model=ForecastPreviewResponse)
 def forecast_preview():
-    forecast_file = FORECAST_FILE
+    return build_forecast_preview(FORECAST_FILE)
+
+
+@router.get(
+    "/assets/{asset_id}/forecast/preview",
+    response_model=ForecastPreviewResponse,
+)
+def asset_forecast_preview(asset_id: str):
+    try:
+        asset = get_asset(asset_id)
+    except ValueError as error:
+        return {
+            "status": "not_found",
+            "message": str(error),
+        }
+
+    preview = {
+        "asset_id": asset_id,
+        **build_forecast_preview(Path(asset.forecast_file or FORECAST_FILE)),
+    }
+    return attach_asset_provenance(
+        preview,
+        asset,
+        kind="forecast_preview",
+        source_file=preview.get("forecast_file"),
+    )
+
+
+def build_forecast_preview(forecast_file):
     storage = get_storage_client()
 
     if not storage.exists(forecast_file):

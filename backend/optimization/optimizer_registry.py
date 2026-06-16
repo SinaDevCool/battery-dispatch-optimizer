@@ -1,10 +1,14 @@
-﻿from backend.optimization.linear_optimizer import LinearDispatchOptimizer
+from backend.optimization.linear_optimizer import (
+    LinearDispatchOptimizer,
+    LinearProgramDispatchOptimizer,
+)
 from backend.optimization.rule_based_optimizer import RuleBasedDispatchOptimizer
 
 
 OPTIMIZER_REGISTRY = {
     "rule_based_v1": RuleBasedDispatchOptimizer,
     "linear_v1": LinearDispatchOptimizer,
+    "linear_program_v1": LinearProgramDispatchOptimizer,
 }
 
 
@@ -23,6 +27,3 @@ def get_dispatch_optimizer(optimizer_engine="rule_based_v1"):
 
 def list_optimizer_engines():
     return sorted(OPTIMIZER_REGISTRY)
-
-
-

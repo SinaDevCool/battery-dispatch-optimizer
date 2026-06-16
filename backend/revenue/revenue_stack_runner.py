@@ -45,6 +45,11 @@ def run_asset_revenue_stack(asset_id, optimizer_engine="rule_based_v1"):
         revenue_result["eligible"] = eligibility["eligible"]
         revenue_result["blocking_reasons"] = eligibility["blocking_reasons"]
         revenue_result["review_warnings"] = eligibility["review_warnings"]
+        revenue_result["asset_value_context"] = build_asset_value_context(
+            asset=asset,
+            product_id=product_id,
+            revenue_result=revenue_result,
+        )
 
         product_results.append(revenue_result)
 
@@ -67,6 +72,11 @@ def run_asset_revenue_stack(asset_id, optimizer_engine="rule_based_v1"):
             ]
         ),
         "product_count": len(product_results),
+        "asset_value_context": build_revenue_stack_context(
+            asset=asset,
+            product_results=product_results,
+            total_estimated_revenue_eur=total_estimated_revenue_eur,
+        ),
         "products": product_results,
     }
 
@@ -97,6 +107,86 @@ def calculate_product_revenue(asset, product_id, optimizer_engine="rule_based_v1
         return calculate_imbalance_revenue(asset)
 
     raise ValueError(f"Unsupported revenue product: {product_id}")
+
+
+def build_asset_value_context(asset, product_id, revenue_result):
+    asset_type = str(asset.asset_type or "")
+    details = revenue_result.get("details") or {}
+    summary = details.get("summary") or {}
+
+    if "solar" in asset_type:
+        renewable_charge = summary.get("renewable_charge_mwh")
+        renewable_share = summary.get("renewable_charge_share")
+        return {
+            "asset_story": "solar_colocated_revenue",
+            "value_driver": "Shift forecast solar production into higher-value market intervals while preserving renewable-origin evidence.",
+            "investor_meaning": "Revenue is credible only if the dispatch can show renewable-origin charge, export-limit compliance, and market value in the same evidence chain.",
+            "mock_metric": {
+                "label": "Renewable-origin charge",
+                "value": renewable_charge,
+                "unit": "MWh",
+                "share": renewable_share,
+            },
+            "production_upgrade": "Replace mock solar forecast with generation meter data, export limits, renewable-origin accounting, and settled market revenue.",
+        }
+
+    if "industrial" in asset_type or "behind_the_meter" in asset_type:
+        peak_shaved = summary.get("peak_shaved_mwh")
+        return {
+            "asset_story": "industrial_btm_revenue",
+            "value_driver": "Prioritize site load reduction and peak shaving, then treat market access as optional upside.",
+            "investor_meaning": "The revenue case should separate industrial bill value from external market trading value before production use.",
+            "mock_metric": {
+                "label": "Peak shaved",
+                "value": peak_shaved,
+                "unit": "MWh",
+            },
+            "production_upgrade": "Connect site-load meter data, tariff/demand-charge logic, baseline methodology, and market settlement records.",
+        }
+
+    return {
+        "asset_story": "grid_scale_merchant_revenue",
+        "value_driver": "Capture merchant spread value within SOC, power, efficiency, degradation, and grid connection limits.",
+        "investor_meaning": "The standalone battery revenue case is credible when modelled spread capture matches physically validated dispatch.",
+        "mock_metric": {
+            "label": "Battery throughput",
+            "value": summary.get("throughput_mwh"),
+            "unit": "MWh",
+        },
+        "production_upgrade": "Replace mock price forecast with exchange prices, executed orders, degradation model, and settlement reconciliation.",
+    }
+
+
+def build_revenue_stack_context(asset, product_results, total_estimated_revenue_eur):
+    numeric_products = [
+        product for product in product_results
+        if isinstance(product.get("estimated_revenue_eur"), (int, float))
+    ]
+    eligible_products = [
+        product for product in product_results
+        if product.get("eligibility_status") == "eligible"
+    ]
+    blocked_products = [
+        product for product in product_results
+        if product.get("eligibility_status") == "not_eligible"
+    ]
+
+    return {
+        "asset_id": asset.asset_id,
+        "asset_type": asset.asset_type,
+        "data_mode": getattr(asset, "data_mode", None) or "mock",
+        "mock_or_production": getattr(asset, "data_mode", None) or "mock",
+        "primary_value_driver": build_asset_value_context(
+            asset=asset,
+            product_id="portfolio",
+            revenue_result={"details": {}},
+        )["value_driver"],
+        "total_estimated_revenue_eur": round(total_estimated_revenue_eur, 2),
+        "estimated_product_count": len(numeric_products),
+        "eligible_product_count": len(eligible_products),
+        "blocked_product_count": len(blocked_products),
+        "production_boundary": "Mock revenue is generated from local forecast and dispatch evidence; production revenue must come from exchange, telemetry, and settlement connectors.",
+    }
 
 
 def save_revenue_stack_result(asset_id, result):

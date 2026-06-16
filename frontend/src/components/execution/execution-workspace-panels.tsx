@@ -644,16 +644,20 @@ function getSimulationPersonaFraming(personaId: PersonaId) {
 }
 
 export function ExecutionSettlementPanel({
+  assetProfileEvidence = [],
   personaId,
   refetchExecution,
   selectedAssetId,
+  settlementMode,
   settlementData,
   settlementSummary,
   varianceDrivers,
 }: {
+  assetProfileEvidence?: string[];
   personaId: PersonaId;
   refetchExecution: RefetchExecution;
   selectedAssetId: string;
+  settlementMode?: string;
   settlementData?: JsonObject | null;
   settlementSummary: JsonObject;
   varianceDrivers: TableRow[];
@@ -685,6 +689,8 @@ export function ExecutionSettlementPanel({
     `${settlementFraming.paperDeltaLabel} ${formatCurrency(paperDelta)}.`,
     `${settlementFraming.realizedDeltaLabel} ${formatCurrency(realizedDelta)}.`,
     `Primary variance driver: ${String(settlementData?.primary_variance_driver ?? "not evaluated").replaceAll("_", " ")}.`,
+    `Settlement mode: ${settlementMode ?? "mock settlement"}.`,
+    ...assetProfileEvidence,
   ];
   const statusRows = Object.entries(evidenceStatus).map(([evidence, status]) => ({
     evidence: evidence.replaceAll("_", " "),
@@ -732,7 +738,7 @@ export function ExecutionSettlementPanel({
           />
           <ExecutionMetric
             label="Settlement basis"
-            value={String(settlementData?.settlement_basis ?? "-").replaceAll("_", " ")}
+            value={String(settlementData?.settlement_basis ?? settlementMode ?? "-").replaceAll("_", " ")}
           />
           <ExecutionMetric
             label="Reserve awarded"

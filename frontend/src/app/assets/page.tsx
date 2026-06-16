@@ -1,16 +1,19 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { useAssetContext } from "@/components/asset-provider";
 import { DataTable } from "@/components/data-table";
 import { DecisionBrief } from "@/components/decision-brief";
+import { DemoDataResetPanel } from "@/components/demo-data-reset-panel";
 import { ErrorState } from "@/components/error-state";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
 import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
+import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { apiGet } from "@/lib/api";
 import type { PersonaId } from "@/lib/personas";
 import type {
@@ -74,9 +77,30 @@ const assetArchetypes: TableRow[] = [
   },
 ];
 
+const assetTabs = [
+  {
+    helper: "Selected asset passport, onboarding gates, and current blockers.",
+    id: "overview",
+    label: "Overview",
+  },
+  {
+    helper: "Supported archetypes, selected data profile, demo reset, and backend source map.",
+    id: "data",
+    label: "Data Profile",
+  },
+  {
+    helper: "Registered portfolio table for comparing configured assets.",
+    id: "portfolio",
+    label: "Portfolio",
+  },
+] as const;
+
+type AssetTabId = (typeof assetTabs)[number]["id"];
+
 export default function AssetsPage() {
   const { assets, selectedAssetId } = useAssetContext();
   const { persona, personaId } = usePersona();
+  const [activeTab, setActiveTab] = useState<AssetTabId>("overview");
   const framing = getAssetPersonaFraming(personaId);
 
   const classification = useQuery({
@@ -105,6 +129,7 @@ export default function AssetsPage() {
 
   const rows = assets.map(formatAssetRow);
   const selectedAsset = assets.find((asset) => asset.asset_id === selectedAssetId);
+  const dataProfile = selectedAsset?.data_profile ?? {};
   const registryDecision = buildRegistryDecision({
     asset: selectedAsset,
     automation: automationControl.data,
@@ -150,8 +175,8 @@ export default function AssetsPage() {
         <KpiCard
           accent="blue"
           label="Asset archetype"
-          value={getAssetArchetypeLabel(classification.data)}
-          helper={classification.data?.market_participation_mode ?? classification.data?.status ?? "not classified"}
+          value={getAssetTypeLabel(selectedAsset)}
+          helper={getAssetSubtypeLabel(selectedAsset) ?? getAssetArchetypeLabel(classification.data)}
         />
         <KpiCard
           accent="emerald"
@@ -160,14 +185,22 @@ export default function AssetsPage() {
           helper={`${formatPowerLimit(selectedAsset?.max_charge_power_mw)} MW charge / ${formatPowerLimit(selectedAsset?.max_discharge_power_mw)} MW discharge`}
         />
         <KpiCard
-          accent={dataCompleteness.data?.readiness === "ready" ? "emerald" : "amber"}
-          label="Evidence readiness"
-          value={`${dataCompleteness.data?.score ?? "-"} / 100`}
-          helper={dataCompleteness.data?.readiness ?? "not evaluated"}
+          accent={selectedAsset?.data_mode === "production" ? "emerald" : "blue"}
+          label="Data mode"
+          value={formatDataMode(selectedAsset?.data_mode)}
+          helper={String(dataProfile.label ?? selectedAsset?.data_source ?? "source pending")}
         />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.75fr)]">
+      <WorkspaceTabs
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        tabs={assetTabs}
+      />
+
+      {activeTab === "overview" ? (
+        <div className="space-y-5">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.75fr)]">
         <SectionCard
           action={<StatusPill tone={registryDecision.tone}>{registryDecision.blockers.length ? "Onboarding" : "Tradable"}</StatusPill>}
           title={framing.passportTitle}
@@ -198,6 +231,15 @@ export default function AssetsPage() {
                 status: selectedAsset ? "complete" : "missing",
               },
               {
+                gate: "Mock data boundary",
+                message: String(
+                  selectedAsset?.data_mode === "production"
+                    ? "Production data source"
+                    : dataProfile.description ?? "Local mock data is isolated from production integrations.",
+                ),
+                status: selectedAsset?.data_mode ?? "unknown",
+              },
+              {
                 gate: "Storage classification",
                 message:
                   classification.data?.storage_classification ??
@@ -218,7 +260,7 @@ export default function AssetsPage() {
             ]}
           />
         </SectionCard>
-      </div>
+          </div>
 
       <SectionCard
         action={
@@ -237,10 +279,13 @@ export default function AssetsPage() {
           })}
         />
       </SectionCard>
+        </div>
+      ) : null}
 
-      <SectionCard
+      {activeTab === "data" ? (
+        <div className="space-y-5">
+          <SectionCard
         action={<StatusPill tone="blue">{assetArchetypes.length} archetypes</StatusPill>}
-        className="mt-5"
         title={framing.archetypeTitle}
       >
         <DataTable
@@ -249,10 +294,23 @@ export default function AssetsPage() {
         />
       </SectionCard>
 
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(420px,1.05fr)]">
+        <SectionCard
+          action={<StatusPill tone={selectedAsset?.data_mode === "production" ? "emerald" : "blue"}>{formatDataMode(selectedAsset?.data_mode)}</StatusPill>}
+          title="Selected asset data profile"
+        >
+          <DataTable
+            columns={["field", "value"]}
+            rows={buildDataProfileRows(selectedAsset)}
+          />
+        </SectionCard>
+
+        <DemoDataResetPanel />
+      </div>
+
       {persona.layer === "client" ? null : (
         <SectionCard
           action={<StatusPill tone="blue">Backend linked</StatusPill>}
-          className="mt-5"
           title={framing.backendTitle}
         >
           <DataTable
@@ -261,12 +319,17 @@ export default function AssetsPage() {
           />
         </SectionCard>
       )}
+        </div>
+      ) : null}
 
-      <SectionCard className="mt-5" title={framing.portfolioTitle}>
+      {activeTab === "portfolio" ? (
+      <SectionCard title={framing.portfolioTitle}>
         <DataTable
           columns={[
             "asset_id",
             "asset_name",
+            "asset_type",
+            "data_mode",
             "country",
             "market",
             "capacity_mwh",
@@ -276,6 +339,7 @@ export default function AssetsPage() {
           rows={rows}
         />
       </SectionCard>
+      ) : null}
     </>
   );
 }
@@ -408,6 +472,8 @@ function formatAssetRow(asset: Asset) {
       asset.site_name ??
       asset.client_name ??
       asset.asset_id,
+    asset_type: getAssetTypeLabel(asset),
+    data_mode: formatDataMode(asset.data_mode),
     capacity_mwh:
       asset.capacity_mwh ??
       (asset.battery_config as { capacity_mwh?: number } | undefined)
@@ -473,6 +539,22 @@ function buildAssetPassportRows({
       value: asset?.asset_name ?? asset?.site_name ?? asset?.asset_id ?? "-",
     },
     {
+      field: "Asset type",
+      value: getAssetTypeLabel(asset),
+    },
+    {
+      field: "Asset subtype",
+      value: getAssetSubtypeLabel(asset) ?? "-",
+    },
+    {
+      field: "Data mode",
+      value: formatDataMode(asset?.data_mode),
+    },
+    {
+      field: "Data source",
+      value: asset?.data_source ?? "-",
+    },
+    {
       field: "Market",
       value: `${asset?.country ?? "-"} / ${asset?.market ?? "market pending"}`,
     },
@@ -494,6 +576,47 @@ function buildAssetPassportRows({
         classification?.market_participation_mode ??
         classification?.status ??
         "not evaluated",
+    },
+  ];
+}
+
+function buildDataProfileRows(asset?: Asset): TableRow[] {
+  const profile = asset?.data_profile ?? {};
+
+  return [
+    {
+      field: "Profile",
+      value: profile.label ?? profile.profile_id ?? "-",
+    },
+    {
+      field: "Description",
+      value:
+        profile.description ??
+        "No data profile description is configured for this asset.",
+    },
+    {
+      field: "Forecast source",
+      value: profile.forecast_source ?? asset?.forecast_file ?? "-",
+    },
+    {
+      field: "Market data",
+      value: profile.market_data_mode ?? "-",
+    },
+    {
+      field: "Telemetry",
+      value: profile.telemetry_mode ?? "-",
+    },
+    {
+      field: "Execution adapter",
+      value: profile.execution_adapter ?? "-",
+    },
+    {
+      field: "Settlement",
+      value: profile.settlement_mode ?? "-",
+    },
+    {
+      field: "Production ready",
+      value: profile.production_ready ? "yes" : "no",
     },
   ];
 }
@@ -558,6 +681,26 @@ function getAssetArchetypeLabel(classification?: StorageClassificationResponse) 
   }
 
   return storageMode ?? "Not classified";
+}
+
+function getAssetTypeLabel(asset?: Asset) {
+  return formatEnumLabel(asset?.asset_type ?? "grid_scale_battery");
+}
+
+function getAssetSubtypeLabel(asset?: Asset) {
+  return asset?.asset_subtype ? formatEnumLabel(asset.asset_subtype) : null;
+}
+
+function formatDataMode(dataMode?: string) {
+  return formatEnumLabel(dataMode ?? "mock");
+}
+
+function formatEnumLabel(value: string) {
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function formatAssetCapacity(asset?: Asset) {

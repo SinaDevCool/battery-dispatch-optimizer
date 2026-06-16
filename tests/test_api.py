@@ -5,6 +5,16 @@ from backend.api.main import app
 
 
 client = TestClient(app)
+MOCK_INVESTOR_ASSET_IDS = [
+    "default_site",
+    "demo_solar_battery",
+    "demo_industrial_btm",
+]
+MOCK_INVESTOR_FORECAST_FILES = {
+    "default_site": "data/mock/forecasts/grid_battery_price_forecast.csv",
+    "demo_solar_battery": "data/mock/forecasts/solar_battery_price_generation_forecast.csv",
+    "demo_industrial_btm": "data/mock/forecasts/industrial_btm_price_load_forecast.csv",
+}
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -37,6 +47,7 @@ def test_status_endpoint():
     assert "/assets/{asset_id}/regulatory-summary" in data["available_endpoints"]
     assert "/assets/{asset_id}/execution-summary" in data["available_endpoints"]
     assert "/assets/{asset_id}/client-evidence-summary" in data["available_endpoints"]
+    assert "/assets/{asset_id}/investor-readiness" in data["available_endpoints"]
     assert "/assets/{asset_id}/revenue-stack/run" in data["available_endpoints"]
     assert "/assets/{asset_id}/revenue-stack/allocate" in data["available_endpoints"]
     assert "/assets/{asset_id}/revenue-stack/allocation/latest" in data["available_endpoints"]
@@ -44,6 +55,8 @@ def test_status_endpoint():
     assert "/assets/{asset_id}/revenue-stack/runs" in data["available_endpoints"]
     assert "/backtesting/forecast-actual/run" in data["available_endpoints"]
     assert "/backtesting/forecast-actual/latest" in data["available_endpoints"]
+    assert "/assets/{asset_id}/forecast/status" in data["available_endpoints"]
+    assert "/assets/{asset_id}/forecast/preview" in data["available_endpoints"]
     assert "/assets/{asset_id}/forecast-performance" in data["available_endpoints"]
     assert "/assets/{asset_id}/forecast-confidence" in data["available_endpoints"]
     assert "/data/update-actual-prices" in data["available_endpoints"]
@@ -118,6 +131,7 @@ def test_battery_optimizers_endpoint():
     assert data["default_optimizer"] == "rule_based_v1"
     assert "rule_based_v1" in data["available_optimizers"]
     assert "linear_v1" in data["available_optimizers"]
+    assert "linear_program_v1" in data["available_optimizers"]
 
 
 def test_battery_signal_endpoint():
@@ -226,6 +240,136 @@ def test_assets_endpoint():
     assert data["asset_count"] >= 1
     assert "assets" in data
     assert "asset_id" in data["assets"][0]
+    asset_ids = {asset["asset_id"] for asset in data["assets"]}
+    assert set(MOCK_INVESTOR_ASSET_IDS).issubset(asset_ids)
+    default_asset = next(asset for asset in data["assets"] if asset["asset_id"] == "default_site")
+    assert default_asset["asset_type"] == "grid_scale_battery"
+    assert default_asset["data_mode"] == "mock"
+    assert default_asset["data_profile"]["execution_adapter"] == "demo_market"
+    assert default_asset["forecast_file"] == MOCK_INVESTOR_FORECAST_FILES["default_site"]
+    solar_asset = next(asset for asset in data["assets"] if asset["asset_id"] == "demo_solar_battery")
+    assert solar_asset["asset_type"] == "solar_colocated_battery"
+    assert solar_asset["asset_subtype"] == "pure_green_colocated"
+    assert solar_asset["forecast_file"] == MOCK_INVESTOR_FORECAST_FILES["demo_solar_battery"]
+    industrial_asset = next(asset for asset in data["assets"] if asset["asset_id"] == "demo_industrial_btm")
+    assert industrial_asset["asset_type"] == "industrial_behind_the_meter_battery"
+    assert industrial_asset["data_mode"] == "mock"
+    assert industrial_asset["forecast_file"] == MOCK_INVESTOR_FORECAST_FILES["demo_industrial_btm"]
+
+
+def test_mock_investor_assets_core_workflow():
+    for asset_id in MOCK_INVESTOR_ASSET_IDS:
+        signal_response = client.post(f"/assets/{asset_id}/signal/run-latest")
+        assert signal_response.status_code == 200
+        assert signal_response.json()["asset_id"] == asset_id
+        assert signal_response.json()["status"] == "ok"
+        assert (
+            signal_response.json()["data"]["metadata"]["forecast_file"].replace("\\", "/")
+            == MOCK_INVESTOR_FORECAST_FILES[asset_id]
+        )
+
+        revenue_response = client.post(f"/assets/{asset_id}/revenue-stack/run")
+        assert revenue_response.status_code == 200
+        assert revenue_response.json()["asset_id"] == asset_id
+        assert revenue_response.json()["status"] == "ok"
+
+        for endpoint in [
+            f"/assets/{asset_id}/forecast/status",
+            f"/assets/{asset_id}/forecast/preview",
+            f"/assets/{asset_id}/storage-classification",
+            f"/assets/{asset_id}/revenue-summary",
+            f"/assets/{asset_id}/regulatory-summary",
+            f"/assets/{asset_id}/client-evidence-summary",
+            f"/assets/{asset_id}/investor-readiness",
+        ]:
+            response = client.get(endpoint)
+            assert response.status_code == 200
+            assert response.json()["asset_id"] == asset_id
+            if endpoint.endswith("/forecast/status") or endpoint.endswith("/forecast/preview"):
+                assert (
+                    response.json()["forecast_file"].replace("\\", "/")
+                    == MOCK_INVESTOR_FORECAST_FILES[asset_id]
+                )
+
+
+def test_mock_investor_assets_readiness_endpoint():
+    expected_lenses = {
+        "default_site": "Grid-scale battery investor / asset owner",
+        "demo_solar_battery": "Renewable developer / infrastructure investor",
+        "demo_industrial_btm": "Industrial customer / project finance reviewer",
+    }
+
+    for asset_id in MOCK_INVESTOR_ASSET_IDS:
+        response = client.get(f"/assets/{asset_id}/investor-readiness")
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert data["asset_id"] == asset_id
+        assert data["status"] in {"ok", "partial"}
+        assert data["summary"]["readiness_score"] >= 50
+        assert data["summary"]["readiness_status"] in {"ready", "review", "blocked"}
+        assert data["summary"]["checkpoint_count"] == 5
+        assert len(data["checkpoints"]) == 5
+        assert len(data["demo_flow"]) == 5
+        assert len(data["source_rows"]) == 5
+        assert len(data["diligence_rows"]) == 3
+        assert len(data["finance_assumptions"]) == 5
+        assert len(data["project_economics"]) == 6
+        assert data["finance_summary"]["total_project_cost_eur"] > 0
+        assert data["finance_summary"]["annual_revenue_run_rate_eur"] >= 0
+        assert "simple_payback_years" in data["finance_summary"]
+        assert data["story"]["investor_lens"] == expected_lenses[asset_id]
+        assert data["portfolio_row"]["asset"]
+        assert data["portfolio_row"]["score"] == data["summary"]["readiness_score"]
+        assert data["portfolio_row"]["project_cost"] == data["finance_summary"]["total_project_cost_eur"]
+        assert {
+            "asset-identity",
+            "physical-operation",
+            "revenue-case",
+            "execution-safety",
+            "investor-proof",
+        } == {checkpoint["id"] for checkpoint in data["checkpoints"]}
+
+
+def test_investor_demo_seed_endpoint_for_single_asset():
+    response = client.post("/demo/investor-seed?asset_id=default_site")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["status"] in ["ok", "partial"]
+    assert data["asset_count"] == 1
+    assert data["summary"]["ready_asset_count"] >= 1
+    seeded_asset = data["assets"][0]
+    assert seeded_asset["asset_id"] == "default_site"
+    assert seeded_asset["ready_for_demo"] is True
+    for step in [
+        "signal",
+        "revenue_stack",
+        "workflow",
+        "execution_proposal",
+        "paper_trade",
+        "settlement",
+        "report",
+    ]:
+        assert seeded_asset["steps"][step]["status"] == "ok"
+
+
+def test_investor_demo_seed_endpoint_for_all_mock_assets():
+    response = client.post("/demo/investor-seed")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["status"] in ["ok", "partial"]
+    assert data["asset_count"] >= len(MOCK_INVESTOR_ASSET_IDS)
+    seeded_asset_ids = {asset["asset_id"] for asset in data["assets"]}
+    assert set(MOCK_INVESTOR_ASSET_IDS).issubset(seeded_asset_ids)
+    assert data["summary"]["ready_asset_count"] >= len(MOCK_INVESTOR_ASSET_IDS)
 
 
 def test_markets_endpoint():

@@ -4,9 +4,15 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
 import { ActionButton } from "@/components/action-button";
+import {
+  AssetDataProfileSection,
+  buildAssetDataProfileEvidence,
+  formatDataMode,
+} from "@/components/asset-data-profile-section";
 import { useAssetContext } from "@/components/asset-provider";
 import { DataTable } from "@/components/data-table";
 import { DecisionBrief } from "@/components/decision-brief";
+import { EvidenceSourceSection } from "@/components/evidence-source-section";
 import { ErrorState } from "@/components/error-state";
 import {
   ExecutionAuditPanel,
@@ -60,6 +66,7 @@ import type {
   RouteAutomationCertification,
   SettlementResponse,
   StrategyIntentResponse,
+  TableRow,
 } from "@/types/api";
 
 const executionTabs = [
@@ -479,6 +486,35 @@ export default function ExecutionPage({
   const recovery = recoveryPlan.data;
   const primaryMarket = control?.primary_market ?? marketAllocation?.primary_market;
   const intent = strategyIntent.data;
+  const assetDataProfileEvidence = buildAssetDataProfileEvidence(selectedAsset);
+  const assetProfile = selectedAsset?.data_profile ?? {};
+  const executionAdapterMode = String(
+    assetProfile.execution_adapter ?? "mock execution adapter",
+  );
+  const settlementMode = String(assetProfile.settlement_mode ?? "mock settlement");
+  const dataMode = formatDataMode(selectedAsset?.data_mode);
+  const executionSourceMetadata: TableRow = {
+    ...(executionSummary.data?.metadata ?? {}),
+    ...(latestProposal.data?.metadata ?? {}),
+    ...(signalData?.data?.metadata ?? {}),
+    asset_id: executionSummary.data?.metadata?.asset_id ?? selectedAssetId,
+    asset_type: executionSummary.data?.metadata?.asset_type ?? selectedAsset?.asset_type,
+    data_mode: executionSummary.data?.metadata?.data_mode ?? selectedAsset?.data_mode ?? "mock",
+    generated_at:
+      executionSummary.data?.metadata?.generated_at ??
+      latestProposal.data?.metadata?.generated_at ??
+      proposal?.generated_at ??
+      signalData?.data?.metadata?.generated_at ??
+      telemetryData?.captured_at,
+    mock_or_production:
+      executionSummary.data?.metadata?.mock_or_production ??
+      selectedAsset?.data_mode ??
+      "mock",
+  };
+  const backendExecutionKpis = normalizeProofKpis(
+    executionSummary.data?.execution_proof?.kpis,
+  );
+  const visibleExecutionRows = executionSummary.data?.execution_proof?.rows ?? [];
   const pipelineStages = useMemo(
     () =>
       buildTradingAutomationPipelineStages({
@@ -672,6 +708,23 @@ export default function ExecutionPage({
         </div>
       ) : null}
 
+      {!showTabs ? (
+        <>
+          <AssetDataProfileSection
+            asset={selectedAsset}
+            className="mb-6"
+            title="Selected settlement asset profile"
+          />
+
+          <EvidenceSourceSection
+            asset={selectedAsset}
+            className="mb-6"
+            metadata={executionSourceMetadata}
+            title="Can settlement prove delivery?"
+          />
+        </>
+      ) : null}
+
       {showTabs ? (
         <ExecutionMissionSummary
           automationStatus={automationStatus}
@@ -696,7 +749,10 @@ export default function ExecutionPage({
             `${connectorSummary.certified_route_count ?? 0}/${connectorSummary.route_certification_count ?? 0} route(s) have route-level automation certification.`,
             `${connectorSummary.supervised_live_candidate_count ?? 0} route(s) clear supervised-live readiness.`,
             `${connectorSummary.handshake_ready_count ?? 0}/${connectorSummary.handshake_target_count ?? 0} live adapter handshakes are dry-run ready.`,
+            ...assetDataProfileEvidence,
           ]}
+          dataMode={dataMode}
+          executionAdapterMode={executionAdapterMode}
           expectedPnl={expectedPnl}
           guardrailBlocked={Number(guardrailSummary.blocked ?? 0)}
           guardrailReview={Number(guardrailSummary.review ?? 0)}
@@ -709,6 +765,7 @@ export default function ExecutionPage({
           profitPerMwDay={Number(profitPerMwDay ?? 0)}
           refetchExecution={refetchExecution}
           selectedAssetId={selectedAssetId}
+          settlementMode={settlementMode}
         />
       ) : null}
 
@@ -817,6 +874,8 @@ export default function ExecutionPage({
               `Order style ${String(summary.order_style ?? primaryMarket?.order_style ?? "not configured").replaceAll("_", " ")}.`,
               `Package ${String(summary.package_validation_status ?? bidPackage?.validation?.status ?? "not built")}.`,
               `Paper mode ${control?.paper_trading_allowed ? "allowed" : "gated"}.`,
+              `Execution adapter: ${executionAdapterMode}.`,
+              `Data mode: ${dataMode}.`,
             ]}
             eyebrow={proposalFraming.decisionEyebrow}
             nextAction={
@@ -997,6 +1056,8 @@ export default function ExecutionPage({
           personaId={personaId}
           refetchExecution={refetchExecution}
           selectedAssetId={selectedAssetId}
+          assetProfileEvidence={assetDataProfileEvidence}
+          settlementMode={settlementMode}
           settlementData={settlementData}
           settlementSummary={settlementSummary}
           varianceDrivers={varianceDrivers}
@@ -1004,24 +1065,107 @@ export default function ExecutionPage({
       ) : null}
 
       {activeTab === "audit" ? (
-        <ExecutionAuditPanel
-          approvalData={approvalData}
-          auditRows={auditRows}
-          automationEvents={eventRows}
-          lifecycleRows={lifecycleRows}
-          personaId={personaId}
-          personaLayer={persona.layer}
-          paperTrade={paperTrade}
-          proposal={proposal}
-          settlementData={settlementData}
-          submissionLifecycle={submissionLifecycle.data}
-          submission={submission}
-          riskChecks={riskChecks}
-          telemetryData={telemetryData}
-        />
+        <div className="space-y-5">
+          {showTabs ? (
+            <>
+              <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+                <AssetDataProfileSection
+                  asset={selectedAsset}
+                  title="Selected execution asset profile"
+                />
+                <EvidenceSourceSection
+                  asset={selectedAsset}
+                  metadata={executionSourceMetadata}
+                  title="Can this asset execute safely?"
+                />
+              </div>
+              <SectionCard
+                action={<StatusPill tone="blue">{selectedAsset?.data_mode ?? "mock"} execution proof</StatusPill>}
+                title="Asset execution proof"
+              >
+                <div className="mb-4 grid gap-4 md:grid-cols-3">
+                  {backendExecutionKpis.map((kpi) => (
+                    <KpiCard
+                      accent={kpi.accent}
+                      helper={kpi.helper}
+                      key={kpi.label}
+                      label={kpi.label}
+                      value={kpi.value}
+                    />
+                  ))}
+                </div>
+                <DataTable
+                  columns={["execution_driver", "mock_evidence", "investor_meaning", "production_upgrade"]}
+                  rows={visibleExecutionRows}
+                />
+              </SectionCard>
+            </>
+          ) : null}
+          <ExecutionAuditPanel
+            approvalData={approvalData}
+            auditRows={auditRows}
+            automationEvents={eventRows}
+            lifecycleRows={lifecycleRows}
+            personaId={personaId}
+            personaLayer={persona.layer}
+            paperTrade={paperTrade}
+            proposal={proposal}
+            settlementData={settlementData}
+            submissionLifecycle={submissionLifecycle.data}
+            submission={submission}
+            riskChecks={riskChecks}
+            telemetryData={telemetryData}
+          />
+        </div>
       ) : null}
     </>
   );
+}
+
+type ExecutionKpi = {
+  accent: "amber" | "blue" | "emerald" | "red" | "slate";
+  helper: string;
+  label: string;
+  value: React.ReactNode;
+};
+
+function normalizeProofKpis(rows?: TableRow[]): ExecutionKpi[] {
+  return (rows ?? []).map((row) => ({
+    accent: normalizeAccent(row.accent),
+    helper: String(row.helper ?? ""),
+    label: String(row.label ?? "Evidence"),
+    value: normalizeKpiValue(row.value),
+  }));
+}
+
+function normalizeAccent(value: unknown): ExecutionKpi["accent"] {
+  if (
+    value === "amber" ||
+    value === "blue" ||
+    value === "emerald" ||
+    value === "red" ||
+    value === "slate"
+  ) {
+    return value;
+  }
+
+  return "slate";
+}
+
+function normalizeKpiValue(value: TableRow[string]): React.ReactNode {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+
+  if (value === null || value === undefined) {
+    return "-";
+  }
+
+  return JSON.stringify(value);
 }
 
 function getProposalPersonaFraming(personaId: string) {

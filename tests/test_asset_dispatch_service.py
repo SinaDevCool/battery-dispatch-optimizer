@@ -1,8 +1,10 @@
-﻿from backend.assets.asset_schema import BatteryAsset
+from backend.assets.asset_loader import get_asset, load_assets
+from backend.assets.asset_schema import BatteryAsset
 from backend.services.asset_dispatch_service import (
     apply_grid_connection_limits,
     build_asset_assumption_flags,
     build_asset_signal_metadata,
+    dispatch_asset,
 )
 
 
@@ -87,4 +89,47 @@ def test_asset_signal_metadata_contains_grid_and_regulatory_context():
     assert metadata["constrained_battery_config"]["max_charge_power_mw"] == 7.0
 
 
+def test_solar_colocated_asset_dispatch_tracks_renewable_charge_origin():
+    asset = get_asset("demo_solar_battery")
+    result = dispatch_asset(asset)
+    signal_result = result.dispatch_result.signal_result
+    renewable_charge_rows = [
+        row
+        for row in signal_result["dispatch"]
+        if row.get("renewable_charge_mwh", 0) > 0
+    ]
 
+    assert signal_result["asset_physics"]["physics_model"] == "solar_colocated_battery_v1"
+    assert renewable_charge_rows
+    assert signal_result["summary"]["renewable_charge_mwh"] > 0
+    assert 0 < signal_result["summary"]["renewable_charge_share"] <= 1
+    assert all(row["grid_charge_mwh"] == 0 for row in renewable_charge_rows)
+
+
+def test_industrial_btm_asset_dispatch_shaves_site_peak():
+    asset = get_asset("demo_industrial_btm")
+    result = dispatch_asset(asset)
+    signal_result = result.dispatch_result.signal_result
+    peak_shaving_rows = [
+        row
+        for row in signal_result["dispatch"]
+        if row.get("peak_shaved_mwh", 0) > 0
+    ]
+
+    assert signal_result["asset_physics"]["physics_model"] == "industrial_btm_battery_v1"
+    assert peak_shaving_rows
+    assert signal_result["summary"]["peak_shaved_mwh"] > 0
+    assert all(row["action"] == "discharge" for row in peak_shaving_rows)
+    assert all(row["peak_excess_after_mwh"] == 0 for row in peak_shaving_rows)
+
+
+def test_mock_asset_dispatch_respects_soc_envelopes():
+    for asset in load_assets():
+        result = dispatch_asset(asset)
+        dispatch = result.dispatch_result.signal_result["dispatch"]
+        min_soc_mwh = asset.battery_config["min_soc_mwh"]
+        capacity_mwh = asset.battery_config["capacity_mwh"]
+
+        assert dispatch
+        for row in dispatch:
+            assert min_soc_mwh <= row["soc_mwh"] <= capacity_mwh

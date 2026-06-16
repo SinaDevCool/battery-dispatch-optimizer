@@ -18,19 +18,26 @@ export function WorkspaceTabs<T extends string>({
   tabs: readonly WorkspaceTab<T>[];
 }) {
   const active = tabs.find((tab) => tab.id === activeTab);
+  const helperId = `workspace-tab-helper-${activeTab}`;
 
   return (
     <div className="mb-5 rounded-lg border border-slate-800 bg-slate-950/70 p-2">
-      <div className="flex gap-1 overflow-x-auto">
+      <div
+        aria-describedby={active?.helper ? helperId : undefined}
+        className="flex gap-1 overflow-x-auto"
+        role="tablist"
+      >
         {tabs.map((tab) => (
           <button
             aria-current={activeTab === tab.id ? "page" : undefined}
+            aria-selected={activeTab === tab.id}
             className={cn(
               "min-w-fit rounded-md px-4 py-2.5 text-left text-sm font-semibold text-slate-400 transition hover:bg-slate-900 hover:text-slate-100",
               activeTab === tab.id && "bg-sky-400/10 text-sky-100",
             )}
             key={tab.id}
             onClick={() => onTabChange(tab.id)}
+            role="tab"
             type="button"
           >
             {tab.label}
@@ -38,7 +45,7 @@ export function WorkspaceTabs<T extends string>({
         ))}
       </div>
       {active?.helper ? (
-        <div className="px-2 pb-1 pt-2 text-sm text-slate-500">
+        <div className="px-2 pb-1 pt-2 text-sm text-slate-500" id={helperId}>
           {active.helper}
         </div>
       ) : null}

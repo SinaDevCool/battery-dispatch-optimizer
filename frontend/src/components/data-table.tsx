@@ -1,4 +1,5 @@
 import type { JsonValue, TableRow } from "@/types/api";
+import { formatDemoStatus, isStatusColumn } from "@/lib/demo-status";
 
 export function DataTable({
   columns,
@@ -30,8 +31,8 @@ export function DataTable({
             <tr className="bg-slate-950/40" key={rowIndex}>
               {columns.map((column) => (
                 <td className="max-w-[22rem] whitespace-normal break-words align-top" key={column}>
-                  <div className="max-h-16 overflow-hidden leading-5">
-                    {formatCell(row[column])}
+                  <div className="leading-5">
+                    {formatCell(row[column], column)}
                   </div>
                 </td>
               ))}
@@ -43,9 +44,13 @@ export function DataTable({
   );
 }
 
-function formatCell(value: JsonValue | undefined) {
+function formatCell(value: JsonValue | undefined, column: string) {
   if (value === null || value === undefined || value === "") {
     return "-";
+  }
+
+  if (isStatusColumn(column)) {
+    return formatDemoStatus(value);
   }
 
   if (typeof value === "number") {

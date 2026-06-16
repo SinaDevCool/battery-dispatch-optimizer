@@ -3,12 +3,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
+import {
+  AssetDataProfileSection,
+  buildAssetDataProfileEvidence,
+} from "@/components/asset-data-profile-section";
 import { useAssetContext } from "@/components/asset-provider";
 import { DecisionBrief } from "@/components/decision-brief";
 import { DataTable } from "@/components/data-table";
+import { EvidenceSourceSection } from "@/components/evidence-source-section";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
 import { usePersona } from "@/components/persona-provider";
+import { ProofCardGrid } from "@/components/proof-card-grid";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
 import {
@@ -20,13 +26,15 @@ import {
 } from "@/components/revenue/revenue-workbench-panels";
 import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { apiGet } from "@/lib/api";
-import { formatCurrency } from "@/lib/format";
+import { demoStatusTone, formatDemoStatus } from "@/lib/demo-status";
+import { formatCurrency, formatNumber } from "@/lib/format";
 import type { PersonaId } from "@/lib/personas";
 import type {
   AncillaryEligibilityResponse,
   BusinessDecisionResponse,
   EegComplianceResponse,
   HedgingRevenueResponse,
+  InvestorReadinessResponse,
   LatestSignalResponse,
   RevenueAllocationResponse,
   RevenueStackResult,
@@ -38,28 +46,28 @@ import type {
 const revenueTabs = [
   {
     id: "stack",
-    label: "Market Stack",
-    helper: "Tradable products, revenue ranking, eligibility, and product-level blockers.",
+    label: "Revenue Routes",
+    helper: "Which routes create value, which are eligible, and which still need proof.",
   },
   {
     id: "allocation",
-    label: "Capacity Allocation",
-    helper: "How battery capacity should be assigned across revenue pools.",
+    label: "Allocation Proof",
+    helper: "How battery capacity is assigned across value pools.",
   },
   {
     id: "constraints",
-    label: "Constraints",
-    helper: "Missing inputs, blocked products, EEG status, ancillary readiness, and review warnings.",
+    label: "Open Questions",
+    helper: "Evidence gaps, eligibility blockers, and review warnings before the value is bankable.",
   },
   {
     id: "economics",
-    label: "Economics",
-    helper: "Owner/investor view of merchant value, hedge protection, and recommendation basis.",
+    label: "Investment Case",
+    helper: "Owner and investor view of value, hedge protection, and recommendation basis.",
   },
   {
     id: "controls",
-    label: "Run Controls",
-    helper: "Refresh the revenue stack and allocation decision.",
+    label: "Refresh",
+    helper: "Refresh the revenue evidence and allocation decision.",
   },
 ] as const;
 
@@ -105,7 +113,7 @@ type RevenuePersonaFraming = {
 };
 
 export default function RevenuePage() {
-  const { selectedAssetId } = useAssetContext();
+  const { selectedAsset, selectedAssetId } = useAssetContext();
   const { persona, personaId } = usePersona();
   const isClientPersona = persona.layer === "client";
   const framing = getRevenuePersonaFraming(personaId);
@@ -194,6 +202,14 @@ export default function RevenuePage() {
     queryKey: ["revenue-business-decision", selectedAssetId],
   });
 
+  const investorReadiness = useQuery({
+    queryFn: () =>
+      apiGet<InvestorReadinessResponse>(
+        `/assets/${selectedAssetId}/investor-readiness`,
+      ),
+    queryKey: ["revenue-investor-readiness", selectedAssetId],
+  });
+
   const stackData = stack.data ?? revenueSummary.data?.revenue_stack;
   const allocationData = allocation.data ?? revenueSummary.data?.revenue_allocation;
   const signalData = signal.data ?? revenueSummary.data?.latest_signal;
@@ -212,7 +228,13 @@ export default function RevenuePage() {
       row.blocking_reasons !== "-",
   );
   const warningRows = rows.filter((row) => row.review_warnings !== "-");
-  const metadata = signalData?.data?.metadata ?? {};
+  const metadata =
+    revenueSummary.data?.metadata ??
+    stackData?.metadata ??
+    allocationData?.metadata ??
+    signalData?.metadata ??
+    signalData?.data?.metadata ??
+    {};
   const summary = signalData?.data?.summary ?? {};
   const hedgeSummary = hedgingData?.summary ?? {};
   const totalRevenue =
@@ -247,6 +269,18 @@ export default function RevenuePage() {
   const topBlocker = commercialBlockers[0] ?? "No material revenue blocker shown.";
   const revenueUnlockRows = buildRevenueUnlockRows(rows);
   const clientAssuranceRows = buildClientAssuranceRows(rows);
+  const assetDataProfileEvidence = buildAssetDataProfileEvidence(selectedAsset);
+  const backendRevenueKpis = normalizeProofKpis(
+    revenueSummary.data?.revenue_proof?.kpis,
+  );
+  const visibleRevenueRows = revenueSummary.data?.revenue_proof?.rows ?? [];
+  const productionBoundaryRows = buildRevenueProductionBoundaryRows({
+    revenueStatus: revenueSummary.data?.status,
+    selectedAsset,
+    selectedAssetId,
+    signalStatus: signalData?.status,
+  });
+  const financeSummary = investorReadiness.data?.finance_summary;
 
   return (
     <>
@@ -274,6 +308,7 @@ export default function RevenuePage() {
           businessDecisionData?.decision?.recommendation_status
             ? `Decision status: ${businessDecisionData.decision.recommendation_status}.`
             : "Business decision evidence is pending.",
+          ...assetDataProfileEvidence,
         ]}
         eyebrow={framing.decisionEyebrow}
         nextAction={
@@ -302,8 +337,8 @@ export default function RevenuePage() {
           <KpiCard
             accent={confidenceTone}
             helper={topBlocker}
-            label="Revenue confidence"
-            value={commercialBlockers.length ? "needs evidence" : "client-ready"}
+            label="Investor confidence"
+            value={commercialBlockers.length ? "needs proof" : "investor-ready"}
           />
         </div>
       ) : (
@@ -314,61 +349,6 @@ export default function RevenuePage() {
           <KpiCard accent="blue" label="Asset" value={selectedAssetId} />
         </div>
       )}
-
-      <SectionCard
-        action={
-          <StatusPill tone={confidenceTone}>
-            {commercialBlockers.length ? "Revenue not fully bankable" : framing.readyLabel}
-          </StatusPill>
-        }
-        className="mb-5"
-        title={isClientPersona ? "Revenue assurance summary" : framing.bridgeTitle}
-      >
-        <div className="mb-4 grid gap-4 md:grid-cols-3">
-          <KpiCard
-            accent="emerald"
-            label={isClientPersona ? "Defensible now" : "Automatable now"}
-            value={formatCurrency(executableRevenue)}
-            helper={
-              isClientPersona
-                ? "Value supported by eligible routes and current evidence."
-                : "Eligible products with clear automation fit."
-            }
-          />
-          <KpiCard
-            accent={blockedRevenue > 0 ? "amber" : "emerald"}
-            label={isClientPersona ? "Upside to unlock" : "Blocked or review upside"}
-            value={formatCurrency(blockedRevenue)}
-            helper={`${blockedRows.length + warningRows.length} product(s) need evidence or review.`}
-          />
-          <KpiCard
-            accent={
-              allocationRows.length
-                ? "emerald"
-                : allocationEvidenceLoaded
-                  ? "amber"
-                  : "blue"
-            }
-            label="Allocation proof"
-            value={
-              allocationRows.length
-                ? "available"
-                : allocationEvidenceLoaded
-                  ? "missing"
-                  : "open tab to load"
-            }
-            helper="Needed before promising capacity across products."
-          />
-        </div>
-        <DataTable
-          columns={
-            isClientPersona
-              ? ["revenue_route", "client_value", "confidence", "next_action"]
-              : ["product_id", "commercial_value", "automation_fit", "unlock_action"]
-          }
-          rows={isClientPersona ? clientAssuranceRows : revenueUnlockRows}
-        />
-      </SectionCard>
 
       <WorkspaceTabs
         activeTab={effectiveActiveTab}
@@ -395,26 +375,183 @@ export default function RevenuePage() {
       ) : null}
 
       {effectiveActiveTab === "constraints" ? (
-        <RevenueConstraintsPanel
-          ancillary={ancillaryData}
-          blockedRows={blockedRows}
-          eeg={eegData}
-          warningRows={warningRows}
-        />
+        <div className="space-y-5">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+            <AssetDataProfileSection
+              asset={selectedAsset}
+              title={isClientPersona ? "Revenue evidence profile" : "Selected asset revenue evidence"}
+            />
+            <EvidenceSourceSection
+              asset={selectedAsset}
+              metadata={metadata}
+              title="Can this asset earn with current evidence?"
+            />
+          </div>
+          <SectionCard
+            action={
+              <StatusPill tone={demoStatusTone(revenueSummary.data?.status ?? selectedAsset?.data_mode ?? "mock")}>
+                {formatDemoStatus(revenueSummary.data?.status ?? selectedAsset?.data_mode ?? "mock")}
+              </StatusPill>
+            }
+            title="What is proven now"
+          >
+            <p className="mb-4 text-sm leading-6 text-slate-400">
+              The demo can show the value logic today. Production readiness still depends on
+              live exchange execution, settlement files, telemetry, and connector evidence.
+            </p>
+            <ProofCardGrid
+              fields={[
+                { key: "demo_evidence", label: "Demo evidence" },
+                { key: "production_proof_needed", label: "Production proof needed" },
+              ]}
+              rows={productionBoundaryRows}
+              titleKey="investor_claim"
+            />
+          </SectionCard>
+          <SectionCard
+            action={
+              <StatusPill tone={demoStatusTone(selectedAsset?.data_mode ?? "mock")}>
+                {formatDemoStatus(selectedAsset?.data_mode ?? "mock")} revenue proof
+              </StatusPill>
+            }
+            title="Revenue proof package"
+          >
+            <div className="mb-4 grid gap-4 md:grid-cols-3">
+              {backendRevenueKpis.map((kpi) => (
+                <KpiCard
+                  accent={kpi.accent}
+                  helper={kpi.helper}
+                  key={kpi.label}
+                  label={kpi.label}
+                  value={kpi.value}
+                />
+              ))}
+            </div>
+            <DataTable
+              columns={["revenue_driver", "mock_evidence", "investor_meaning", "production_upgrade"]}
+              rows={visibleRevenueRows}
+            />
+          </SectionCard>
+          <RevenueConstraintsPanel
+            ancillary={ancillaryData}
+            blockedRows={blockedRows}
+            eeg={eegData}
+            warningRows={warningRows}
+          />
+        </div>
       ) : null}
 
       {effectiveActiveTab === "economics" ? (
-        <RevenueEconomicsPanel
-          allocationRows={allocationRows}
-          ancillary={ancillaryData}
-          businessDecision={businessDecisionData?.decision}
-          eeg={eegData}
-          hedgeSummary={hedgeSummary}
-          metadata={metadata}
-          revenueRows={rows}
-          signalSummary={summary}
-          totalRevenue={totalRevenue}
-        />
+        <div className="space-y-5">
+          <SectionCard
+            action={
+              <StatusPill tone={confidenceTone}>
+                {commercialBlockers.length ? "Revenue not fully bankable" : framing.readyLabel}
+              </StatusPill>
+            }
+            title={isClientPersona ? "Revenue assurance story" : framing.bridgeTitle}
+          >
+            <div className="mb-4 grid gap-4 md:grid-cols-3">
+              <KpiCard
+                accent="emerald"
+                label={isClientPersona ? "Defensible now" : "Automatable now"}
+                value={formatCurrency(executableRevenue)}
+                helper={
+                  isClientPersona
+                    ? "Value supported by eligible routes and current evidence."
+                    : "Eligible products with clear automation fit."
+                }
+              />
+              <KpiCard
+                accent={blockedRevenue > 0 ? "amber" : "emerald"}
+                label={isClientPersona ? "Upside to unlock" : "Blocked or review upside"}
+                value={formatCurrency(blockedRevenue)}
+                helper={`${blockedRows.length + warningRows.length} product(s) need evidence or review.`}
+              />
+              <KpiCard
+                accent={
+                  allocationRows.length
+                    ? "emerald"
+                    : allocationEvidenceLoaded
+                      ? "amber"
+                      : "blue"
+                }
+                label="Allocation proof"
+                value={
+                  allocationRows.length
+                    ? "available"
+                    : allocationEvidenceLoaded
+                      ? "missing"
+                      : "open tab to load"
+                }
+                helper="Needed before promising capacity across products."
+              />
+            </div>
+            <DataTable
+              columns={
+                isClientPersona
+                  ? ["revenue_route", "client_value", "confidence", "next_action"]
+                  : ["product_id", "commercial_value", "automation_fit", "unlock_action"]
+              }
+              rows={isClientPersona ? clientAssuranceRows : revenueUnlockRows}
+            />
+          </SectionCard>
+          <SectionCard
+            action={<StatusPill tone="blue">Mock finance case</StatusPill>}
+            title="Project economics bridge"
+          >
+            <div className="mb-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <KpiCard
+                accent="blue"
+                helper="Benchmark mock project cost."
+                label="Project cost"
+                value={formatCurrency(financeSummary?.total_project_cost_eur)}
+              />
+              <KpiCard
+                accent="emerald"
+                helper="Annualized from the current mock revenue run."
+                label="Revenue run-rate"
+                value={formatCurrency(financeSummary?.annual_revenue_run_rate_eur)}
+              />
+              <KpiCard
+                accent="emerald"
+                helper="After fixed OPEX; excludes financing and taxes."
+                label="Net cashflow"
+                value={formatCurrency(financeSummary?.annual_net_cashflow_eur)}
+              />
+              <KpiCard
+                accent={Number(financeSummary?.simple_payback_years ?? 0) > 12 ? "amber" : "emerald"}
+                helper="Simple capex payback, not bank-grade IRR."
+                label="Payback"
+                value={
+                  financeSummary?.simple_payback_years
+                    ? `${formatNumber(financeSummary.simple_payback_years, 1)} years`
+                    : "-"
+                }
+              />
+            </div>
+            <ProofCardGrid
+              fields={[
+                { key: "value", label: "Mock value" },
+                { key: "investor_meaning", label: "Investor meaning" },
+                { key: "production_upgrade", label: "Production proof needed" },
+              ]}
+              rows={investorReadiness.data?.project_economics ?? []}
+              titleKey="metric"
+            />
+          </SectionCard>
+          <RevenueEconomicsPanel
+            allocationRows={allocationRows}
+            ancillary={ancillaryData}
+            businessDecision={businessDecisionData?.decision}
+            eeg={eegData}
+            hedgeSummary={hedgeSummary}
+            metadata={metadata}
+            revenueRows={rows}
+            signalSummary={summary}
+            totalRevenue={totalRevenue}
+          />
+        </div>
       ) : null}
 
       {effectiveActiveTab === "controls" ? (
@@ -428,20 +565,64 @@ export default function RevenuePage() {
   );
 }
 
+function buildRevenueProductionBoundaryRows({
+  revenueStatus,
+  selectedAsset,
+  selectedAssetId,
+  signalStatus,
+}: {
+  revenueStatus?: string;
+  selectedAsset?: {
+    data_mode?: string;
+    data_profile?: TableRow;
+  };
+  selectedAssetId: string;
+  signalStatus?: string;
+}): TableRow[] {
+  const profile = selectedAsset?.data_profile ?? {};
+
+  return [
+    {
+      demo_evidence: profile.forecast_source ?? "local mock forecast",
+      investor_claim: "The battery can physically create value",
+      production_proof_needed: "Live forecast provider, measured SOC, EMS availability, and meter data.",
+      status: signalStatus ?? "not_loaded",
+    },
+    {
+      demo_evidence: `/assets/${selectedAssetId}/revenue-summary`,
+      investor_claim: "The commercial case has modelled value",
+      production_proof_needed: "Executed trades, product eligibility approvals, tariffs, fees, and settlement records.",
+      status: revenueStatus ?? "not_loaded",
+    },
+    {
+      demo_evidence: profile.execution_adapter ?? "demo_market",
+      investor_claim: "Execution can be gated before live trading",
+      production_proof_needed: "Exchange/TSO adapter credentials, paper validation, human approval, and live-route certification.",
+      status: selectedAsset?.data_mode ?? "mock",
+    },
+    {
+      demo_evidence: profile.settlement_mode ?? "simulated",
+      investor_claim: "Revenue can be reconciled after execution",
+      production_proof_needed: "Signed settlement files, bankable revenue archive, and audit trail.",
+      status: selectedAsset?.data_mode === "production" ? "production" : "partial",
+    },
+  ];
+}
+
 function getRevenuePersonaFraming(personaId: PersonaId): RevenuePersonaFraming {
   const defaults: RevenuePersonaFraming = {
-    bridgeTitle: "Bankable revenue bridge",
+    bridgeTitle: "Investment revenue bridge",
     decisionEyebrow: "Commercial decision",
-    decisionTitle: "Revenue-to-market decision",
+    decisionTitle: "Is the value story strong enough to present?",
     description:
-      "Decide which revenue streams are tradable, how capacity should be allocated, what constraints block value, and how the economics look to owners and investors.",
-    eyebrow: "Commercial optimizer",
+      "Separate value that is proven in the demo from upside that still needs eligibility, settlement, or production evidence.",
+    eyebrow: "Investor value case",
     nextActionBlocked:
       "Resolve product eligibility, allocation, or review blockers before promising automated revenue capture.",
     nextActionClear:
-      "Use this revenue stack to guide market allocation and trading strategy intent.",
-    readyLabel: "Bankable stack",
-    title: "Revenue stack",
+      "Use this revenue case to guide market allocation and investor storytelling.",
+    readyLabel: "Investor-ready",
+    title: "Revenue value case",
   };
 
   const frames: Partial<Record<PersonaId, RevenuePersonaFraming>> = {
@@ -560,6 +741,52 @@ function normalizeRevenueRows(data?: RevenueStackResponse): TableRow[] {
     product_id: row.product_id ?? row.market ?? "-",
     review_warnings: formatIssueList(row.review_warnings),
   }));
+}
+
+type ProofKpi = {
+  accent: "amber" | "blue" | "emerald" | "red" | "slate";
+  helper: string;
+  label: string;
+  value: React.ReactNode;
+};
+
+function normalizeProofKpis(rows?: TableRow[]): ProofKpi[] {
+  return (rows ?? []).map((row) => ({
+    accent: normalizeAccent(row.accent),
+    helper: String(row.helper ?? ""),
+    label: String(row.label ?? "Evidence"),
+    value: normalizeKpiValue(row.value),
+  }));
+}
+
+function normalizeAccent(value: unknown): ProofKpi["accent"] {
+  if (
+    value === "amber" ||
+    value === "blue" ||
+    value === "emerald" ||
+    value === "red" ||
+    value === "slate"
+  ) {
+    return value;
+  }
+
+  return "slate";
+}
+
+function normalizeKpiValue(value: TableRow[string]): React.ReactNode {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+
+  if (value === null || value === undefined) {
+    return "-";
+  }
+
+  return JSON.stringify(value);
 }
 
 function formatIssueList(value: unknown) {

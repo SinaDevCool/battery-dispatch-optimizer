@@ -47,6 +47,7 @@ export const navigationGroups: NavigationGroup[] = [
     label: "Portfolio",
     items: [
       { href: "/", icon: Gauge, label: "Control Room" },
+      { href: "/investor-demo", icon: FileCheck2, label: "Investor Demo" },
       { href: "/assets", icon: BatteryCharging, label: "Asset Registry" },
       { href: "/intelligence", icon: BrainCircuit, label: "Decision Evidence" },
       { href: "/revenue", icon: Layers3, label: "Revenue Assurance" },
@@ -89,7 +90,6 @@ export const navigationGroups: NavigationGroup[] = [
       { href: "/regulation", icon: Scale, label: "Regulatory Compliance" },
       { href: "/execution/settlement", icon: ReceiptText, label: "Settlement Evidence" },
       { href: "/execution/audit", icon: FileCheck2, label: "Audit Evidence" },
-      { href: "/reports", icon: ReceiptText, label: "Reports" },
       { href: "/settings", icon: SlidersHorizontal, label: "Settings" },
     ],
   },

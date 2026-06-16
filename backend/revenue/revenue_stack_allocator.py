@@ -143,6 +143,7 @@ def allocate_revenue_stack(asset, revenue_stack):
                 ),
                 "source_status": candidate["source_status"],
                 "allocation_reason": candidate["allocation_reason"],
+                "asset_value_context": candidate.get("asset_value_context"),
             }
         )
 
@@ -164,6 +165,12 @@ def allocate_revenue_stack(asset, revenue_stack):
         },
         "allocation_count": len(allocation),
         "total_expected_revenue_eur": round(total_expected_revenue, 2),
+        "asset_allocation_context": {
+            "asset_id": asset.asset_id,
+            "asset_type": asset.asset_type,
+            "data_mode": getattr(asset, "data_mode", None) or "mock",
+            "allocation_boundary": "Mock allocation ranks eligible revenue routes against selected-asset power and energy limits; production allocation must use market availability, telemetry, and approved trading permissions.",
+        },
         "allocation": allocation,
         "excluded_products": sanitize_excluded_products(excluded_products),
     }
@@ -201,6 +208,7 @@ def build_product_candidate(product, max_power_mw, max_energy_mwh):
         "eligible_for_allocation": False,
         "exclusion_reason": None,
         "allocation_reason": "Ranked by expected revenue per MW under battery power and energy constraints.",
+        "asset_value_context": product.get("asset_value_context"),
     }
 
     if not eligible:

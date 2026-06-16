@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
@@ -26,6 +26,7 @@ import { formatCurrency, formatNumber } from "@/lib/format";
 import type { PersonaId } from "@/lib/personas";
 import type {
   ActualPriceStatusResponse,
+  Asset,
   ForecastActualResponse,
   ForecastPerformanceHistoryResponse,
   ForecastPerformanceRun,
@@ -34,6 +35,7 @@ import type {
   ForecastProfitabilityResult,
   ForecastStatusResponse,
   LatestSignalResponse,
+  TableRow,
 } from "@/types/api";
 
 const forecastTabs = [
@@ -81,7 +83,7 @@ type ForecastPersonaFraming = {
 };
 
 export default function ForecastsPage() {
-  const { selectedAssetId } = useAssetContext();
+  const { selectedAsset, selectedAssetId } = useAssetContext();
   const { persona, personaId } = usePersona();
   const framing = getForecastPersonaFraming(personaId);
   const [activeTab, setActiveTab] = useState<ForecastTabId>("market");
@@ -116,13 +118,19 @@ export default function ForecastsPage() {
   }, []);
 
   const status = useQuery({
-    queryFn: () => apiGet<ForecastStatusResponse>("/forecast/status"),
-    queryKey: ["forecast-status"],
+    queryFn: () =>
+      apiGet<ForecastStatusResponse>(
+        `/assets/${selectedAssetId}/forecast/status`,
+      ),
+    queryKey: ["asset-forecast-status", selectedAssetId],
   });
 
   const preview = useQuery({
-    queryFn: () => apiGet<ForecastPreviewResponse>("/forecast/preview"),
-    queryKey: ["forecast-preview"],
+    queryFn: () =>
+      apiGet<ForecastPreviewResponse>(
+        `/assets/${selectedAssetId}/forecast/preview`,
+      ),
+    queryKey: ["asset-forecast-preview", selectedAssetId],
   });
 
   const comparison = useQuery({
@@ -170,8 +178,11 @@ export default function ForecastsPage() {
     [performance.data?.runs],
   );
   const latestPerformance = performanceRows[0];
+  const assetDataProfile = selectedAsset?.data_profile ?? {};
   const signalMetadata = latestSignal.data?.data?.metadata ?? {};
   const forecastQualityScore = buildForecastQualityScore(status.data);
+  const backendForecastKpis = normalizeProofKpis(status.data?.forecast_proof?.kpis);
+  const visibleForecastRows = status.data?.forecast_proof?.rows ?? [];
   const providerLeaderboard = useMemo(
     () => buildProviderLeaderboard(comparisonRows, performanceRows),
     [comparisonRows, performanceRows],
@@ -183,6 +194,9 @@ export default function ForecastsPage() {
   const revenueLeakage = Math.abs(Number(latestPerformance?.revenue_delta_eur ?? 0));
   const forecastBlockers = [
     currentSignalUsesFallback ? "Latest signal used local saved forecast fallback." : null,
+    selectedAsset?.data_mode === "production"
+      ? null
+      : `Selected asset is using ${formatDataMode(selectedAsset?.data_mode)} forecast evidence.`,
     latestPerformance ? null : "Forecast-vs-actual performance is not available yet.",
     actualPrices.data?.status === "ok" ? null : "Actual price evidence is not ready.",
   ].filter(Boolean) as string[];
@@ -260,6 +274,7 @@ export default function ForecastsPage() {
           recommendedProvider
             ? `${formatCurrency(recommendedProvider.total_pnl_eur)} modelled PnL from recommended source.`
             : "Provider ranking needs a comparison run.",
+          `${selectedAsset?.asset_name ?? selectedAsset?.site_name ?? selectedAssetId} uses ${String(assetDataProfile.label ?? "selected asset forecast profile")}.`,
         ]}
         eyebrow={framing.decisionEyebrow}
         nextAction={
@@ -277,12 +292,18 @@ export default function ForecastsPage() {
         }
       />
 
-      <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <KpiCard
           accent={forecastQualityScore >= 80 ? "emerald" : forecastQualityScore >= 60 ? "amber" : "red"}
           label="Forecast quality score"
           value={`${forecastQualityScore}/100`}
           helper={`${status.data?.valid_row_count ?? "-"} valid row(s), ${status.data?.duplicate_timestamps ?? "-"} duplicate timestamp(s)`}
+        />
+        <KpiCard
+          accent={selectedAsset?.data_mode === "production" ? "emerald" : "blue"}
+          label="Selected asset profile"
+          value={formatAssetType(selectedAsset)}
+          helper={String(assetDataProfile.market_data_mode ?? selectedAsset?.data_source ?? "source pending")}
         />
         <KpiCard
           accent="emerald"
@@ -316,47 +337,6 @@ export default function ForecastsPage() {
         />
       </div>
 
-      <SectionCard
-        action={
-          <StatusPill tone={automationLane === "Automation input" ? "emerald" : "amber"}>
-            {automationLane}
-          </StatusPill>
-        }
-        className="mb-6"
-        title={framing.bridgeTitle}
-      >
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <DataTable
-            columns={["decision_input", "value"]}
-            rows={[
-              {
-                decision_input: "Current source",
-                value: currentProvider ?? "source pending",
-              },
-              {
-                decision_input: "Recommended source",
-                value:
-                  recommendedProvider?.forecast_provider ??
-                  bestComparison?.forecast_provider ??
-                  "run provider comparison",
-              },
-              {
-                decision_input: "Trading lane",
-                value: automationLane,
-              },
-              {
-                decision_input: "Reason to hold back",
-                value: forecastBlockers[0] ?? "No blocking forecast issue.",
-              },
-            ]}
-          />
-          <DataTable
-            columns={["capability", "backend_route", "status", "business_value"]}
-            rows={backendConnectionRows}
-          />
-        </div>
-      </SectionCard>
-
       <WorkspaceTabs
         activeTab={effectiveActiveTab}
         onTabChange={(tab) => {
@@ -372,13 +352,54 @@ export default function ForecastsPage() {
       />
 
       {effectiveActiveTab === "market" ? (
-        <ForecastMarketPanel
-          actualPrices={actualPrices.data}
-          currentProvider={currentProvider}
-          currentSignalUsesFallback={currentSignalUsesFallback}
-          providerLeaderboard={providerLeaderboard}
-          signalMetadata={signalMetadata}
-        />
+        <div className="space-y-5">
+          <ForecastMarketPanel
+            actualPrices={actualPrices.data}
+            asset={selectedAsset}
+            currentProvider={currentProvider}
+            currentSignalUsesFallback={currentSignalUsesFallback}
+            providerLeaderboard={providerLeaderboard}
+            signalMetadata={signalMetadata}
+          />
+          <SectionCard
+            action={<StatusPill tone={selectedAsset?.data_mode === "production" ? "emerald" : "blue"}>{formatDataMode(selectedAsset?.data_mode)}</StatusPill>}
+            title="Selected asset forecast profile"
+          >
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+              <DataTable
+                columns={["field", "value"]}
+                rows={buildSelectedAssetForecastProfileRows({
+                  asset: selectedAsset,
+                  forecastFile: status.data?.forecast_file,
+                })}
+              />
+              <DataTable
+                columns={["forecast_context", "value"]}
+                rows={buildForecastContextRows(preview.data)}
+              />
+            </div>
+          </SectionCard>
+          <SectionCard
+            action={<StatusPill tone="blue">{formatDataMode(selectedAsset?.data_mode)} forecast proof</StatusPill>}
+            title="Asset forecast proof"
+          >
+            <div className="mb-4 grid gap-4 md:grid-cols-3">
+              {backendForecastKpis.map((kpi) => (
+                <KpiCard
+                  accent={kpi.accent}
+                  helper={kpi.helper}
+                  key={kpi.label}
+                  label={kpi.label}
+                  value={kpi.value}
+                />
+              ))}
+            </div>
+            <DataTable
+              columns={["forecast_driver", "mock_evidence", "investor_meaning", "production_upgrade"]}
+              rows={visibleForecastRows}
+            />
+          </SectionCard>
+        </div>
       ) : null}
 
       {effectiveActiveTab === "performance" ? (
@@ -389,12 +410,53 @@ export default function ForecastsPage() {
       ) : null}
 
       {effectiveActiveTab === "confidence" ? (
-        <ForecastConfidencePanel
-          currentSignalUsesFallback={currentSignalUsesFallback}
-          latestPerformance={latestPerformance}
-          providerLeaderboard={providerLeaderboard}
-          recommendedProvider={recommendedProvider}
-        />
+        <div className="space-y-5">
+          <SectionCard
+            action={
+              <StatusPill tone={automationLane === "Automation input" ? "emerald" : "amber"}>
+                {automationLane}
+              </StatusPill>
+            }
+            title={framing.bridgeTitle}
+          >
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+              <DataTable
+                columns={["decision_input", "value"]}
+                rows={[
+                  {
+                    decision_input: "Current source",
+                    value: currentProvider ?? "source pending",
+                  },
+                  {
+                    decision_input: "Recommended source",
+                    value:
+                      recommendedProvider?.forecast_provider ??
+                      bestComparison?.forecast_provider ??
+                      "run provider comparison",
+                  },
+                  {
+                    decision_input: "Trading lane",
+                    value: automationLane,
+                  },
+                  {
+                    decision_input: "Reason to hold back",
+                    value: forecastBlockers[0] ?? "No blocking forecast issue.",
+                  },
+                ]}
+              />
+              <DataTable
+                columns={["capability", "backend_route", "status", "business_value"]}
+                rows={backendConnectionRows}
+              />
+            </div>
+          </SectionCard>
+          <ForecastConfidencePanel
+            currentSignalUsesFallback={currentSignalUsesFallback}
+            latestPerformance={latestPerformance}
+            providerLeaderboard={providerLeaderboard}
+            recommendedProvider={recommendedProvider}
+          />
+        </div>
       ) : null}
 
       {effectiveActiveTab === "data" ? (
@@ -622,6 +684,137 @@ function calculateTrustScore(
   }
 
   return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function buildSelectedAssetForecastProfileRows({
+  asset,
+  forecastFile,
+}: {
+  asset?: Asset;
+  forecastFile?: string;
+}) {
+  const profile = asset?.data_profile ?? {};
+
+  return [
+    {
+      field: "Selected asset",
+      value: asset?.asset_name ?? asset?.site_name ?? asset?.asset_id ?? "-",
+    },
+    {
+      field: "Asset type",
+      value: formatAssetType(asset),
+    },
+    {
+      field: "Mock profile",
+      value: profile.label ?? profile.profile_id ?? "-",
+    },
+    {
+      field: "Forecast file",
+      value: forecastFile ?? profile.forecast_source ?? asset?.forecast_file ?? "-",
+    },
+    {
+      field: "Data mode",
+      value: formatDataMode(asset?.data_mode),
+    },
+    {
+      field: "Investor meaning",
+      value:
+        profile.description ??
+        "Selected-asset forecast evidence is not described yet.",
+    },
+  ];
+}
+
+function buildForecastContextRows(preview?: ForecastPreviewResponse) {
+  const rows = preview?.preview ?? [];
+  const firstRow = rows[0] ?? {};
+  const contextColumns = (preview?.columns ?? []).filter(
+    (column) =>
+      ![
+        "timestamp",
+        "forecast_price",
+        "forecast_provider",
+        "forecast_model",
+        "market_profile_id",
+        "market_time_unit_minutes",
+      ].includes(column),
+  );
+
+  if (!contextColumns.length) {
+    return [
+      {
+        forecast_context: "Profile context",
+        value: "No extra mock context columns are available for this forecast.",
+      },
+    ];
+  }
+
+  return contextColumns.map((column) => ({
+    forecast_context: column,
+    value: firstRow[column] ?? "available in preview rows",
+  }));
+}
+
+type ForecastProofKpi = {
+  accent: "amber" | "blue" | "emerald" | "red" | "slate";
+  helper: string;
+  label: string;
+  value: ReactNode;
+};
+
+function normalizeProofKpis(rows?: TableRow[]): ForecastProofKpi[] {
+  return (rows ?? []).map((row) => ({
+    accent: normalizeAccent(row.accent),
+    helper: String(row.helper ?? ""),
+    label: String(row.label ?? "Evidence"),
+    value: normalizeKpiValue(row.value),
+  }));
+}
+
+function normalizeAccent(value: unknown): ForecastProofKpi["accent"] {
+  if (
+    value === "amber" ||
+    value === "blue" ||
+    value === "emerald" ||
+    value === "red" ||
+    value === "slate"
+  ) {
+    return value;
+  }
+
+  return "slate";
+}
+
+function normalizeKpiValue(value: TableRow[string]): React.ReactNode {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+
+  if (value === null || value === undefined) {
+    return "-";
+  }
+
+  return JSON.stringify(value);
+}
+
+function formatAssetType(asset?: Asset) {
+  return formatEnumLabel(asset?.asset_type ?? "grid_scale_battery");
+}
+
+function formatDataMode(dataMode?: string) {
+  return formatEnumLabel(dataMode ?? "mock");
+}
+
+function formatEnumLabel(value: string) {
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function buildForecastBackendConnectionRows({

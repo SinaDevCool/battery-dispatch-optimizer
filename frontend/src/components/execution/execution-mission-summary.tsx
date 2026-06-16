@@ -34,8 +34,10 @@ export function ExecutionMissionSummary({
   automationStatus,
   blockers,
   control,
+  dataMode,
   decision,
   evidence,
+  executionAdapterMode,
   expectedPnl,
   guardrailBlocked,
   guardrailReview,
@@ -48,12 +50,15 @@ export function ExecutionMissionSummary({
   profitPerMwDay,
   refetchExecution,
   selectedAssetId,
+  settlementMode,
 }: {
   automationStatus?: string;
   blockers: string[];
   control?: AutomationControl;
+  dataMode?: string;
   decision: ReactNode;
   evidence: string[];
+  executionAdapterMode?: string;
   expectedPnl: number;
   guardrailBlocked: number;
   guardrailReview: number;
@@ -66,6 +71,7 @@ export function ExecutionMissionSummary({
   profitPerMwDay?: number;
   refetchExecution: () => Promise<unknown>;
   selectedAssetId: string;
+  settlementMode?: string;
 }) {
   const blockerCount = blockers.length;
 
@@ -77,13 +83,15 @@ export function ExecutionMissionSummary({
           label={isClientPersona ? "Readiness mode" : "Automation mode"}
           value={control?.automation_mode ?? automationStatus ?? "-"}
           helper={
-            isClientPersona
-              ? control?.live_trading_allowed
-                ? "Supervised execution is available"
-                : "Execution remains gated"
-              : control?.live_trading_allowed
-                ? "Limited live auto allowed"
-                : "Live auto gated"
+            executionAdapterMode
+              ? `${executionAdapterMode} / ${dataMode ?? "data mode pending"}`
+              : isClientPersona
+                ? control?.live_trading_allowed
+                  ? "Supervised execution is available"
+                  : "Execution remains gated"
+                : control?.live_trading_allowed
+                  ? "Limited live auto allowed"
+                  : "Live auto gated"
           }
         />
         <KpiCard
@@ -102,7 +110,7 @@ export function ExecutionMissionSummary({
           accent="blue"
           label="Market route"
           value={marketRoute ?? "-"}
-          helper={primaryRouteHelper ?? "No route selected"}
+          helper={settlementMode ? `${primaryRouteHelper ?? "No route selected"} / ${settlementMode}` : primaryRouteHelper ?? "No route selected"}
         />
         <KpiCard
           accent={humanGateTone(humanGateStatus)}

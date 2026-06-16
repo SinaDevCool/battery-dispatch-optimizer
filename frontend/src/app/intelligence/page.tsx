@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { ActionButton } from "@/components/action-button";
@@ -20,6 +20,7 @@ import { PageHeading } from "@/components/page-heading";
 import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
 import { StatusPill } from "@/components/status-pill";
+import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { apiGet } from "@/lib/api";
 import { formatCurrency, formatDateTime, formatNumber } from "@/lib/format";
 import type { PersonaId } from "@/lib/personas";
@@ -47,9 +48,35 @@ type DecisionEvidencePersonaFraming = {
   workflowActionLabel?: string;
 };
 
+const intelligenceTabs = [
+  {
+    id: "scorecard",
+    label: "Scorecard",
+    helper: "Evidence scorecard and open gaps for the current recommendation.",
+  },
+  {
+    id: "audit",
+    label: "Audit Chain",
+    helper: "Workflow audit trail and product eligibility summary.",
+  },
+  {
+    id: "history",
+    label: "History",
+    helper: "Decision trend and forecast performance evidence.",
+  },
+  {
+    id: "matrix",
+    label: "Eligibility Matrix",
+    helper: "Product-level eligibility matrix and blockers.",
+  },
+] as const;
+
+type IntelligenceTabId = (typeof intelligenceTabs)[number]["id"];
+
 export default function DecisionIntelligencePage() {
   const { selectedAssetId } = useAssetContext();
   const { personaId } = usePersona();
+  const [activeTab, setActiveTab] = useState<IntelligenceTabId>("scorecard");
   const framing = getDecisionEvidencePersonaFraming(personaId);
 
   const latestWorkflow = useQuery({
@@ -192,92 +219,104 @@ export default function DecisionIntelligencePage() {
         tone={evidenceDecision.tone}
       />
 
-      <SectionCard
-        action={<StatusPill tone={evidenceDecision.tone}>{evidenceDecision.tone === "emerald" ? framing.readyLabel : "Needs evidence"}</StatusPill>}
-        className="mb-6"
-        title={framing.scorecardTitle}
-      >
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <KpiCard
-            accent={latestRun?.status === "ok" ? "emerald" : "amber"}
-            label="Evidence chain"
-            value={evidenceScorecard.evidenceChain}
-            helper={latestRun?.completed_at ? `Audited ${formatDateTime(latestRun.completed_at)}` : "No completed audit run"}
-          />
-          <KpiCard
-            accent={latestDecision?.recommendation_status === "advisory_ready" ? "emerald" : "amber"}
-            label="Commercial posture"
-            value={latestDecision?.readiness ?? "-"}
-            helper={latestDecision?.recommendation_status ?? "No decision history"}
-          />
-          <KpiCard
-            accent="emerald"
-            label="Defensible value"
-            value={formatCurrency(latestDecision?.expected_pnl_eur)}
-            helper={`${formatNumber(latestDecision?.profit_per_mw_day, 2)} EUR/MW-day`}
-          />
-          <KpiCard
-            accent={latestPerformance ? "blue" : "amber"}
-            label="Forecast proof"
-            value={
-              latestPerformance
-                ? `${formatNumber(latestPerformance.mae_eur_per_mwh, 2)} MAE`
-                : "Not tested"
-            }
-            helper={
-              latestPerformance
-                ? `${formatCurrency(latestPerformance.revenue_delta_eur)} revenue delta`
-                : "Run forecast-vs-actual when actual prices exist"
-            }
+      <WorkspaceTabs
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        tabs={intelligenceTabs}
+      />
+
+      {activeTab === "scorecard" ? (
+        <div className="space-y-5">
+          <SectionCard
+            action={<StatusPill tone={evidenceDecision.tone}>{evidenceDecision.tone === "emerald" ? framing.readyLabel : "Needs evidence"}</StatusPill>}
+            title={framing.scorecardTitle}
+          >
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <KpiCard
+                accent={latestRun?.status === "ok" ? "emerald" : "amber"}
+                label="Evidence chain"
+                value={evidenceScorecard.evidenceChain}
+                helper={latestRun?.completed_at ? `Audited ${formatDateTime(latestRun.completed_at)}` : "No completed audit run"}
+              />
+              <KpiCard
+                accent={latestDecision?.recommendation_status === "advisory_ready" ? "emerald" : "amber"}
+                label="Commercial posture"
+                value={latestDecision?.readiness ?? "-"}
+                helper={latestDecision?.recommendation_status ?? "No decision history"}
+              />
+              <KpiCard
+                accent="emerald"
+                label="Defensible value"
+                value={formatCurrency(latestDecision?.expected_pnl_eur)}
+                helper={`${formatNumber(latestDecision?.profit_per_mw_day, 2)} EUR/MW-day`}
+              />
+              <KpiCard
+                accent={latestPerformance ? "blue" : "amber"}
+                label="Forecast proof"
+                value={
+                  latestPerformance
+                    ? `${formatNumber(latestPerformance.mae_eur_per_mwh, 2)} MAE`
+                    : "Not tested"
+                }
+                helper={
+                  latestPerformance
+                    ? `${formatCurrency(latestPerformance.revenue_delta_eur)} revenue delta`
+                    : "Run forecast-vs-actual when actual prices exist"
+                }
+              />
+            </div>
+          </SectionCard>
+
+          <SectionCard
+            action={<StatusPill tone={evidenceGapRows.length ? "amber" : "emerald"}>{evidenceGapRows.length} gap(s)</StatusPill>}
+            title={framing.gapTitle}
+          >
+            <DataTable
+              columns={[
+                "product_id",
+                "product_name",
+                "market",
+                "eligibility_status",
+                "automation_gate",
+                "blocking_reasons",
+              ]}
+              rows={evidenceGapRows}
+            />
+          </SectionCard>
+        </div>
+      ) : null}
+
+      {activeTab === "audit" ? (
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(420px,0.75fr)]">
+          <WorkflowAuditTrailPanel workflowRows={workflowAuditRows} />
+          <ProductEligibilitySummaryPanel
+            blockedCount={blockedCount}
+            eligibleCount={eligibleCount}
+            reviewCount={reviewCount}
           />
         </div>
-      </SectionCard>
+      ) : null}
 
-      <SectionCard
-        action={<StatusPill tone={evidenceGapRows.length ? "amber" : "emerald"}>{evidenceGapRows.length} gap(s)</StatusPill>}
-        className="mb-6"
-        title={framing.gapTitle}
-      >
-        <DataTable
-          columns={[
-            "product_id",
-            "product_name",
-            "market",
-            "eligibility_status",
-            "automation_gate",
-            "blocking_reasons",
-          ]}
-          rows={evidenceGapRows}
-        />
-      </SectionCard>
+      {activeTab === "history" ? (
+        <div className="grid gap-5 xl:grid-cols-2">
+          <DecisionHistoryPanel decisionTrend={decisionTrend} />
+          <ForecastPerformanceEvidencePanel
+            emptyAction={
+              <ActionButton
+                endpoint={`/backtesting/forecast-actual/run?asset_id=${selectedAssetId}`}
+                label="Run forecast backtest"
+                refetch={refetchIntelligence}
+                variant="secondary"
+              />
+            }
+            performanceRows={performanceRows}
+          />
+        </div>
+      ) : null}
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(420px,0.75fr)]">
-        <WorkflowAuditTrailPanel workflowRows={workflowAuditRows} />
-        <ProductEligibilitySummaryPanel
-          blockedCount={blockedCount}
-          eligibleCount={eligibleCount}
-          reviewCount={reviewCount}
-        />
-      </div>
-
-      <div className="mt-5 grid gap-5 xl:grid-cols-2">
-        <DecisionHistoryPanel decisionTrend={decisionTrend} />
-        <ForecastPerformanceEvidencePanel
-          emptyAction={
-            <ActionButton
-              endpoint={`/backtesting/forecast-actual/run?asset_id=${selectedAssetId}`}
-              label="Run forecast backtest"
-              refetch={refetchIntelligence}
-              variant="secondary"
-            />
-          }
-          performanceRows={performanceRows}
-        />
-      </div>
-
-      <div className="mt-5">
+      {activeTab === "matrix" ? (
         <ProductEligibilityMatrixPanel productMatrix={productMatrix} />
-      </div>
+      ) : null}
     </>
   );
 }

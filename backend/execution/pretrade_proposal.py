@@ -51,6 +51,17 @@ def build_execution_proposal(asset_id):
         summary=summary,
         dispatch_rows=dispatch_rows,
     )
+    asset_execution_context = build_asset_execution_context(
+        asset=asset,
+        summary=summary,
+        dispatch_rows=dispatch_rows,
+    )
+    orders = enrich_orders_with_asset_context(
+        orders=orders,
+        asset_execution_context=asset_execution_context,
+    )
+    bid_package["orders"] = orders
+    bid_package["summary"] = summarize_bid_package_after_context(bid_package)
     automation_blockers = build_execution_blockers()
     hard_blockers = [
         check["message"]
@@ -86,6 +97,7 @@ def build_execution_proposal(asset_id):
         "forecast_model": metadata.get("forecast_model"),
         "forecast_confidence": forecast_confidence,
         "market": selected_route.get("market_name") or asset.market or "DE-LU day-ahead",
+        "asset_execution_context": asset_execution_context,
         "market_allocation_status": market_allocation.get("allocation_status"),
         "market_lifecycle": market_lifecycle,
         "selected_market_route": selected_route,
@@ -114,6 +126,9 @@ def build_execution_proposal(asset_id):
             "package_status": bid_package.get("package_status"),
             "package_validation_status": bid_package.get("validation", {}).get("status"),
             "reserve_order_count": bid_package.get("summary", {}).get("reserve_order_count"),
+            "asset_execution_story": asset_execution_context["execution_story"],
+            "asset_specific_metric_label": asset_execution_context["mock_metric"]["label"],
+            "asset_specific_metric_value": asset_execution_context["mock_metric"]["value"],
         },
         "audit": build_audit_events(
             has_signal=True,
@@ -304,6 +319,69 @@ def infer_market_product_id(market):
         return "intraday_arbitrage"
 
     return "day_ahead_arbitrage"
+
+
+def build_asset_execution_context(asset, summary, dispatch_rows):
+    asset_type = str(asset.asset_type or "")
+    if "solar" in asset_type:
+        return {
+            "execution_story": "solar_colocated_execution",
+            "order_intent": "Convert renewable-origin charge and solar-shifting dispatch into paper market orders.",
+            "investor_meaning": "Execution stays credible when each order can be traced back to solar availability, export limits, and renewable-origin evidence.",
+            "mock_metric": {
+                "label": "Renewable-origin charge",
+                "value": summary.get("renewable_charge_mwh"),
+                "unit": "MWh",
+                "share": summary.get("renewable_charge_share"),
+            },
+            "production_boundary": "Before live operation, connect generation meter, storage meter, export-limit telemetry, exchange adapter, and approval workflow.",
+        }
+
+    if "industrial" in asset_type or "behind_the_meter" in asset_type:
+        return {
+            "execution_story": "industrial_btm_execution",
+            "order_intent": "Protect site-load and peak-shaving obligations before optional market submission.",
+            "investor_meaning": "Execution must prove the industrial site is not harmed while monetizing flexible capacity.",
+            "mock_metric": {
+                "label": "Peak shaved",
+                "value": summary.get("peak_shaved_mwh"),
+                "unit": "MWh",
+            },
+            "production_boundary": "Before live operation, connect site meter, tariff logic, EMS controls, market adapter, and site approval workflow.",
+        }
+
+    throughput = summary.get("throughput_mwh")
+    if throughput is None:
+        throughput = sum(numeric(row.get("battery_energy_mwh")) for row in dispatch_rows or [])
+    return {
+        "execution_story": "grid_scale_merchant_execution",
+        "order_intent": "Convert physically validated merchant spread dispatch into draft market orders.",
+        "investor_meaning": "Execution is credible when draft orders stay within SOC, power, grid, and loss guardrails.",
+        "mock_metric": {
+            "label": "Battery throughput",
+            "value": throughput,
+            "unit": "MWh",
+        },
+        "production_boundary": "Before live operation, connect exchange API, EMS telemetry, approval workflow, order limits, and settlement feedback.",
+    }
+
+
+def enrich_orders_with_asset_context(orders, asset_execution_context):
+    return [
+        {
+            **order,
+            "asset_execution_story": asset_execution_context["execution_story"],
+            "asset_order_intent": asset_execution_context["order_intent"],
+            "asset_specific_metric": asset_execution_context["mock_metric"],
+        }
+        for order in orders
+    ]
+
+
+def summarize_bid_package_after_context(bid_package):
+    summary = dict(bid_package.get("summary") or {})
+    summary["asset_context_attached"] = True
+    return summary
 
 
 def risk_adjusted_price(side, limit_price, price_buffer):

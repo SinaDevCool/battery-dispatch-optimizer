@@ -5,6 +5,10 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { ActionButton } from "@/components/action-button";
+import {
+  AssetDataProfileSection,
+  buildAssetDataProfileEvidence,
+} from "@/components/asset-data-profile-section";
 import { useAssetContext } from "@/components/asset-provider";
 import { DispatchChart } from "@/components/charts/dispatch-chart";
 import { CommandCenterHeader } from "@/components/cockpit/command-center-header";
@@ -17,12 +21,14 @@ import {
   DecisionBrief,
   type DecisionBriefTone,
 } from "@/components/decision-brief";
+import { DemoDataResetPanel } from "@/components/demo-data-reset-panel";
 import { DecisionSummary } from "@/components/cockpit/decision-summary";
 import { RevenueStackOverview } from "@/components/cockpit/revenue-stack-overview";
 import { RiskCompliancePanel } from "@/components/cockpit/risk-compliance-panel";
 import { StrategyRecommendation } from "@/components/cockpit/strategy-recommendation";
 import { TradingReadinessPanel } from "@/components/cockpit/trading-readiness-panel";
 import { DataCompletenessPanel } from "@/components/data-completeness-panel";
+import { DataTable } from "@/components/data-table";
 import { ErrorState } from "@/components/error-state";
 import { KpiCard } from "@/components/kpi-card";
 import { usePersona } from "@/components/persona-provider";
@@ -40,11 +46,13 @@ import type {
   AutomationGuardrailsResponse,
   BusinessDecision,
   BusinessDecisionResponse,
+  ClientEvidenceSummaryResponse,
   DataCompletenessResponse,
   EegComplianceResponse,
   ExecutionApprovalResponse,
   ExecutionProposalResponse,
   ExecutionReadinessResponse,
+  ForecastStatusResponse,
   HealthResponse,
   HedgingRevenueResponse,
   LatestSignalResponse,
@@ -151,6 +159,22 @@ export default function OverviewPage() {
     queryFn: () =>
       apiGet<AssetCockpitResponse>(`/assets/${selectedAssetId}/cockpit`),
     queryKey: ["asset-cockpit", selectedAssetId],
+  });
+
+  const clientEvidence = useQuery({
+    queryFn: () =>
+      apiGet<ClientEvidenceSummaryResponse>(
+        `/assets/${selectedAssetId}/client-evidence-summary`,
+      ),
+    queryKey: ["overview-client-evidence-summary", selectedAssetId],
+  });
+
+  const forecastStatus = useQuery({
+    queryFn: () =>
+      apiGet<ForecastStatusResponse>(
+        `/assets/${selectedAssetId}/forecast/status`,
+      ),
+    queryKey: ["overview-forecast-status", selectedAssetId],
   });
 
   const signal = useQuery({
@@ -345,7 +369,8 @@ export default function OverviewPage() {
       0,
     );
   const isBackendDown = Boolean(health.error);
-  const personaDecision = buildPersonaDecisionBrief({
+  const assetDataProfileEvidence = buildAssetDataProfileEvidence(selectedAsset);
+  const personaDecisionBase = buildPersonaDecisionBrief({
     activeDispatchCount: activeDispatchRows.length,
     automationControl: automationControl.data,
     businessDecision: businessDecisionPayload?.decision,
@@ -359,6 +384,18 @@ export default function OverviewPage() {
     settlement: settlement.data,
     signalSummary: summary,
     strategyIntent: strategyIntent.data,
+    totalRevenue,
+  });
+  const personaDecision = {
+    ...personaDecisionBase,
+    evidence: [...personaDecisionBase.evidence, ...assetDataProfileEvidence],
+  };
+  const investorDemoReadinessRows = buildInvestorDemoReadinessRows({
+    activeDispatchCount: activeDispatchRows.length,
+    clientEvidence: clientEvidence.data,
+    forecastStatus: forecastStatus.data,
+    revenueProductCount: revenueRows.length,
+    selectedAssetId,
     totalRevenue,
   });
 
@@ -616,6 +653,25 @@ export default function OverviewPage() {
 
       {activeTab === "readiness" ? (
         <div className="space-y-5">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+            <AssetDataProfileSection
+              asset={selectedAsset}
+              title="Selected investor demo asset"
+            />
+            <SectionCard
+              action={
+                <StatusPill tone={clientEvidence.data?.summary?.delivery_status === "client_ready" ? "emerald" : "amber"}>
+                  {clientEvidence.data?.summary?.delivery_status === "client_ready" ? "Client ready" : "Demo draft"}
+                </StatusPill>
+              }
+              title="Investor demo readiness"
+            >
+              <DataTable
+                columns={["workflow_area", "status", "evidence", "next_step"]}
+                rows={investorDemoReadinessRows}
+              />
+            </SectionCard>
+          </div>
           {enterpriseMaturity ? (
             <EnterpriseMaturityPanel enterpriseMaturity={enterpriseMaturity} />
           ) : null}
@@ -727,6 +783,7 @@ export default function OverviewPage() {
 
       {activeTab === "actions" ? (
         <div className="space-y-5">
+          <DemoDataResetPanel variant="compact" />
           <SectionCard
             action={<StatusPill tone="blue">{persona.defaultNavigationLabel}</StatusPill>}
             title="Persona operating lens"
@@ -801,6 +858,82 @@ export default function OverviewPage() {
       ) : null}
     </>
   );
+}
+
+function buildInvestorDemoReadinessRows({
+  activeDispatchCount,
+  clientEvidence,
+  forecastStatus,
+  revenueProductCount,
+  selectedAssetId,
+  totalRevenue,
+}: {
+  activeDispatchCount: number;
+  clientEvidence?: ClientEvidenceSummaryResponse;
+  forecastStatus?: ForecastStatusResponse;
+  revenueProductCount: number;
+  selectedAssetId: string;
+  totalRevenue: number;
+}) {
+  const clientSummary = clientEvidence?.summary ?? {};
+  const reportAvailable = Boolean(clientSummary.report_available);
+  const evidenceScore = Number(clientSummary.evidence_score ?? 0);
+  const openGapCount = Number(clientSummary.open_gap_count ?? 0);
+  const forecastRows = Number(forecastStatus?.valid_row_count ?? forecastStatus?.row_count ?? 0);
+  const forecastReady = forecastStatus?.status === "ok" && forecastRows > 0;
+  const dispatchReady = activeDispatchCount > 0;
+  const revenueReady = totalRevenue > 0 && revenueProductCount > 0;
+  const regulationReady =
+    String(clientSummary.regulatory_approval_status ?? "").toLowerCase() !== "blocked" &&
+    openGapCount === 0;
+  const reportReady = reportAvailable && evidenceScore >= 80;
+
+  return [
+    {
+      workflow_area: "Forecast",
+      status: forecastReady ? "ready" : "needs evidence",
+      evidence: forecastReady
+        ? `${forecastRows} valid forecast row(s) for ${selectedAssetId}`
+        : "Selected asset forecast file is not validated yet.",
+      next_step: forecastReady
+        ? "Use Forecasts to inspect source quality and raw rows."
+        : "Open Forecasts and validate the selected asset forecast.",
+    },
+    {
+      workflow_area: "Dispatch",
+      status: dispatchReady ? "ready" : "needs run",
+      evidence: `${activeDispatchCount} active dispatch interval(s)`,
+      next_step: dispatchReady
+        ? "Use Dispatch or Market Signals to inspect the schedule."
+        : "Run optimization to generate a selected-asset signal.",
+    },
+    {
+      workflow_area: "Revenue",
+      status: revenueReady ? "ready" : "needs model",
+      evidence: `${revenueProductCount} route(s), ${formatCurrency(totalRevenue)} modelled value`,
+      next_step: revenueReady
+        ? "Use Revenue to explain owner value and blockers."
+        : "Run revenue stack modelling for the selected asset.",
+    },
+    {
+      workflow_area: "Regulation",
+      status: regulationReady ? "ready" : "needs review",
+      evidence: `${openGapCount} open evidence gap(s)`,
+      next_step: regulationReady
+        ? "Use Regulation as the compliance proof page."
+        : "Open Regulation and clear remaining approval gaps.",
+    },
+    {
+      workflow_area: "Report",
+      status: reportReady ? "ready" : "draft",
+      evidence: reportAvailable
+        ? `Report available, evidence score ${evidenceScore}/100`
+        : `No report available, evidence score ${evidenceScore}/100`,
+      next_step: reportReady
+        ? "Use Reports as the investor evidence packet."
+        : "Generate or refresh the selected-asset report.",
+    },
+  ];
 }
 
 function approvalTone(value?: string) {

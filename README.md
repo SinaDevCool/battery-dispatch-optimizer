@@ -17,7 +17,7 @@ The platform can:
 
 - load grid-scale battery assets and commercial assumptions
 - ingest or generate electricity price forecasts
-- run rule-based or linear dispatch optimization
+- run rule-based or linear-program dispatch optimization
 - validate dispatch schedules against battery and market constraints
 - estimate revenue stacks across German market products
 - evaluate hedging, scenarios, and downside protection
@@ -30,6 +30,13 @@ The platform can:
 - expose audit evidence for automated decisions
 - generate client-facing monthly HTML reports
 - adapt navigation and page framing by persona
+
+Recent investor-demo upgrades:
+
+- selected-asset mock data now drives dispatch, scenarios, stress tests, revenue, execution, reports, and investor readiness
+- grid, solar co-located, and industrial behind-the-meter assets each carry asset-specific physical proof and business value context
+- `linear_program_v1` is available as the investor-facing optimizer engine while `rule_based_v1` remains available for comparison
+- the `/dispatch` page exposes an optimizer selector, optimizer objective/constraint proof, and rule-based vs linear-program comparison
 
 The system is intentionally gated. Live automation is not treated as a single button. A trade must pass forecast trust, market eligibility, connector readiness, risk policy, paper validation, human approval, settlement evidence, and audit checks before it can be described as production-ready.
 
@@ -101,6 +108,7 @@ Core frontend concepts:
 - `frontend/src/app/*/page.tsx` contains route-level product pages.
 - Shared components such as `DecisionBrief`, `SectionCard`, `KpiCard`, `DataTable`, and `StatusPill` keep each page decision-first.
 - Page-level summary endpoints are used first where possible so client-facing pages do not need to stitch many low-level API calls together before showing a decision.
+- `/dispatch` now includes an optimizer selector, selected-engine signal generation, rule-based vs linear-program comparison, and backend objective/constraint proof.
 
 Primary navigation groups:
 
@@ -226,6 +234,80 @@ archive/manual_scripts/       older manual CLI utilities and local checks
 
 Do not add new production code to `archive/`. New backend code should go into the correct `backend/` domain package, and new UI code should go into `frontend/src/`.
 
+### Mock Investor Demo Data
+
+The selected UI assets are intentionally configured as mock investor-demo assets in `data/config/assets.json`.
+
+Current mock assets:
+
+| Asset ID | Type | Demo purpose |
+|---|---|---|
+| `default_site` | `grid_scale_battery` | Standalone merchant grid battery |
+| `demo_solar_battery` | `solar_colocated_battery` | Solar shifting, renewable-origin evidence, and development diligence |
+| `demo_industrial_btm` | `industrial_behind_the_meter_battery` | Behind-the-meter peak shaving, self-consumption, and optional market access |
+
+Important asset metadata fields:
+
+| Field | Current value | Meaning |
+|---|---|---|
+| `asset_type` | asset-specific | Product category shown in the asset selector and asset passport |
+| `asset_subtype` | asset-specific | Operating archetype for the current asset |
+| `data_mode` | `mock` | This asset uses local demo data, not production exchange or telemetry data |
+| `data_source` | `local_seed_demo` | The source boundary for the current asset evidence |
+| `data_profile.execution_adapter` | `demo_market` | Execution is simulated through the demo adapter |
+| `data_profile.telemetry_mode` | `demo_local_telemetry` | Telemetry is seeded locally for demo validation |
+| `data_profile.settlement_mode` | `simulated` | Settlement evidence is simulated for the investor-demo workflow |
+
+This boundary is deliberate. Investor demos should work end-to-end with mock data, while future production integrations can add assets with `data_mode: "production"` and real forecast, telemetry, exchange, and settlement sources.
+
+Selected-asset behavior is intentionally end-to-end:
+
+- grid-scale assets show merchant spread, throughput, SOC, power, and grid connection evidence
+- solar co-located assets show solar-shifting, renewable-origin charge, export-limit, and green-metering evidence
+- industrial behind-the-meter assets show site-load, peak-shaving, import-headroom, and optional market-access evidence
+- scenarios and stress tests now use the selected asset's physical profile rather than generic battery labels
+- revenue stack, revenue allocation, execution proposal, and paper-trade evidence now carry selected-asset value context
+- investor readiness packages source routes, diligence rows, finance assumptions, project economics, blockers, and production-upgrade boundaries
+
+Mock forecast files are checked in under:
+
+```text
+data/mock/forecasts/
+```
+
+Each mock asset points to its own file so selected-asset workflows are not all driven by one generic forecast.
+
+Before an investor walkthrough, reset the full mock evidence chain with:
+
+```bash
+python -m backend.demo.seed_investor_demo
+```
+
+Or through the running API:
+
+```bash
+curl.exe -X POST http://127.0.0.1:8000/demo/investor-seed
+```
+
+This seeds all mock investor assets with current forecast, dispatch, revenue, workflow, proposal, paper-trade, settlement, telemetry, report, and cockpit evidence. To seed one asset only:
+
+```bash
+python -m backend.demo.seed_investor_demo --asset-id demo_solar_battery
+curl.exe -X POST "http://127.0.0.1:8000/demo/investor-seed?asset_id=demo_solar_battery"
+```
+
+The investor-demo seed also prepares selected-asset sizing scenarios and investor downside stress cases. The frontend `/investor-demo` page shows a route-backed checklist for:
+
+- mock data seeded
+- physical dispatch generated
+- revenue generated
+- sizing scenarios generated
+- investor stress cases generated
+- report generated
+- investor readiness score available
+
+Use this page before an investor walkthrough to confirm the selected mock asset is coherent across the product, not just present in the asset dropdown.
+
 ### Execution Control Plane
 
 The most important backend subsystem for the current product is `backend/execution/`.
@@ -287,6 +369,7 @@ The API surface is broad. The most important categories are:
 | Signals and dispatch | `/assets/{asset_id}/signal/run-latest`, `/assets/{asset_id}/signal/latest`, `/battery/optimizers` |
 | Markets and products | `/markets`, `/markets/products`, `/assets/{asset_id}/eligible-products` |
 | Revenue and hedging | `/assets/{asset_id}/revenue-stack/run`, `/assets/{asset_id}/revenue-stack/latest`, hedging-related asset routes |
+| Scenarios and stress | `/assets/{asset_id}/scenarios/run-latest`, `/assets/{asset_id}/scenarios/latest`, `/assets/{asset_id}/stress/run-latest`, `/assets/{asset_id}/stress/latest` |
 | Regulation | `/regulatory/germany/requirements`, `/assets/{asset_id}/regulatory/germany` |
 | Execution control | `/assets/{asset_id}/execution/automation-control/status`, `/assets/{asset_id}/execution/orchestrator/run` |
 | Market allocation | `/assets/{asset_id}/execution/multi-market/allocation` |
@@ -297,6 +380,7 @@ The API surface is broad. The most important categories are:
 | Connector readiness | `/execution/market-connectors/readiness`, `/system/live-adapter-handshake` |
 | Settlement | `/assets/{asset_id}/settlement/reconcile`, `/assets/{asset_id}/settlement/latest` |
 | Reports | `/reports/monthly/latest`, `/reports/monthly/latest/view`, `/assets/{asset_id}/reports/monthly/generate` |
+| Investor demo | `/demo/investor-seed`, `/assets/{asset_id}/investor-readiness` |
 | Workflow | `/workflow/run-daily`, `/assets/{asset_id}/workflow-runs/run` |
 
 OpenAPI docs are available when the backend is running:
@@ -315,6 +399,7 @@ The current frontend uses page-level summary endpoints before falling back to lo
 | `/assets/{asset_id}/regulatory-summary` | Regulation | Packages storage classification, EEG compliance, ancillary eligibility, and approval blockers |
 | `/assets/{asset_id}/execution-summary` | Execution / Mission Control | Packages proposal, readiness, automation control, guardrails, signal, paper trade, submission, approval, allocation, and telemetry status |
 | `/assets/{asset_id}/client-evidence-summary` | Reports | Packages report readiness, evidence completeness, revenue, regulation, execution, and settlement state |
+| `/assets/{asset_id}/investor-readiness` | Investor Demo, Scenarios, Reports | Packages the investor-facing readiness score, demo script, source map, diligence rows, and open gaps |
 
 Detail endpoints still exist and are used for drill-down tabs, history tables, controls, and backend diagnostics.
 
@@ -403,6 +488,71 @@ curl.exe http://127.0.0.1:8000/status
 curl.exe http://127.0.0.1:8000/assets/default_site/client-evidence-summary
 ```
 
+## Investor Demo Runbook
+
+Use this sequence before showing the product to an investor or lender.
+
+1. Start the backend:
+
+```bash
+python -m uvicorn backend.api.main:app --reload --reload-dir backend --host 0.0.0.0 --port 8000
+```
+
+2. Start the frontend:
+
+```bash
+cd frontend
+npm run dev
+```
+
+3. Seed all mock investor-demo assets:
+
+```bash
+curl.exe -X POST http://127.0.0.1:8000/demo/investor-seed
+```
+
+4. Open the app:
+
+```text
+http://localhost:3000/investor-demo
+```
+
+5. Confirm the selected asset checklist shows evidence for:
+
+```text
+mock data -> physical dispatch -> revenue -> scenarios -> stress -> reports -> investor readiness
+```
+
+6. Walk through the product in this order:
+
+```text
+Investor Demo -> Asset Registry -> Forecast Trust -> Dispatch Schedule -> Revenue Assurance -> Scenario Lab -> Reports -> Mission Control
+```
+
+On the Dispatch Schedule page, use the optimizer selector to show the difference between:
+
+```text
+rule_based_v1       simple spread-threshold baseline
+linear_program_v1   objective-driven dispatch with SOC, power, efficiency, cost, and no-simultaneous-charge/discharge proof
+```
+
+The page displays backend optimization metadata directly: engine, method, solver, objective function, objective value, constraint status, SOC envelope, and engine comparison rows.
+
+Status language used in the demo:
+
+| Label | Meaning |
+|---|---|
+| `Mock-ready` | The evidence is generated and usable for the investor demo |
+| `Mock-ready / production gated` | Demo evidence exists, but live forecast, exchange, telemetry, settlement, or approval integrations are intentionally not treated as production-ready |
+| `Needs production evidence` | The page is showing the next proof needed before this can support a production claim |
+| `Production data` | The selected asset or source is marked as production rather than mock |
+
+For a single-asset walkthrough, seed only the selected asset:
+
+```bash
+curl.exe -X POST "http://127.0.0.1:8000/demo/investor-seed?asset_id=demo_solar_battery"
+```
+
 ## Run The Archived Streamlit Dashboard
 
 The Streamlit dashboard is archived historical code. It remains useful for internal prototyping or comparison, but the Next.js frontend is the commercial product UI.
@@ -419,6 +569,37 @@ http://localhost:8501
 
 ## Common Workflows
 
+Prepare investor demo:
+
+```bash
+curl.exe -X POST http://127.0.0.1:8000/demo/investor-seed
+```
+
+This is the recommended one-command setup before showing the app to an investor. It prepares all mock investor assets and generates forecast-backed dispatch, revenue, scenarios, stress tests, execution evidence, settlement evidence, reports, and readiness summaries.
+
+Prepare one investor demo asset:
+
+```bash
+curl.exe -X POST "http://127.0.0.1:8000/demo/investor-seed?asset_id=default_site"
+```
+
+Verify the selected asset demo checklist:
+
+```bash
+curl.exe http://127.0.0.1:8000/assets/default_site/signal/latest
+curl.exe http://127.0.0.1:8000/assets/default_site/revenue-summary
+curl.exe http://127.0.0.1:8000/assets/default_site/scenarios/latest
+curl.exe http://127.0.0.1:8000/assets/default_site/stress/latest
+curl.exe http://127.0.0.1:8000/assets/default_site/client-evidence-summary
+curl.exe http://127.0.0.1:8000/assets/default_site/investor-readiness
+```
+
+Investor walkthrough order:
+
+```text
+Investor Demo -> Asset Registry -> Forecast Trust -> Dispatch Schedule -> Revenue Assurance -> Scenario Lab -> Reports -> Mission Control
+```
+
 Create demo forecast:
 
 ```bash
@@ -428,13 +609,13 @@ curl.exe -X POST http://127.0.0.1:8000/forecast/demo
 Generate asset signal:
 
 ```bash
-curl.exe -X POST "http://127.0.0.1:8000/assets/default_site/signal/run-latest?optimizer_engine=linear_v1"
+curl.exe -X POST "http://127.0.0.1:8000/assets/default_site/signal/run-latest?optimizer_engine=linear_program_v1"
 ```
 
 Run revenue stack:
 
 ```bash
-curl.exe -X POST "http://127.0.0.1:8000/assets/default_site/revenue-stack/run?optimizer_engine=linear_v1"
+curl.exe -X POST "http://127.0.0.1:8000/assets/default_site/revenue-stack/run?optimizer_engine=linear_program_v1"
 ```
 
 Build bid proposal:
@@ -477,7 +658,7 @@ curl.exe -X POST http://127.0.0.1:8000/assets/default_site/reports/monthly/gener
 Run daily workflow:
 
 ```bash
-curl.exe -X POST "http://127.0.0.1:8000/workflow/run-daily?optimizer_engine=linear_v1"
+curl.exe -X POST "http://127.0.0.1:8000/workflow/run-daily?optimizer_engine=linear_program_v1"
 ```
 
 ## Forecast Input Format
@@ -513,12 +694,47 @@ Available optimizer engines:
 | Optimizer | Description |
 |---|---|
 | `rule_based_v1` | Spread-threshold dispatch logic |
-| `linear_v1` | Discrete SOC dynamic-programming optimizer |
+| `linear_v1` | Backward-compatible linear optimizer name |
+| `linear_program_v1` | Investor-facing linear-program dispatch engine with explicit objective and constraint metadata |
+
+Recommended demo engine:
+
+```text
+linear_program_v1
+```
+
+`linear_program_v1` optimizes net dispatch value with a transparent objective:
+
+```text
+maximize
+  discharge_grid_mwh * price
+  - charge_grid_mwh * price
+  - trading fees
+  - market access fees
+  - grid fees
+  - taxes and levies
+  - degradation cost
+```
+
+It exposes constraint proof in the signal metadata:
+
+```text
+SOC balance
+minimum and maximum SOC
+initial and terminal SOC
+charge and discharge power limits
+charge and discharge efficiency
+per-interval energy limits
+no simultaneous charge/discharge, enforced by a single SOC transition per interval
+```
+
+Implementation note: the current engine is dependency-free and solves the linear dispatch formulation through discrete SOC dynamic programming. This preserves the backend API contract now while leaving room to swap in an external LP/MILP solver such as PuLP, OR-Tools, or HiGHS later.
 
 Example:
 
 ```bash
-curl.exe -X POST "http://127.0.0.1:8000/battery/signal/run-latest?optimizer_engine=linear_v1"
+curl.exe -X POST "http://127.0.0.1:8000/assets/default_site/signal/run-latest?optimizer_engine=linear_program_v1"
+curl.exe http://127.0.0.1:8000/battery/optimizers
 ```
 
 ## Market Products
@@ -578,7 +794,7 @@ npm run build
 Recent verification baseline:
 
 ```text
-121 backend tests passing
+backend syntax and API smoke checks passing for the latest optimizer/data-flow changes
 frontend lint passing
 frontend production build passing
 ```
@@ -629,6 +845,7 @@ Important current limitations:
 - `demo-submit` simulates submission and should not be interpreted as live exchange trading
 - reserve activation-energy logic still contains explicit placeholders
 - intraday, reserve, imbalance, and degradation economics need stronger market data and model depth
+- `linear_program_v1` exposes objective and constraint proof, but it currently uses dependency-free discrete SOC dynamic programming rather than an external LP/MILP solver
 - some artifacts still use local file outputs while others use SQLite repositories
 - Azure deployment hardening is planned but not complete
 - summary endpoints currently use flexible response envelopes; dedicated Pydantic response models should be added next for stricter backend contracts
@@ -642,6 +859,7 @@ Important current limitations:
 5. Add production authentication and role-based access.
 6. Move remaining file-based outputs into database/object storage.
 7. Add deeper forecast-vs-actual learning loops into route allocation and revenue assumptions.
-8. Add stronger multi-market co-optimization across day-ahead, intraday, and ancillary products.
+8. Swap the dependency-free `linear_program_v1` solver backend for a production LP/MILP solver while preserving the current API contract.
+9. Add stronger multi-market co-optimization across day-ahead, intraday, and ancillary products.
 
 

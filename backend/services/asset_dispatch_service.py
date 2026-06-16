@@ -1,9 +1,11 @@
 ﻿from dataclasses import dataclass
 from pathlib import Path
+from dataclasses import replace
 
 from backend.assets.asset_loader import build_default_asset_from_client_config
 from backend.config.paths import FORECAST_FILE
 from backend.regulatory.germany_assumption_engine import build_germany_regulatory_assumptions
+from backend.services.asset_physics import apply_asset_physics
 from backend.services.dispatch_service import optimize_dispatch_from_forecast_file
 from backend.validation.dispatch_validator import validate_dispatch_signal
 
@@ -56,9 +58,16 @@ def dispatch_asset(
         commercial_config=asset.commercial_config,
         optimizer_engine=optimizer_engine,
     )
+    physics_asset = replace(asset, battery_config=constrained_battery_config)
+
+    dispatch_result.signal_result = apply_asset_physics(
+        asset=physics_asset,
+        signal_result=dispatch_result.signal_result,
+        forecast_file=resolved_forecast_file,
+    )
 
     return AssetDispatchResult(
-        asset=asset,
+        asset=physics_asset,
         forecast_file=resolved_forecast_file,
         dispatch_result=dispatch_result,
         constrained_battery_config=constrained_battery_config,

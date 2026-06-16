@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { useAssetContext } from "@/components/asset-provider";
 import { DataTable } from "@/components/data-table";
@@ -9,6 +10,7 @@ import { KpiCard } from "@/components/kpi-card";
 import { PageHeading } from "@/components/page-heading";
 import { usePersona } from "@/components/persona-provider";
 import { SectionCard } from "@/components/section-card";
+import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { apiGet } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import type { PersonaId } from "@/lib/personas";
@@ -27,9 +29,25 @@ type HedgingPersonaFraming = {
   whyThisPageMatters: string;
 };
 
+const hedgingTabs = [
+  {
+    id: "bankability",
+    label: "Bankability",
+    helper: "Protected revenue, merchant exposure, and backend assumption basis.",
+  },
+  {
+    id: "offers",
+    label: "Offers",
+    helper: "Recommended owner offer and hedge structure comparison.",
+  },
+] as const;
+
+type HedgingTabId = (typeof hedgingTabs)[number]["id"];
+
 export default function HedgingPage() {
   const { selectedAssetId } = useAssetContext();
   const { personaId } = usePersona();
+  const [activeTab, setActiveTab] = useState<HedgingTabId>("bankability");
   const framing = getHedgingPersonaFraming(personaId);
 
   const hedge = useQuery({
@@ -137,68 +155,78 @@ export default function HedgingPage() {
         <KpiCard accent="amber" label="Merchant revenue given away" value={formatCurrency(residualExposure)} />
       </div>
 
-      <SectionCard className="mb-5" title={framing.bridgeTitle}>
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <DataTable
-            columns={["decision_input", "value"]}
-            rows={[
-              {
-                decision_input: "Merchant revenue basis",
-                value: formatCurrency(hedge.data?.merchant_revenue_eur_per_month),
-              },
-              {
-                decision_input: "Contract term source",
-                value:
-                  contractSource === "client_contract"
-                    ? "Client-specific contract"
-                    : "Default assumption library",
-              },
-              {
-                decision_input: "Portfolio power basis",
-                value: `${hedge.data?.power_mw ?? "-"} MW`,
-              },
-              {
-                decision_input: "Why this page matters",
-                value: framing.whyThisPageMatters,
-              },
-            ]}
-          />
-          <DataTable
-            columns={["input", "source", "value"]}
-            rows={
-              assumptionRows.length
-                ? assumptionRows
-                : [
-                    {
-                      input: "hedging revenue",
-                      source: `/assets/${selectedAssetId}/hedging/revenue`,
-                      value: hedge.data?.status ?? "not loaded",
-                    },
-                  ]
-            }
-          />
+      <WorkspaceTabs
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        tabs={hedgingTabs}
+      />
+
+      {activeTab === "bankability" ? (
+        <SectionCard title={framing.bridgeTitle}>
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <DataTable
+              columns={["decision_input", "value"]}
+              rows={[
+                {
+                  decision_input: "Merchant revenue basis",
+                  value: formatCurrency(hedge.data?.merchant_revenue_eur_per_month),
+                },
+                {
+                  decision_input: "Contract term source",
+                  value:
+                    contractSource === "client_contract"
+                      ? "Client-specific contract"
+                      : "Default assumption library",
+                },
+                {
+                  decision_input: "Portfolio power basis",
+                  value: `${hedge.data?.power_mw ?? "-"} MW`,
+                },
+                {
+                  decision_input: "Why this page matters",
+                  value: framing.whyThisPageMatters,
+                },
+              ]}
+            />
+            <DataTable
+              columns={["input", "source", "value"]}
+              rows={
+                assumptionRows.length
+                  ? assumptionRows
+                  : [
+                      {
+                        input: "hedging revenue",
+                        source: `/assets/${selectedAssetId}/hedging/revenue`,
+                        value: hedge.data?.status ?? "not loaded",
+                      },
+                    ]
+              }
+            />
+          </div>
+        </SectionCard>
+      ) : null}
+
+      {activeTab === "offers" ? (
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+          <SectionCard title={framing.offerTitle}>
+            <DataTable columns={["field", "value"]} rows={recommendedRows} />
+          </SectionCard>
+
+          <SectionCard title={framing.optionsTitle}>
+            <DataTable
+              columns={[
+                "name",
+                "contract_type",
+                "expected_owner_revenue_eur_per_month",
+                "downside_protection_eur_per_month",
+                "upside_share_percent",
+                "availability_requirement_percent",
+              ]}
+              rows={contractRows.slice(0, 6)}
+            />
+          </SectionCard>
         </div>
-      </SectionCard>
-
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
-        <SectionCard title={framing.offerTitle}>
-          <DataTable columns={["field", "value"]} rows={recommendedRows} />
-        </SectionCard>
-
-        <SectionCard title={framing.optionsTitle}>
-          <DataTable
-            columns={[
-              "name",
-              "contract_type",
-              "expected_owner_revenue_eur_per_month",
-              "downside_protection_eur_per_month",
-              "upside_share_percent",
-              "availability_requirement_percent",
-            ]}
-            rows={contractRows.slice(0, 6)}
-          />
-        </SectionCard>
-      </div>
+      ) : null}
     </>
   );
 }

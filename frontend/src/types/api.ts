@@ -22,6 +22,20 @@ export type TableRow = {
   [key: string]: JsonValue | undefined;
 };
 
+export type ProvenanceMetadata = TableRow & {
+  artifact?: string;
+  asset_id?: string;
+  asset_subtype?: string;
+  asset_type?: string;
+  data_mode?: "mock" | "paper" | "production" | string;
+  forecast_file?: string;
+  generated_at?: string;
+  kind?: string;
+  mock_or_production?: "mock" | "production" | string;
+  production_upgrade_path?: string;
+  source_file?: string;
+};
+
 export type HealthResponse = ApiEnvelope<{
   service?: string;
 }>;
@@ -29,8 +43,24 @@ export type HealthResponse = ApiEnvelope<{
 export type Asset = TableRow & {
   asset_id: string;
   asset_name?: string;
+  asset_subtype?: string;
+  asset_type?: string;
   capacity_mwh?: number;
   country?: string;
+  data_mode?: "mock" | "paper" | "production" | string;
+  data_profile?: JsonObject & {
+    description?: string;
+    execution_adapter?: string;
+    forecast_source?: string;
+    label?: string;
+    market_data_mode?: string;
+    production_ready?: boolean;
+    profile_id?: string;
+    settlement_mode?: string;
+    telemetry_mode?: string;
+  };
+  data_source?: string;
+  forecast_file?: string;
   market?: string;
   max_charge_power_mw?: number;
   max_discharge_power_mw?: number;
@@ -41,26 +71,70 @@ export type AssetListResponse = ApiEnvelope<{
   assets?: Asset[];
 }>;
 
+export type InvestorDemoSeedAssetResult = JsonObject & {
+  asset_id?: string;
+  ready_for_demo?: boolean;
+  seed_status?: string;
+};
+
+export type InvestorDemoSeedResponse = ApiEnvelope<{
+  asset_count?: number;
+  assets?: InvestorDemoSeedAssetResult[];
+  generated_at?: string;
+  optimizer_engine?: string;
+  summary?: JsonObject & {
+    failed_asset_count?: number;
+    partial_asset_count?: number;
+    ready_asset_count?: number;
+  };
+}>;
+
 export type DispatchAction = "charge" | "discharge" | "idle" | string;
 
 export type DispatchRow = TableRow & {
   action?: DispatchAction;
   battery_energy_mwh?: number;
+  battery_site_import_mwh?: number;
+  battery_site_load_offset_mwh?: number;
   cost_eur?: number;
+  forecast_solar_mw?: number;
+  grid_charge_mwh?: number;
   grid_energy_mwh?: number;
+  load_before_battery_mwh?: number;
   market_value_eur?: number;
+  net_site_import_mwh?: number;
+  peak_excess_after_mwh?: number;
+  peak_excess_before_mwh?: number;
+  peak_shaved_mwh?: number;
   pnl_eur?: number;
   price?: number;
+  renewable_charge_mwh?: number;
+  site_load_mw?: number;
+  site_peak_limit_mw?: number;
+  solar_available_mwh?: number;
   soc_mwh?: number;
+  stored_energy_origin?: string;
   timestamp: string;
   total_pnl_eur?: number;
 };
 
+export type AssetPhysics = JsonObject & {
+  constraints_applied?: string[];
+  message?: string;
+  physics_model?: string;
+};
+
 export type SignalMetadata = JsonObject & {
+  asset_id?: string;
+  asset_type?: string;
+  data_mode?: string;
   forecast_file?: string;
   forecast_model?: string;
   forecast_provider?: string;
   generated_at?: string;
+  mock_or_production?: string;
+  production_upgrade_path?: string;
+  source_file?: string;
   source?: string;
   target_date?: string;
 };
@@ -74,7 +148,10 @@ export type SignalSummary = JsonObject & {
   first_charge_timestamp?: string | null;
   first_discharge_timestamp?: string | null;
   opportunity_level?: string;
+  peak_shaved_mwh?: number;
   profit_per_mw_day?: number;
+  renewable_charge_mwh?: number;
+  renewable_charge_share?: number;
   signal?: string;
   throughput_mwh?: number;
   total_pnl_eur?: number;
@@ -82,17 +159,58 @@ export type SignalSummary = JsonObject & {
 
 export type LatestSignalResponse = ApiEnvelope<{
   data?: {
+    asset_physics?: AssetPhysics;
     dispatch?: DispatchRow[];
     metadata?: SignalMetadata;
+    optimization?: TableRow & {
+      constraint_status?: string;
+      constraints?: TableRow;
+      formulation?: string;
+      method?: string;
+      objective_function?: TableRow & {
+        expression?: string;
+        sense?: string;
+        terms?: TableRow;
+      };
+      objective_value_eur?: number;
+      optimizer_engine?: string;
+      solver?: string;
+    };
     summary?: SignalSummary;
+    validation?: TableRow;
+  };
+  dispatch_proof?: {
+    rows?: TableRow[];
+  };
+  signal_proof?: {
+    kpis?: TableRow[];
+    rows?: TableRow[];
   };
   signal_file?: string;
+  metadata?: ProvenanceMetadata;
+}>;
+
+export type AssetSignalRunResponse = ApiEnvelope<{
+  asset_id?: string;
+  data?: LatestSignalResponse["data"];
+  optimizer_engine?: string;
+}>;
+
+export type OptimizersResponse = ApiEnvelope<{
+  available_optimizers?: string[];
+  default_optimizer?: string;
 }>;
 
 export type ForecastStatusResponse = ApiEnvelope<{
   average_price?: number;
   duplicate_timestamps?: number;
   first_timestamp?: string;
+  forecast_file?: string;
+  forecast_proof?: {
+    kpis?: TableRow[];
+    rows?: TableRow[];
+  };
+  metadata?: ProvenanceMetadata;
   invalid_timestamps?: number;
   last_timestamp?: string;
   max_price?: number;
@@ -118,6 +236,7 @@ export type ForecastPreviewRow = TableRow & {
 export type ForecastPreviewResponse = ApiEnvelope<{
   columns?: string[];
   forecast_file?: string;
+  metadata?: ProvenanceMetadata;
   preview?: ForecastPreviewRow[];
   rows?: number;
 }>;
@@ -199,6 +318,7 @@ export type RevenueStackResponse = ApiEnvelope<{
   products?: RevenueStackResult[];
   results?: RevenueStackResult[];
   total_estimated_revenue_eur?: number;
+  metadata?: ProvenanceMetadata;
 }>;
 
 export type RevenueAllocationResult = TableRow & {
@@ -210,6 +330,7 @@ export type RevenueAllocationResult = TableRow & {
 
 export type RevenueAllocationResponse = ApiEnvelope<{
   allocation?: JsonObject;
+  metadata?: ProvenanceMetadata;
   results?: RevenueAllocationResult[];
 }>;
 
@@ -293,6 +414,7 @@ export type HedgingRevenueResponse = ApiEnvelope<{
   merchant_revenue_eur_per_month?: number;
   power_mw?: number;
   summary?: HedgingSummary;
+  metadata?: ProvenanceMetadata;
 }>;
 
 export type BusinessDecision = JsonObject & {
@@ -418,6 +540,11 @@ export type RevenueSummaryResponse = ApiEnvelope<{
   eeg_compliance?: EegComplianceResponse;
   hedging?: HedgingRevenueResponse;
   latest_signal?: LatestSignalResponse;
+  metadata?: ProvenanceMetadata;
+  revenue_proof?: {
+    kpis?: TableRow[];
+    rows?: TableRow[];
+  };
   revenue_allocation?: RevenueAllocationResponse;
   revenue_stack?: RevenueStackResponse;
   summary?: JsonObject & {
@@ -437,6 +564,11 @@ export type RegulatorySummaryResponse = ApiEnvelope<{
   ancillary_eligibility?: AncillaryEligibilityResponse;
   blockers?: string[];
   eeg_compliance?: EegComplianceResponse;
+  regulatory_proof?: {
+    kpis?: TableRow[];
+    rows?: TableRow[];
+  };
+  metadata?: ProvenanceMetadata;
   storage_classification?: StorageClassificationResponse;
   summary?: JsonObject & {
     ancillary_eligible_count?: number;
@@ -603,6 +735,7 @@ export type ExecutionProposal = JsonObject & {
 
 export type ExecutionProposalResponse = ApiEnvelope<{
   asset_id?: string;
+  metadata?: ProvenanceMetadata;
   proposal?: ExecutionProposal | null;
 }>;
 
@@ -681,6 +814,7 @@ export type ExecutionPaperTrade = TableRow & {
 
 export type ExecutionPaperTradeResponse = ApiEnvelope<{
   asset_id?: string;
+  metadata?: ProvenanceMetadata;
   paper_trade?: ExecutionPaperTrade | null;
 }>;
 
@@ -1832,10 +1966,15 @@ export type ExecutionSummaryResponse = ApiEnvelope<{
   approval?: ExecutionApprovalResponse;
   automation_control?: AutomationControlStatusResponse;
   automation_guardrails?: AutomationGuardrailsResponse;
+  execution_proof?: {
+    kpis?: TableRow[];
+    rows?: TableRow[];
+  };
   execution_proposal?: ExecutionProposalResponse;
   execution_readiness?: ExecutionReadinessResponse;
   latest_signal?: LatestSignalResponse;
   market_submission?: MarketSubmissionResponse;
+  metadata?: ProvenanceMetadata;
   multi_market_allocation?: MultiMarketAllocationResponse;
   paper_trade?: ExecutionPaperTradeResponse;
   summary?: JsonObject & {
@@ -1876,6 +2015,7 @@ export type MarketSubmission = JsonObject & {
 
 export type MarketSubmissionResponse = ApiEnvelope<{
   asset_id?: string;
+  metadata?: ProvenanceMetadata;
   submission?: MarketSubmission | null;
 }>;
 
@@ -1962,6 +2102,7 @@ export type ExecutionApproval = JsonObject & {
 export type ExecutionApprovalResponse = ApiEnvelope<{
   approval?: ExecutionApproval | null;
   asset_id?: string;
+  metadata?: ProvenanceMetadata;
 }>;
 
 export type ExecutionApprovalHistoryResponse = ApiEnvelope<{
@@ -2038,8 +2179,11 @@ export type EligibleProductsResponse = ApiEnvelope<{
 
 export type MonthlyReportResponse = ApiEnvelope<{
   asset_id?: string;
+  metadata?: ProvenanceMetadata;
   report_file?: string;
   report_name?: string;
+  report_period?: string;
+  report_title?: string;
   viewer_route?: string;
 }>;
 
@@ -2052,7 +2196,12 @@ export type ClientEvidenceSummaryResponse = ApiEnvelope<{
   data_completeness?: DataCompletenessResponse;
   execution_summary?: ExecutionSummaryResponse;
   latest_report?: MonthlyReportResponse;
+  metadata?: ProvenanceMetadata;
   open_gaps?: string[];
+  report_proof?: {
+    kpis?: TableRow[];
+    rows?: TableRow[];
+  };
   regulatory_summary?: RegulatorySummaryResponse;
   revenue_summary?: RevenueSummaryResponse;
   settlement?: SettlementResponse;
@@ -2065,6 +2214,63 @@ export type ClientEvidenceSummaryResponse = ApiEnvelope<{
     regulatory_approval_status?: string;
     report_available?: boolean;
     settlement_available?: boolean;
+  };
+}>;
+
+export type InvestorReadinessCheckpoint = TableRow & {
+  decision?: "ready" | "review" | "blocked" | string;
+  evidence?: string;
+  id?: string;
+  investor_question?: string;
+  label?: string;
+  next_action?: string;
+  proof_to_show?: string;
+  route?: string;
+  status?: string;
+  tone?: "amber" | "emerald" | "red" | string;
+};
+
+export type InvestorReadinessStory = JsonObject & {
+  demo_thesis?: string;
+  diligence_rows?: TableRow[];
+  investor_lens?: string;
+  production_upgrade?: string;
+  risk_frame?: string;
+};
+
+export type InvestorReadinessResponse = ApiEnvelope<{
+  asset_id?: string;
+  blockers?: string[];
+  checkpoints?: InvestorReadinessCheckpoint[];
+  demo_flow?: TableRow[];
+  diligence_rows?: TableRow[];
+  finance_assumptions?: TableRow[];
+  finance_summary?: JsonObject & {
+    annual_fixed_opex_eur?: number;
+    annual_net_cashflow_eur?: number;
+    annual_revenue_run_rate_eur?: number;
+    downside_net_cashflow_eur?: number;
+    gross_margin_percent?: number;
+    simple_payback_years?: number | null;
+    simple_return_percent?: number;
+    total_project_cost_eur?: number;
+  };
+  metadata?: ProvenanceMetadata;
+  portfolio_row?: TableRow;
+  project_economics?: TableRow[];
+  source_rows?: TableRow[];
+  story?: InvestorReadinessStory;
+  summary?: JsonObject & {
+    blocked_count?: number;
+    checkpoint_count?: number;
+    data_mode?: string;
+    investor_lens?: string;
+    open_gap_count?: number;
+    readiness_score?: number;
+    readiness_status?: string;
+    ready_count?: number;
+    recommended_next_action?: string;
+    review_count?: number;
   };
 }>;
 

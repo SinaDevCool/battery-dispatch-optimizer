@@ -3,6 +3,7 @@ from backend.api.routes.asset_signals import router as asset_signals_router
 from backend.api.routes.battery import router as battery_router
 from backend.api.routes.business_decisions import router as business_decisions_router
 from backend.api.routes.client import router as client_router
+from backend.api.routes.demo import router as demo_router
 from backend.api.routes.execution import router as execution_router
 from backend.api.routes.forecast_actual import router as forecast_actual_router
 from backend.api.routes.forecasts import router as forecasts_router
@@ -37,6 +38,7 @@ API_ROUTERS = [
     history_router,
     forecast_actual_router,
     client_router,
+    demo_router,
     forecasts_router,
     battery_router,
     scenarios_router,
