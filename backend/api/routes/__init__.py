@@ -14,6 +14,7 @@ from backend.api.routes.regulatory import router as regulatory_router
 from backend.api.routes.revenue import router as revenue_router
 from backend.api.routes.scenarios import router as scenarios_router
 from backend.api.routes.settlement import router as settlement_router
+from backend.api.routes.summaries import router as summaries_router
 from backend.api.routes.system import router as system_router
 from backend.api.routes.telemetry import router as telemetry_router
 from backend.api.routes.workflow import router as workflow_router
@@ -29,6 +30,7 @@ API_ROUTERS = [
     regulatory_router,
     revenue_router,
     settlement_router,
+    summaries_router,
     telemetry_router,
     business_decisions_router,
     execution_router,

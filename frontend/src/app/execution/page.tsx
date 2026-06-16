@@ -42,6 +42,7 @@ import type {
   ExecutionProposalHistoryResponse,
   ExecutionProposalResponse,
   ExecutionReadinessResponse,
+  ExecutionSummaryResponse,
   LiveTradingReadinessResponse,
   ExecutionRecoveryPlanResponse,
   EpexDayAheadPreviewResponse,
@@ -163,7 +164,16 @@ export default function ExecutionPage({
   const isSettlementTab = activeTab === "settlement";
   const isAuditTab = activeTab === "audit";
 
+  const executionSummary = useQuery({
+    queryFn: () =>
+      apiGet<ExecutionSummaryResponse>(
+        `/assets/${selectedAssetId}/execution-summary`,
+      ),
+    queryKey: ["execution-summary", selectedAssetId],
+  });
+
   const latestProposal = useQuery({
+    enabled: isProposalsTab || isRiskTab,
     queryFn: () =>
       apiGet<ExecutionProposalResponse>(
         `/assets/${selectedAssetId}/execution/proposal/latest`,
@@ -172,6 +182,7 @@ export default function ExecutionPage({
   });
 
   const automationControl = useQuery({
+    enabled: isGoLiveTab || isAuditTab,
     queryFn: () =>
       apiGet<AutomationControlStatusResponse>(
         `/assets/${selectedAssetId}/execution/automation-control/status`,
@@ -215,7 +226,7 @@ export default function ExecutionPage({
   });
 
   const latestPaperTrade = useQuery({
-    enabled: isOverviewTab || isSimulationTab || isAuditTab,
+    enabled: isSimulationTab || isAuditTab,
     queryFn: () =>
       apiGet<ExecutionPaperTradeResponse>(
         `/assets/${selectedAssetId}/execution/paper-trade/latest`,
@@ -233,6 +244,7 @@ export default function ExecutionPage({
   });
 
   const signal = useQuery({
+    enabled: isAllocationTab || isRiskTab,
     queryFn: () =>
       apiGet<LatestSignalResponse>(`/assets/${selectedAssetId}/signal/latest`),
     queryKey: ["execution-signal-latest", selectedAssetId],
@@ -257,6 +269,7 @@ export default function ExecutionPage({
   });
 
   const automationGuardrails = useQuery({
+    enabled: isRiskTab,
     queryFn: () =>
       apiGet<AutomationGuardrailsResponse>(
         `/assets/${selectedAssetId}/execution/automation-guardrails`,
@@ -265,7 +278,7 @@ export default function ExecutionPage({
   });
 
   const telemetry = useQuery({
-    enabled: isOverviewTab || isAuditTab,
+    enabled: isAuditTab,
     queryFn: () =>
       apiGet<AssetTelemetryResponse>(
         `/assets/${selectedAssetId}/telemetry/latest`,
@@ -274,7 +287,7 @@ export default function ExecutionPage({
   });
 
   const marketSubmission = useQuery({
-    enabled: isOverviewTab || isSimulationTab || isAuditTab,
+    enabled: isSimulationTab || isAuditTab,
     queryFn: () =>
       apiGet<MarketSubmissionResponse>(
         `/assets/${selectedAssetId}/execution/submissions/latest`,
@@ -301,7 +314,7 @@ export default function ExecutionPage({
   });
 
   const approval = useQuery({
-    enabled: isOverviewTab || isRiskTab || isAuditTab,
+    enabled: isRiskTab || isAuditTab,
     queryFn: () =>
       apiGet<ExecutionApprovalResponse>(
         `/assets/${selectedAssetId}/execution/approval/latest`,
@@ -310,6 +323,7 @@ export default function ExecutionPage({
   });
 
   const readiness = useQuery({
+    enabled: isGoLiveTab || isAllocationTab || isRiskTab,
     queryFn: () =>
       apiGet<ExecutionReadinessResponse>(
         `/assets/${selectedAssetId}/execution/readiness`,
@@ -336,7 +350,7 @@ export default function ExecutionPage({
   });
 
   const multiMarketAllocation = useQuery({
-    enabled: isOverviewTab || isAllocationTab || isGoLiveTab,
+    enabled: isAllocationTab || isGoLiveTab,
     queryFn: () =>
       apiGet<MultiMarketAllocationResponse>(
         `/assets/${selectedAssetId}/execution/multi-market/allocation`,
@@ -398,8 +412,26 @@ export default function ExecutionPage({
     queryKey: ["execution-regelleistung-mfrr-preview", selectedAssetId],
   });
 
-  const proposal = latestProposal.data?.proposal;
-  const signalSummary = signal.data?.data?.summary ?? {};
+  const proposalData =
+    latestProposal.data ?? executionSummary.data?.execution_proposal;
+  const signalData = signal.data ?? executionSummary.data?.latest_signal;
+  const automationControlData =
+    automationControl.data ?? executionSummary.data?.automation_control;
+  const automationGuardrailsData =
+    automationGuardrails.data ?? executionSummary.data?.automation_guardrails;
+  const readinessData =
+    readiness.data ?? executionSummary.data?.execution_readiness;
+  const latestPaperTradeData =
+    latestPaperTrade.data ?? executionSummary.data?.paper_trade;
+  const marketSubmissionData =
+    marketSubmission.data ?? executionSummary.data?.market_submission;
+  const approvalResponseData = approval.data ?? executionSummary.data?.approval;
+  const marketAllocationData =
+    multiMarketAllocation.data ?? executionSummary.data?.multi_market_allocation;
+  const telemetryResponseData = telemetry.data ?? executionSummary.data?.telemetry;
+
+  const proposal = proposalData?.proposal;
+  const signalSummary = signalData?.data?.summary ?? {};
   const orders = proposal?.orders ?? [];
   const bids = proposal?.bids ?? orders;
   const riskChecks = proposal?.risk_checks ?? [];
@@ -414,7 +446,7 @@ export default function ExecutionPage({
   );
   const profitPerMwDay =
     summary.profit_per_mw_day ?? signalSummary.profit_per_mw_day;
-  const paperTrade = latestPaperTrade.data?.paper_trade;
+  const paperTrade = latestPaperTradeData?.paper_trade;
   const paperTradeFills = paperTrade?.fills ?? [];
   const lifecycleRows =
     submissionLifecycle.data?.steps ??
@@ -425,18 +457,18 @@ export default function ExecutionPage({
   const settlementSummary = settlementData?.summary ?? {};
   const varianceDrivers = settlementData?.variance_drivers ?? [];
   const confidence = proposal?.forecast_confidence ?? forecastConfidence.data;
-  const automationStatus = automationGuardrails.data?.automation_status;
-  const guardrailSummary = automationGuardrails.data?.summary ?? {};
-  const guardrails = automationGuardrails.data?.guardrails ?? [];
-  const telemetryData = telemetry.data?.telemetry;
-  const submission = marketSubmission.data?.submission;
+  const automationStatus = automationGuardrailsData?.automation_status;
+  const guardrailSummary = automationGuardrailsData?.summary ?? {};
+  const guardrails = automationGuardrailsData?.guardrails ?? [];
+  const telemetryData = telemetryResponseData?.telemetry;
+  const submission = marketSubmissionData?.submission;
   const submissionSummary = submission?.summary ?? {};
-  const approvalData = approval.data?.approval;
-  const marketAllocation = multiMarketAllocation.data;
+  const approvalData = approvalResponseData?.approval;
+  const marketAllocation = marketAllocationData;
   const connectorReadiness = marketConnectorReadiness.data;
   const connectorSummary = connectorReadiness?.summary ?? {};
   const routeCertifications = connectorReadiness?.route_certifications ?? [];
-  const control = automationControl.data;
+  const control = automationControlData;
   const eventRows = automationEvents.data?.events ?? [];
   const humanGate = control?.human_gate ?? {};
   const nextAutomationAction = control?.next_automation_action ?? {};
@@ -453,7 +485,7 @@ export default function ExecutionPage({
         allocationReady: Boolean(primaryMarket),
         approvalStatus: String(humanGate.status ?? approvalData?.status ?? ""),
         eligibilityReady:
-          readiness.data?.readiness_status !== "blocked" &&
+          readinessData?.readiness_status !== "blocked" &&
           Number(marketAllocation?.summary?.eligible_market_count ?? 0) > 0,
         paperTradeReady: Boolean(paperTrade),
         proposalReady: Boolean(proposal),
@@ -475,12 +507,12 @@ export default function ExecutionPage({
           },
           eligibility: {
             blockerCount:
-              Number(readiness.data?.summary?.blocked ?? 0) +
-              Number(automationGuardrails.data?.summary?.blocked ?? 0),
-            evidence: readiness.data?.readiness_status ?? "not evaluated",
+              Number(readinessData?.summary?.blocked ?? 0) +
+              Number(automationGuardrailsData?.summary?.blocked ?? 0),
+            evidence: readinessData?.readiness_status ?? "not evaluated",
             nextAction:
-              readiness.data?.recommended_actions?.[0] ??
-              automationGuardrails.data?.recommended_actions?.[0],
+              readinessData?.recommended_actions?.[0] ??
+              automationGuardrailsData?.recommended_actions?.[0],
           },
           paper: {
             blockerCount: paperTrade ? 0 : proposal ? 0 : 1,
@@ -531,8 +563,8 @@ export default function ExecutionPage({
     [
       approvalData?.status,
       automationBlockers.length,
-      automationGuardrails.data?.recommended_actions,
-      automationGuardrails.data?.summary?.blocked,
+      automationGuardrailsData?.recommended_actions,
+      automationGuardrailsData?.summary?.blocked,
       bids.length,
       control?.live_trading_allowed,
       hardBlockers.length,
@@ -545,9 +577,9 @@ export default function ExecutionPage({
       paperTrade,
       primaryMarket,
       proposal,
-      readiness.data?.readiness_status,
-      readiness.data?.recommended_actions,
-      readiness.data?.summary?.blocked,
+      readinessData?.readiness_status,
+      readinessData?.recommended_actions,
+      readinessData?.summary?.blocked,
       settlementData,
       settlementSummary.realized_pnl_eur,
       signalSummary.signal,
@@ -561,6 +593,7 @@ export default function ExecutionPage({
 
   const refetchExecution = () =>
     Promise.all([
+      executionSummary.refetch(),
       latestProposal.refetch(),
       automationControl.refetch(),
       strategyIntent.refetch(),
@@ -633,7 +666,7 @@ export default function ExecutionPage({
         title={title}
       />
 
-      {latestProposal.data?.status === "not_found" ? (
+      {proposalData?.status === "not_found" ? (
         <div className="mb-6">
           <ErrorState message="No backend execution proposal exists yet. Build a pre-trade proposal after generating a signal or audited workflow." />
         </div>
@@ -700,7 +733,7 @@ export default function ExecutionPage({
             paperTrade={paperTrade}
             personaId={personaId}
             proposal={proposal}
-            readiness={readiness.data}
+            readiness={readinessData}
             refetchExecution={refetchExecution}
             selectedAssetId={selectedAssetId}
             submission={submission}

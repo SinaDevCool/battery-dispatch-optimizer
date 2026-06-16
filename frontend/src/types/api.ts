@@ -412,6 +412,41 @@ export type AssetCockpitResponse = ApiEnvelope<{
   cockpit?: AssetCockpitPayload;
 }>;
 
+export type RevenueSummaryResponse = ApiEnvelope<{
+  ancillary_eligibility?: AncillaryEligibilityResponse;
+  business_decision?: BusinessDecisionResponse;
+  eeg_compliance?: EegComplianceResponse;
+  hedging?: HedgingRevenueResponse;
+  latest_signal?: LatestSignalResponse;
+  revenue_allocation?: RevenueAllocationResponse;
+  revenue_stack?: RevenueStackResponse;
+  summary?: JsonObject & {
+    allocation_available?: boolean;
+    ancillary_eligible_count?: number;
+    blocked_product_count?: number;
+    business_decision_status?: string;
+    eeg_eligible?: boolean;
+    eligible_product_count?: number;
+    product_count?: number;
+    review_product_count?: number;
+    total_estimated_revenue_eur?: number;
+  };
+}>;
+
+export type RegulatorySummaryResponse = ApiEnvelope<{
+  ancillary_eligibility?: AncillaryEligibilityResponse;
+  blockers?: string[];
+  eeg_compliance?: EegComplianceResponse;
+  storage_classification?: StorageClassificationResponse;
+  summary?: JsonObject & {
+    ancillary_eligible_count?: number;
+    approval_status?: string;
+    blocker_count?: number;
+    eeg_eligible?: boolean;
+    storage_classification?: string;
+  };
+}>;
+
 export type WorkflowRun = JsonObject & {
   asset_id?: string;
   completed_at?: string;
@@ -1793,6 +1828,33 @@ export type ExecutionReadinessResponse = ApiEnvelope<{
   };
 }>;
 
+export type ExecutionSummaryResponse = ApiEnvelope<{
+  approval?: ExecutionApprovalResponse;
+  automation_control?: AutomationControlStatusResponse;
+  automation_guardrails?: AutomationGuardrailsResponse;
+  execution_proposal?: ExecutionProposalResponse;
+  execution_readiness?: ExecutionReadinessResponse;
+  latest_signal?: LatestSignalResponse;
+  market_submission?: MarketSubmissionResponse;
+  multi_market_allocation?: MultiMarketAllocationResponse;
+  paper_trade?: ExecutionPaperTradeResponse;
+  summary?: JsonObject & {
+    approval_status?: string;
+    automation_status?: string;
+    blocker_count?: number;
+    expected_pnl_eur?: number;
+    paper_trade_available?: boolean;
+    primary_market?: JsonObject;
+    proposal_available?: boolean;
+    readiness_score?: number;
+    readiness_status?: string;
+    signal?: string;
+    submission_available?: boolean;
+    telemetry_status?: string;
+  };
+  telemetry?: AssetTelemetryResponse;
+}>;
+
 export type MarketSubmission = JsonObject & {
   adapter_id?: string;
   asset_id?: string;
@@ -1984,6 +2046,26 @@ export type MonthlyReportResponse = ApiEnvelope<{
 export type MonthlyReportListResponse = ApiEnvelope<{
   report_count?: number;
   reports?: TableRow[];
+}>;
+
+export type ClientEvidenceSummaryResponse = ApiEnvelope<{
+  data_completeness?: DataCompletenessResponse;
+  execution_summary?: ExecutionSummaryResponse;
+  latest_report?: MonthlyReportResponse;
+  open_gaps?: string[];
+  regulatory_summary?: RegulatorySummaryResponse;
+  revenue_summary?: RevenueSummaryResponse;
+  settlement?: SettlementResponse;
+  summary?: JsonObject & {
+    delivery_status?: string;
+    evidence_score?: number;
+    execution_readiness_status?: string;
+    modelled_revenue_eur?: number;
+    open_gap_count?: number;
+    regulatory_approval_status?: string;
+    report_available?: boolean;
+    settlement_available?: boolean;
+  };
 }>;
 
 export type ClientConfigResponse = ApiEnvelope<{

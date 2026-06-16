@@ -16,6 +16,7 @@ import type {
   EegComplianceResponse,
   GridFeeSensitivityResponse,
   JsonObject,
+  RegulatorySummaryResponse,
   StorageClassificationResponse,
   TableRow,
 } from "@/types/api";
@@ -25,7 +26,16 @@ export default function RegulationPage() {
   const { persona, personaId } = usePersona();
   const isClientPersona = persona.layer === "client";
 
+  const regulatorySummary = useQuery({
+    queryFn: () =>
+      apiGet<RegulatorySummaryResponse>(
+        `/assets/${selectedAssetId}/regulatory-summary`,
+      ),
+    queryKey: ["regulatory-summary", selectedAssetId],
+  });
+
   const classification = useQuery({
+    enabled: !isClientPersona,
     queryFn: () =>
       apiGet<StorageClassificationResponse>(
         `/assets/${selectedAssetId}/storage-classification`,
@@ -34,6 +44,7 @@ export default function RegulationPage() {
   });
 
   const eeg = useQuery({
+    enabled: !isClientPersona,
     queryFn: () =>
       apiGet<EegComplianceResponse>(
         `/assets/${selectedAssetId}/eeg-compliance/latest`,
@@ -59,10 +70,15 @@ export default function RegulationPage() {
     queryKey: ["reg-ancillary", selectedAssetId],
   });
 
+  const classificationData =
+    classification.data ?? regulatorySummary.data?.storage_classification;
+  const eegData = eeg.data ?? regulatorySummary.data?.eeg_compliance;
+  const ancillaryData =
+    ancillary.data ?? regulatorySummary.data?.ancillary_eligibility;
   const gridFeeRows = gridFees.data?.sensitivity?.length
     ? gridFees.data.sensitivity
     : gridFees.data?.scenarios ?? [];
-  const ancillaryRows = ancillary.data?.products ?? [];
+  const ancillaryRows = ancillaryData?.products ?? [];
   const formattedAncillaryRows = formatAncillaryRows(ancillaryRows);
   const blockedAncillaryRows = formattedAncillaryRows.filter(
     (row) =>
@@ -72,11 +88,12 @@ export default function RegulationPage() {
   const reviewAncillaryRows = formattedAncillaryRows.filter(
     (row) => row.review_warnings !== "-",
   );
-  const automationBlockers = [
-    eeg.data && !eeg.data.eeg_eligible
+  const automationBlockers = uniqueStrings([
+    ...(regulatorySummary.data?.blockers ?? []),
+    eegData && !eegData.eeg_eligible && !(regulatorySummary.data?.blockers ?? []).length
       ? "EEG compliance is not eligible for automatic trading."
       : null,
-    eeg.data?.mixed_origin_risk
+    eegData?.mixed_origin_risk && !(regulatorySummary.data?.blockers ?? []).length
       ? "Mixed-origin or renewable-support risk needs compliance review."
       : null,
     !isClientPersona && blockedAncillaryRows.length
@@ -85,7 +102,7 @@ export default function RegulationPage() {
     !isClientPersona && reviewAncillaryRows.length
       ? `${reviewAncillaryRows.length} ancillary product(s) require review.`
       : null,
-  ].filter(Boolean) as string[];
+  ].filter(Boolean) as string[]);
   const framing = getRegulatoryPersonaFraming(personaId);
   const approvalStatus = automationBlockers.length
     ? "needs review"
@@ -93,15 +110,16 @@ export default function RegulationPage() {
   const primaryBlocker =
     automationBlockers[0] ?? "No regulatory blocker shown for the current evidence.";
   const ancillaryEligibleCount =
-    ancillary.data?.eligible_product_count ??
-    ancillary.data?.eligible_products?.length ??
+    regulatorySummary.data?.summary?.ancillary_eligible_count ??
+    ancillaryData?.eligible_product_count ??
+    ancillaryData?.eligible_products?.length ??
     (isClientPersona ? "not loaded" : 0);
-  const ancillaryEligibilityStatus = ancillary.data
+  const ancillaryEligibilityStatus = ancillaryData
     ? `${ancillaryEligibleCount} eligible`
     : isClientPersona
       ? "internal detail"
       : "0 eligible";
-  const ancillaryClientNextAction = ancillary.data
+  const ancillaryClientNextAction = ancillaryData
     ? Number(ancillaryEligibleCount)
       ? "Use eligible options in the market-readiness story."
       : "Do not promise ancillary revenue until eligibility is clear."
@@ -130,8 +148,8 @@ export default function RegulationPage() {
           </>
         }
         evidence={[
-          `${framing.storageEvidenceLabel}: ${String(classification.data?.storage_classification ?? classification.data?.storage_mode ?? "-")}.`,
-          `${framing.eegEvidenceLabel}: ${String(eeg.data?.status ?? "-")}.`,
+          `${framing.storageEvidenceLabel}: ${String(classificationData?.storage_classification ?? classificationData?.storage_mode ?? "-")}.`,
+          `${framing.eegEvidenceLabel}: ${String(eegData?.status ?? "-")}.`,
           `${String(ancillaryEligibleCount)} ${framing.ancillaryEvidenceLabel}.`,
         ]}
         eyebrow={framing.decisionEyebrow}
@@ -153,15 +171,15 @@ export default function RegulationPage() {
             value={approvalStatus}
           />
           <KpiCard
-            accent={eeg.data?.eeg_eligible ? "emerald" : "amber"}
+            accent={eegData?.eeg_eligible ? "emerald" : "amber"}
             helper="EEG and renewable-origin evidence."
             label="Compliance status"
-            value={String(eeg.data?.status ?? "-")}
+            value={String(eegData?.status ?? "-")}
           />
           <KpiCard
-            accent={ancillary.data ? (Number(ancillaryEligibleCount) ? "emerald" : "amber") : "blue"}
+            accent={ancillaryData ? (Number(ancillaryEligibleCount) ? "emerald" : "amber") : "blue"}
             helper={
-              ancillary.data
+              ancillaryData
                 ? "Eligible market options for the asset."
                 : "Detailed market eligibility loads in internal compliance views."
             }
@@ -174,12 +192,12 @@ export default function RegulationPage() {
           <KpiCard
             label="Storage mode"
             value={String(
-              classification.data?.storage_classification ??
-                classification.data?.storage_mode ??
+              classificationData?.storage_classification ??
+                classificationData?.storage_mode ??
                 "-",
             )}
           />
-          <KpiCard accent="amber" label="EEG status" value={String(eeg.data?.status ?? "-")} />
+          <KpiCard accent="amber" label="EEG status" value={String(eegData?.status ?? "-")} />
           <KpiCard
             label="Ancillary eligible"
             value={String(ancillaryEligibleCount || "-")}
@@ -227,17 +245,17 @@ export default function RegulationPage() {
                   client_meaning: "Defines how the asset may participate in German markets.",
                   next_action: "Use this classification in the client approval narrative.",
                   status:
-                    classification.data?.storage_classification ??
-                    classification.data?.storage_mode ??
+                    classificationData?.storage_classification ??
+                    classificationData?.storage_mode ??
                     "not loaded",
                 },
                 {
                   approval_area: "EEG and origin risk",
                   client_meaning: "Shows whether renewable-support or mixed-origin risk needs review.",
-                  next_action: eeg.data?.eeg_eligible
+                  next_action: eegData?.eeg_eligible
                     ? "Include as supporting compliance evidence."
                     : "Resolve EEG finding before presenting as approval-ready.",
-                  status: eeg.data?.status ?? "not loaded",
+                  status: eegData?.status ?? "not loaded",
                 },
                 {
                   approval_area: "Market eligibility",
@@ -256,8 +274,8 @@ export default function RegulationPage() {
                   business_value: "Classifies the asset before market-route selection.",
                   capability: "Storage classification",
                   status:
-                    classification.data?.storage_classification ??
-                    classification.data?.storage_mode ??
+                    classificationData?.storage_classification ??
+                    classificationData?.storage_mode ??
                     "not loaded",
                 },
                 {
@@ -265,7 +283,7 @@ export default function RegulationPage() {
                   business_value:
                     "Blocks renewable-support or mixed-origin logic before automated bids.",
                   capability: "EEG compliance",
-                  status: eeg.data?.status ?? "not loaded",
+                  status: eegData?.status ?? "not loaded",
                 },
                 {
                   backend_route: `/assets/${selectedAssetId}/grid-fees/germany/sensitivity`,
@@ -295,14 +313,14 @@ export default function RegulationPage() {
                 automation_use: "Select tradable market routes",
                 gate: "Storage classification",
                 status:
-                  classification.data?.storage_classification ??
-                  classification.data?.storage_mode ??
+                  classificationData?.storage_classification ??
+                  classificationData?.storage_mode ??
                   "-",
               },
               {
                 automation_use: "Block unsupported renewable-support logic",
                 gate: "EEG compliance",
-                status: eeg.data?.eeg_eligible ? "eligible" : eeg.data?.status ?? "-",
+                status: eegData?.eeg_eligible ? "eligible" : eegData?.status ?? "-",
               },
               {
                 automation_use: "Allow ancillary-market bidding only for cleared products",
@@ -321,14 +339,14 @@ export default function RegulationPage() {
         <SectionCard title="Storage classification detail">
           <DataTable
             columns={["field", "value"]}
-            rows={storageRows(classification.data)}
+            rows={storageRows(classificationData)}
           />
         </SectionCard>
 
         <SectionCard title="EEG and green colocation checks">
           <DataTable
             columns={["field", "value"]}
-            rows={eegRows(eeg.data)}
+            rows={eegRows(eegData)}
           />
         </SectionCard>
 
@@ -439,6 +457,10 @@ function formatAncillaryGateRows(rows: TableRow[]): TableRow[] {
       product_id: row.product_id ?? "-",
     };
   });
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values));
 }
 
 function getRegulatoryPersonaFraming(personaId: PersonaId) {

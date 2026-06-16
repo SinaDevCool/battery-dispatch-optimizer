@@ -31,6 +31,7 @@ import type {
   RevenueAllocationResponse,
   RevenueStackResult,
   RevenueStackResponse,
+  RevenueSummaryResponse,
   TableRow,
 } from "@/types/api";
 
@@ -124,7 +125,16 @@ export default function RevenuePage() {
   const isEconomicsTab = effectiveActiveTab === "economics";
   const isControlsTab = effectiveActiveTab === "controls";
 
+  const revenueSummary = useQuery({
+    queryFn: () =>
+      apiGet<RevenueSummaryResponse>(
+        `/assets/${selectedAssetId}/revenue-summary`,
+      ),
+    queryKey: ["revenue-summary", selectedAssetId],
+  });
+
   const stack = useQuery({
+    enabled: isStackTab || isControlsTab,
     queryFn: () =>
       apiGet<RevenueStackResponse>(
         `/assets/${selectedAssetId}/revenue-stack/latest`,
@@ -184,8 +194,16 @@ export default function RevenuePage() {
     queryKey: ["revenue-business-decision", selectedAssetId],
   });
 
-  const rows = normalizeRevenueRows(stack.data);
-  const allocationRows = allocation.data?.results ?? [];
+  const stackData = stack.data ?? revenueSummary.data?.revenue_stack;
+  const allocationData = allocation.data ?? revenueSummary.data?.revenue_allocation;
+  const signalData = signal.data ?? revenueSummary.data?.latest_signal;
+  const hedgingData = hedging.data ?? revenueSummary.data?.hedging;
+  const eegData = eeg.data ?? revenueSummary.data?.eeg_compliance;
+  const ancillaryData = ancillary.data ?? revenueSummary.data?.ancillary_eligibility;
+  const businessDecisionData =
+    businessDecision.data ?? revenueSummary.data?.business_decision;
+  const rows = normalizeRevenueRows(stackData);
+  const allocationRows = allocationData?.results ?? [];
   const eligibleRows = rows.filter((row) => row.eligibility_status === "eligible");
   const blockedRows = rows.filter(
     (row) =>
@@ -194,11 +212,12 @@ export default function RevenuePage() {
       row.blocking_reasons !== "-",
   );
   const warningRows = rows.filter((row) => row.review_warnings !== "-");
-  const metadata = signal.data?.data?.metadata ?? {};
-  const summary = signal.data?.data?.summary ?? {};
-  const hedgeSummary = hedging.data?.summary ?? {};
+  const metadata = signalData?.data?.metadata ?? {};
+  const summary = signalData?.data?.summary ?? {};
+  const hedgeSummary = hedgingData?.summary ?? {};
   const totalRevenue =
-    stack.data?.total_estimated_revenue_eur ??
+    revenueSummary.data?.summary?.total_estimated_revenue_eur ??
+    stackData?.total_estimated_revenue_eur ??
     rows.reduce(
       (sum, row) => sum + Number(row.estimated_revenue_eur ?? 0),
       0,
@@ -248,12 +267,12 @@ export default function RevenuePage() {
           </>
         }
         evidence={[
-          `${eligibleRows.length}/${stack.data?.product_count ?? rows.length} ${isClientPersona ? "monetization route(s)" : "market product(s)"} eligible.`,
+          `${eligibleRows.length}/${stackData?.product_count ?? rows.length} ${isClientPersona ? "monetization route(s)" : "market product(s)"} eligible.`,
           bestProduct
             ? `${bestProduct.product_id} is currently the strongest eligible revenue ${isClientPersona ? "route" : "product"}.`
             : "No eligible revenue route has been ranked yet.",
-          businessDecision.data?.decision?.recommendation_status
-            ? `Decision status: ${businessDecision.data.decision.recommendation_status}.`
+          businessDecisionData?.decision?.recommendation_status
+            ? `Decision status: ${businessDecisionData.decision.recommendation_status}.`
             : "Business decision evidence is pending.",
         ]}
         eyebrow={framing.decisionEyebrow}
@@ -290,8 +309,8 @@ export default function RevenuePage() {
       ) : (
         <div className="mb-5 grid gap-4 md:grid-cols-4">
           <KpiCard accent="emerald" label="Modelled revenue" value={formatCurrency(totalRevenue)} />
-          <KpiCard label="Eligible products" value={`${eligibleRows.length}/${stack.data?.product_count ?? rows.length}`} />
-          <KpiCard label="Allocation status" value={allocation.data?.status ?? "-"} />
+          <KpiCard label="Eligible products" value={`${eligibleRows.length}/${stackData?.product_count ?? rows.length}`} />
+          <KpiCard label="Allocation status" value={allocationData?.status ?? "-"} />
           <KpiCard accent="blue" label="Asset" value={selectedAssetId} />
         </div>
       )}
@@ -359,7 +378,7 @@ export default function RevenuePage() {
 
       {effectiveActiveTab === "stack" ? (
         <RevenueStackPanel
-          ancillary={ancillary.data}
+          ancillary={ancillaryData}
           blockedRows={blockedRows}
           eligibleRows={eligibleRows}
           rows={rows}
@@ -377,9 +396,9 @@ export default function RevenuePage() {
 
       {effectiveActiveTab === "constraints" ? (
         <RevenueConstraintsPanel
-          ancillary={ancillary.data}
+          ancillary={ancillaryData}
           blockedRows={blockedRows}
-          eeg={eeg.data}
+          eeg={eegData}
           warningRows={warningRows}
         />
       ) : null}
@@ -387,9 +406,9 @@ export default function RevenuePage() {
       {effectiveActiveTab === "economics" ? (
         <RevenueEconomicsPanel
           allocationRows={allocationRows}
-          ancillary={ancillary.data}
-          businessDecision={businessDecision.data?.decision}
-          eeg={eeg.data}
+          ancillary={ancillaryData}
+          businessDecision={businessDecisionData?.decision}
+          eeg={eegData}
           hedgeSummary={hedgeSummary}
           metadata={metadata}
           revenueRows={rows}
@@ -401,7 +420,7 @@ export default function RevenuePage() {
       {effectiveActiveTab === "controls" ? (
         <RevenueRunControlsPanel
           refetchAllocation={() => allocation.refetch()}
-          refetchStack={() => stack.refetch()}
+          refetchStack={() => Promise.all([revenueSummary.refetch(), stack.refetch()])}
           selectedAssetId={selectedAssetId}
         />
       ) : null}

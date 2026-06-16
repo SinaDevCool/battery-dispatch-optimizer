@@ -4,7 +4,7 @@ import {
   createContext,
   useContext,
   useMemo,
-  useState,
+  useSyncExternalStore,
 } from "react";
 
 import {
@@ -23,26 +23,20 @@ type PersonaContextValue = {
 
 const PersonaContext = createContext<PersonaContextValue | null>(null);
 const STORAGE_KEY = "battery-trader-persona";
+const PERSONA_STORAGE_EVENT = "battery-trader-persona-change";
 
 export function PersonaProvider({ children }: { children: React.ReactNode }) {
-  const [personaId, setPersonaIdState] = useState<PersonaId>(() => {
-    if (typeof window === "undefined") {
-      return "all";
-    }
-
-    const storedValue = window.localStorage.getItem(STORAGE_KEY);
-    const migratedPersonaId = migrateStoredPersonaId(storedValue);
-
-    if (migratedPersonaId) {
-      return migratedPersonaId;
-    }
-
-    return DEFAULT_PERSONA_ID;
-  });
+  const personaId = useSyncExternalStore(
+    subscribeToPersonaStorage,
+    getStoredPersonaId,
+    getDefaultPersonaId,
+  );
 
   const setPersonaId = (nextPersonaId: PersonaId) => {
-    setPersonaIdState(nextPersonaId);
-    window.localStorage.setItem(STORAGE_KEY, nextPersonaId);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(STORAGE_KEY, nextPersonaId);
+      window.dispatchEvent(new Event(PERSONA_STORAGE_EVENT));
+    }
   };
 
   const value = useMemo(
@@ -59,6 +53,27 @@ export function PersonaProvider({ children }: { children: React.ReactNode }) {
       {children}
     </PersonaContext.Provider>
   );
+}
+
+function subscribeToPersonaStorage(onStoreChange: () => void) {
+  window.addEventListener("storage", onStoreChange);
+  window.addEventListener(PERSONA_STORAGE_EVENT, onStoreChange);
+
+  return () => {
+    window.removeEventListener("storage", onStoreChange);
+    window.removeEventListener(PERSONA_STORAGE_EVENT, onStoreChange);
+  };
+}
+
+function getStoredPersonaId(): PersonaId {
+  return (
+    migrateStoredPersonaId(window.localStorage.getItem(STORAGE_KEY)) ??
+    DEFAULT_PERSONA_ID
+  );
+}
+
+function getDefaultPersonaId(): PersonaId {
+  return DEFAULT_PERSONA_ID;
 }
 
 function migrateStoredPersonaId(value: string | null): PersonaId | null {

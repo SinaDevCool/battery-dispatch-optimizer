@@ -100,6 +100,7 @@ Core frontend concepts:
 - `frontend/src/components/persona-selector.tsx` is the single persona switcher.
 - `frontend/src/app/*/page.tsx` contains route-level product pages.
 - Shared components such as `DecisionBrief`, `SectionCard`, `KpiCard`, `DataTable`, and `StatusPill` keep each page decision-first.
+- Page-level summary endpoints are used first where possible so client-facing pages do not need to stitch many low-level API calls together before showing a decision.
 
 Primary navigation groups:
 
@@ -144,18 +145,25 @@ Current frontend routes:
 
 The backend is a FastAPI application in `backend/api/main.py`. Route modules are registered through `backend/api/routes/__init__.py`.
 
+There is no active `src/` application folder. Active backend code belongs in `backend/`; active frontend code belongs in `frontend/`. Older Streamlit and manual script work is kept under `archive/` so it is still inspectable without being confused with the production app path.
+
 Major backend areas:
 
 | Area | Purpose |
 |---|---|
 | `backend/api/routes/` | FastAPI HTTP API modules |
+| `backend/api/routes/summaries.py` | Page-level summary API contracts for revenue, regulation, execution, and client evidence |
 | `backend/assets/` | Asset loading, asset schema, portfolio dispatch |
 | `backend/backtesting/` | Forecast-vs-actual and historical analysis support |
 | `backend/config/` | Paths, app settings, client presets, market config |
 | `backend/db/` | SQLite database setup and repository layer |
 | `backend/dispatch/` | Dispatch and battery schedule utilities |
+| `backend/energy_accounting/` | Energy-origin and accounting evidence |
 | `backend/execution/` | Automation control, market routing, proposals, paper trading, connectors, gates, remediation, submission lifecycle |
+| `backend/features/` | Feature engineering helpers |
 | `backend/forecasts/` | Forecast loading, upload, ENTSO-E provider, comparison |
+| `backend/grid_fees/` | Germany grid-fee sensitivity logic |
+| `backend/hedging/` | Revenue contracts and downside protection views |
 | `backend/markets/` | Market profiles, products, and market data helpers |
 | `backend/optimization/` | Optimizer registry and optimization engines |
 | `backend/regulatory/` | Germany regulatory and operating assumption checks |
@@ -165,6 +173,7 @@ Major backend areas:
 | `backend/services/` | Shared services and persistence helpers |
 | `backend/settlement/` | Settlement variance and reconciliation logic |
 | `backend/signals/` | Signal generation, explanations, and risk flags |
+| `backend/storage/` | Local and cloud storage abstraction |
 | `backend/telemetry/` | Asset telemetry snapshots |
 | `backend/validation/` | Dispatch validation |
 | `backend/workflows/` | Daily workflow orchestration |
@@ -175,23 +184,24 @@ new code should import from `backend.optimization`.
 
 ## Repository Layout
 
-The active application surfaces are:
+The active application surfaces are intentionally simple:
 
 ```text
-backend/     FastAPI backend, domain services, execution control, persistence
+backend/      FastAPI backend, domain services, execution control, persistence
 frontend/     Next.js commercial frontend
+tests/        backend test suite
 ```
 
-Supporting and transitional areas are:
+Supporting folders and root files:
 
 ```text
-archive/streamlit_dashboard/
-              archived Streamlit dashboard for internal prototyping
-archive/manual_scripts/
-              archived manual CLI utilities for local workflow checks
-tests/        backend test suite
-docs/         deployment and operating notes
-data/config/  checked-in local seed configuration
+archive/      non-active historical tools kept for reference
+docs/         deployment and operating notes, especially Azure App Service
+data/config/  checked-in local seed configuration for assets, clients, markets
+pytest.ini    pytest configuration
+requirements.txt
+              backend and archived Streamlit dependency list
+startup.sh    backend App Service startup command
 ```
 
 Runtime/local artifacts are intentionally kept separate from seed
@@ -206,6 +216,15 @@ data/db/
 
 These runtime folders are ignored for source control and should map to managed
 storage/database services in production.
+
+Archived code is organized as:
+
+```text
+archive/streamlit_dashboard/  older Streamlit prototype UI
+archive/manual_scripts/       older manual CLI utilities and local checks
+```
+
+Do not add new production code to `archive/`. New backend code should go into the correct `backend/` domain package, and new UI code should go into `frontend/src/`.
 
 ### Execution Control Plane
 
@@ -263,6 +282,7 @@ The API surface is broad. The most important categories are:
 |---|---|
 | Health and system readiness | `/health`, `/system/health`, `/system/persistence-readiness` |
 | Assets | `/assets`, `/assets/{asset_id}/cockpit`, `/assets/{asset_id}/data-completeness` |
+| Page summaries | `/assets/{asset_id}/revenue-summary`, `/regulatory-summary`, `/execution-summary`, `/client-evidence-summary` |
 | Forecasts | `/forecast/upload`, `/forecast/status`, `/forecast/demo`, `/forecasts/compare-profitability` |
 | Signals and dispatch | `/assets/{asset_id}/signal/run-latest`, `/assets/{asset_id}/signal/latest`, `/battery/optimizers` |
 | Markets and products | `/markets`, `/markets/products`, `/assets/{asset_id}/eligible-products` |
@@ -285,6 +305,19 @@ OpenAPI docs are available when the backend is running:
 http://127.0.0.1:8000/docs
 ```
 
+### Summary API Layer
+
+The current frontend uses page-level summary endpoints before falling back to lower-level detail endpoints. These routes keep the UI decision-first and reduce frontend coupling to backend implementation details.
+
+| Endpoint | Used by | Purpose |
+|---|---|---|
+| `/assets/{asset_id}/revenue-summary` | Revenue Assurance | Packages revenue stack, allocation, latest signal, EEG, ancillary eligibility, hedging, and business decision evidence |
+| `/assets/{asset_id}/regulatory-summary` | Regulation | Packages storage classification, EEG compliance, ancillary eligibility, and approval blockers |
+| `/assets/{asset_id}/execution-summary` | Execution / Mission Control | Packages proposal, readiness, automation control, guardrails, signal, paper trade, submission, approval, allocation, and telemetry status |
+| `/assets/{asset_id}/client-evidence-summary` | Reports | Packages report readiness, evidence completeness, revenue, regulation, execution, and settlement state |
+
+Detail endpoints still exist and are used for drill-down tabs, history tables, controls, and backend diagnostics.
+
 ## Installation
 
 Backend dependencies:
@@ -292,6 +325,8 @@ Backend dependencies:
 ```bash
 pip install -r requirements.txt
 ```
+
+`requirements.txt` is still needed because it is the backend dependency source for local development and deployment. It also includes `streamlit` because the archived Streamlit dashboard remains runnable for reference.
 
 Frontend dependencies:
 
@@ -360,9 +395,17 @@ API docs:
 http://127.0.0.1:8000/docs
 ```
 
+Quick health checks:
+
+```bash
+curl.exe http://127.0.0.1:8000/health
+curl.exe http://127.0.0.1:8000/status
+curl.exe http://127.0.0.1:8000/assets/default_site/client-evidence-summary
+```
+
 ## Run The Archived Streamlit Dashboard
 
-The Streamlit dashboard remains useful for internal prototyping, but the Next.js frontend is the commercial product UI.
+The Streamlit dashboard is archived historical code. It remains useful for internal prototyping or comparison, but the Next.js frontend is the commercial product UI.
 
 ```bash
 python -m streamlit run archive/streamlit_dashboard/app.py
@@ -521,7 +564,7 @@ Current limitation: HTML report delivery is implemented. PDF export is intention
 Run backend tests:
 
 ```bash
-python -m pytest
+python -m pytest tests
 ```
 
 Run frontend checks:
@@ -530,6 +573,14 @@ Run frontend checks:
 cd frontend
 npm run lint
 npm run build
+```
+
+Recent verification baseline:
+
+```text
+121 backend tests passing
+frontend lint passing
+frontend production build passing
 ```
 
 ## Deployment Direction
@@ -558,6 +609,8 @@ Backend startup command:
 bash startup.sh
 ```
 
+`startup.sh` is intentionally kept because Azure App Service can call it directly. It starts `backend.api.main:app` on the provided `PORT`.
+
 Frontend startup command:
 
 ```bash
@@ -578,15 +631,17 @@ Important current limitations:
 - intraday, reserve, imbalance, and degradation economics need stronger market data and model depth
 - some artifacts still use local file outputs while others use SQLite repositories
 - Azure deployment hardening is planned but not complete
+- summary endpoints currently use flexible response envelopes; dedicated Pydantic response models should be added next for stricter backend contracts
 
 ## Recommended Next Product Improvements
 
-1. Add backend PDF export for client reports.
-2. Replace reserve activation placeholders with real activation-price logic.
-3. Separate simulation, supervised live, and production live adapters more strictly in the UI and backend.
-4. Add production authentication and role-based access.
-5. Move remaining file-based outputs into database/object storage.
-6. Add deeper forecast-vs-actual learning loops into route allocation and revenue assumptions.
-7. Add stronger multi-market co-optimization across day-ahead, intraday, and ancillary products.
+1. Add dedicated Pydantic models for the summary endpoints.
+2. Add backend PDF export for client reports.
+3. Replace reserve activation placeholders with real activation-price logic.
+4. Separate simulation, supervised live, and production live adapters more strictly in the UI and backend.
+5. Add production authentication and role-based access.
+6. Move remaining file-based outputs into database/object storage.
+7. Add deeper forecast-vs-actual learning loops into route allocation and revenue assumptions.
+8. Add stronger multi-market co-optimization across day-ahead, intraday, and ancillary products.
 
 

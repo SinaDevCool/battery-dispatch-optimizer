@@ -17,6 +17,7 @@ import { usePersona } from "@/components/persona-provider";
 import { useApiBaseUrl } from "@/hooks/use-api-base-url";
 import { apiGet } from "@/lib/api";
 import type {
+  ClientEvidenceSummaryResponse,
   DataCompletenessResponse,
   MonthlyReportListResponse,
   MonthlyReportResponse,
@@ -30,7 +31,16 @@ export default function ReportsPage() {
   const isClientPersona = persona.layer === "client";
   const [showArchive, setShowArchive] = useState(false);
 
+  const clientEvidence = useQuery({
+    queryFn: () =>
+      apiGet<ClientEvidenceSummaryResponse>(
+        `/assets/${selectedAssetId}/client-evidence-summary`,
+      ),
+    queryKey: ["client-evidence-summary", selectedAssetId],
+  });
+
   const latest = useQuery({
+    enabled: !isClientPersona,
     queryFn: () =>
       apiGet<MonthlyReportResponse>(
         `/reports/monthly/latest?asset_id=${selectedAssetId}`,
@@ -48,6 +58,7 @@ export default function ReportsPage() {
   });
 
   const completeness = useQuery({
+    enabled: !isClientPersona,
     queryFn: () =>
       apiGet<DataCompletenessResponse>(
         `/assets/${selectedAssetId}/data-completeness`,
@@ -55,36 +66,42 @@ export default function ReportsPage() {
     queryKey: ["reports-data-completeness", selectedAssetId],
   });
 
-  const reportName = String(latest.data?.report_name ?? "-");
+  const latestData = latest.data ?? clientEvidence.data?.latest_report;
+  const completenessData =
+    completeness.data ?? clientEvidence.data?.data_completeness;
+  const reportName = String(latestData?.report_name ?? "-");
   const viewerRoute =
-    latest.data?.viewer_route ??
+    latestData?.viewer_route ??
     `/reports/monthly/latest/view?asset_id=${selectedAssetId}`;
   const reportUrl = `${apiBaseUrl}${viewerRoute}`;
   const refetchReports = () =>
     Promise.all([
+      clientEvidence.refetch(),
       latest.refetch(),
       completeness.refetch(),
       ...(showArchive ? [archive.refetch()] : []),
     ]);
   const reportDecision = buildReportDecision({
-    completeness: completeness.data,
+    completeness: completenessData,
     personaId,
-    reportStatus: latest.data?.status,
+    reportStatus: latestData?.status,
     reportName,
   });
   const deliveryGapRows = buildDeliveryGapRows({
-    completeness: completeness.data,
-    reportStatus: latest.data?.status,
+    completeness: completenessData,
+    reportStatus: latestData?.status,
   });
   const backendConnectionRows = buildBackendConnectionRows({
     archiveCount: archive.data?.report_count,
-    completeness: completeness.data,
-    reportStatus: latest.data?.status,
+    completeness: completenessData,
+    reportStatus: latestData?.status,
     selectedAssetId,
   });
-  const deliveryState = reportDecision.blockers.length
-    ? "Draft"
-    : "Client ready";
+  const deliveryState =
+    clientEvidence.data?.summary?.delivery_status === "client_ready" ||
+    !reportDecision.blockers.length
+      ? "Client ready"
+      : "Draft";
   const primaryDeliveryGap =
     deliveryGapRows.find((row) => row.gap !== "PDF delivery export") ??
     deliveryGapRows[0];
@@ -125,8 +142,8 @@ export default function ReportsPage() {
       {isClientPersona ? (
         <div className="mb-5 grid gap-4 md:grid-cols-3">
           <KpiCard
-            accent={latest.data?.status === "ok" ? "emerald" : "amber"}
-            helper={latest.data?.status === "ok" ? "HTML report available" : "Report not generated"}
+            accent={latestData?.status === "ok" ? "emerald" : "amber"}
+            helper={latestData?.status === "ok" ? "HTML report available" : "Report not generated"}
             label="Latest report"
             value={reportName}
           />
@@ -137,10 +154,10 @@ export default function ReportsPage() {
             value={deliveryState}
           />
           <KpiCard
-            accent={Number(completeness.data?.missing_count ?? 0) > 0 ? "amber" : "emerald"}
-            helper={`${completeness.data?.complete_count ?? 0} of ${completeness.data?.check_count ?? 0} checks complete`}
+            accent={Number(completenessData?.missing_count ?? 0) > 0 ? "amber" : "emerald"}
+            helper={`${completenessData?.complete_count ?? 0} of ${completenessData?.check_count ?? 0} checks complete`}
             label="Evidence readiness"
-            value={`${completeness.data?.score ?? "-"} / 100`}
+            value={`${completenessData?.score ?? "-"} / 100`}
           />
         </div>
       ) : (
@@ -150,17 +167,17 @@ export default function ReportsPage() {
             accent={deliveryState === "Client ready" ? "emerald" : "amber"}
             label="Client delivery state"
             value={deliveryState}
-            helper={latest.data?.status === "ok" ? "HTML report available" : "Report not generated"}
+            helper={latestData?.status === "ok" ? "HTML report available" : "Report not generated"}
           />
           <KpiCard
             accent={
-              Number(completeness.data?.missing_count ?? 0) > 0
+              Number(completenessData?.missing_count ?? 0) > 0
                 ? "amber"
                 : "emerald"
             }
             label="Evidence score"
-            value={`${completeness.data?.score ?? "-"} / 100`}
-            helper={`${completeness.data?.complete_count ?? 0} of ${completeness.data?.check_count ?? 0} checks complete`}
+            value={`${completenessData?.score ?? "-"} / 100`}
+            helper={`${completenessData?.complete_count ?? 0} of ${completenessData?.check_count ?? 0} checks complete`}
           />
           <KpiCard
             accent="blue"
@@ -175,7 +192,7 @@ export default function ReportsPage() {
         <SectionCard
           action={
             <div className="flex flex-wrap items-center gap-2">
-              {latest.data?.status === "ok" ? (
+              {latestData?.status === "ok" ? (
                 <StatusPill tone="emerald">Available</StatusPill>
               ) : (
                 <StatusPill tone="amber">Not generated</StatusPill>
@@ -192,7 +209,7 @@ export default function ReportsPage() {
           }
           title={isClientPersona ? "Client-ready report" : "Latest monthly report"}
         >
-          {latest.data?.status === "ok" ? (
+          {latestData?.status === "ok" ? (
             <div className="space-y-4">
               <a
                 className="inline-flex items-center gap-2 rounded-md border border-sky-400/30 bg-sky-400/10 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20"
@@ -212,16 +229,16 @@ export default function ReportsPage() {
                         { field: "Delivery status", value: deliveryState },
                         {
                           field: "Evidence score",
-                          value: `${completeness.data?.score ?? "-"} / 100`,
+                          value: `${completenessData?.score ?? "-"} / 100`,
                         },
                         {
                           field: "Asset scope",
-                          value: latest.data.asset_id ?? selectedAssetId,
+                          value: latestData.asset_id ?? selectedAssetId,
                         },
                       ]
                     : [
                         { field: "Report name", value: reportName },
-                        { field: "Report file", value: latest.data.report_file ?? "-" },
+                        { field: "Report file", value: latestData.report_file ?? "-" },
                         { field: "Delivery status", value: "Draft HTML" },
                         {
                           field: "Viewer route",
@@ -229,7 +246,7 @@ export default function ReportsPage() {
                         },
                         {
                           field: "Asset scope",
-                          value: latest.data.asset_id ?? selectedAssetId,
+                          value: latestData.asset_id ?? selectedAssetId,
                         },
                       ]
                 }
@@ -237,13 +254,13 @@ export default function ReportsPage() {
             </div>
           ) : (
             <div className="text-sm text-slate-400">
-              {latest.data?.message ?? "No report is available yet."}
+              {latestData?.message ?? "No report is available yet."}
             </div>
           )}
         </SectionCard>
 
         <DataCompletenessPanel
-          data={completeness.data}
+          data={completenessData}
           title="Report evidence readiness"
         />
       </div>
@@ -288,7 +305,7 @@ export default function ReportsPage() {
                 },
                 {
                   field: "Open evidence gaps",
-                  value: completeness.data?.missing_count ?? 0,
+                  value: completenessData?.missing_count ?? 0,
                 },
                 {
                   field: "Archive evidence",

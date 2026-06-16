@@ -33,6 +33,10 @@ def test_status_endpoint():
     assert "/assets/{asset_id}/regulatory/germany" in data["available_endpoints"]
     assert "/markets/products" in data["available_endpoints"]
     assert "/assets/{asset_id}/eligible-products" in data["available_endpoints"]
+    assert "/assets/{asset_id}/revenue-summary" in data["available_endpoints"]
+    assert "/assets/{asset_id}/regulatory-summary" in data["available_endpoints"]
+    assert "/assets/{asset_id}/execution-summary" in data["available_endpoints"]
+    assert "/assets/{asset_id}/client-evidence-summary" in data["available_endpoints"]
     assert "/assets/{asset_id}/revenue-stack/run" in data["available_endpoints"]
     assert "/assets/{asset_id}/revenue-stack/allocate" in data["available_endpoints"]
     assert "/assets/{asset_id}/revenue-stack/allocation/latest" in data["available_endpoints"]
@@ -75,6 +79,20 @@ def test_status_endpoint():
     assert "/assets/{asset_id}/settlement/reconcile" in data["available_endpoints"]
     assert "/assets/{asset_id}/settlement/latest" in data["available_endpoints"]
     assert "/assets/{asset_id}/settlement/runs" in data["available_endpoints"]
+
+
+def test_asset_summary_endpoints():
+    for endpoint in [
+        "/assets/default_site/revenue-summary",
+        "/assets/default_site/regulatory-summary",
+        "/assets/default_site/execution-summary",
+        "/assets/default_site/client-evidence-summary",
+    ]:
+        response = client.get(endpoint)
+
+        assert response.status_code == 200
+        assert response.json()["asset_id"] == "default_site"
+        assert "summary" in response.json()
 
 
 def test_battery_config_endpoint():
