@@ -64,6 +64,33 @@ const revenueTabs = [
 
 type RevenueTabId = (typeof revenueTabs)[number]["id"];
 
+const clientRevenueTabs = [
+  {
+    id: "economics",
+    label: "Owner Value",
+    helper: "Owner/investor view of defensible revenue, hedge protection, and recommendation basis.",
+  },
+  {
+    id: "constraints",
+    label: "Open Blockers",
+    helper: "Revenue gaps that need evidence, review, or market eligibility before client delivery.",
+  },
+  {
+    id: "allocation",
+    label: "Allocation Proof",
+    helper: "How battery capacity is assigned across monetization routes.",
+  },
+  {
+    id: "stack",
+    label: "Product Detail",
+    helper: "Detailed product ranking for deeper due diligence.",
+  },
+] as const satisfies readonly {
+  helper: string;
+  id: RevenueTabId;
+  label: string;
+}[];
+
 type RevenuePersonaFraming = {
   bridgeTitle: string;
   decisionEyebrow: string;
@@ -79,18 +106,23 @@ type RevenuePersonaFraming = {
 export default function RevenuePage() {
   const { selectedAssetId } = useAssetContext();
   const { persona, personaId } = usePersona();
+  const isClientPersona = persona.layer === "client";
   const framing = getRevenuePersonaFraming(personaId);
-  const [activeTab, setActiveTab] = useState<RevenueTabId>("stack");
+  const [activeTab, setActiveTab] = useState<RevenueTabId>(() =>
+    isClientPersona ? "economics" : "stack",
+  );
   const visibleRevenueTabs = useMemo(
-    () =>
-      persona.layer === "client"
-        ? revenueTabs.filter((tab) => tab.id !== "controls")
-        : revenueTabs,
-    [persona.layer],
+    () => (isClientPersona ? clientRevenueTabs : revenueTabs),
+    [isClientPersona],
   );
   const effectiveActiveTab = visibleRevenueTabs.some((tab) => tab.id === activeTab)
     ? activeTab
-    : "economics";
+    : visibleRevenueTabs[0].id;
+  const isStackTab = effectiveActiveTab === "stack";
+  const isAllocationTab = effectiveActiveTab === "allocation";
+  const isConstraintsTab = effectiveActiveTab === "constraints";
+  const isEconomicsTab = effectiveActiveTab === "economics";
+  const isControlsTab = effectiveActiveTab === "controls";
 
   const stack = useQuery({
     queryFn: () =>
@@ -101,6 +133,7 @@ export default function RevenuePage() {
   });
 
   const allocation = useQuery({
+    enabled: isAllocationTab || isControlsTab,
     queryFn: () =>
       apiGet<RevenueAllocationResponse>(
         `/assets/${selectedAssetId}/revenue-stack/allocation/latest`,
@@ -109,12 +142,14 @@ export default function RevenuePage() {
   });
 
   const signal = useQuery({
+    enabled: isAllocationTab || isEconomicsTab,
     queryFn: () =>
       apiGet<LatestSignalResponse>(`/assets/${selectedAssetId}/signal/latest`),
     queryKey: ["revenue-signal-latest", selectedAssetId],
   });
 
   const hedging = useQuery({
+    enabled: isEconomicsTab,
     queryFn: () =>
       apiGet<HedgingRevenueResponse>(
         `/assets/${selectedAssetId}/hedging/revenue`,
@@ -123,6 +158,7 @@ export default function RevenuePage() {
   });
 
   const eeg = useQuery({
+    enabled: isConstraintsTab || isEconomicsTab,
     queryFn: () =>
       apiGet<EegComplianceResponse>(
         `/assets/${selectedAssetId}/eeg-compliance/latest`,
@@ -131,6 +167,7 @@ export default function RevenuePage() {
   });
 
   const ancillary = useQuery({
+    enabled: isStackTab || isConstraintsTab || isEconomicsTab,
     queryFn: () =>
       apiGet<AncillaryEligibilityResponse>(
         `/assets/${selectedAssetId}/ancillary/germany/eligibility`,
@@ -139,6 +176,7 @@ export default function RevenuePage() {
   });
 
   const businessDecision = useQuery({
+    enabled: isEconomicsTab,
     queryFn: () =>
       apiGet<BusinessDecisionResponse>(
         `/assets/${selectedAssetId}/business-decision/latest`,
@@ -178,12 +216,18 @@ export default function RevenuePage() {
   const blockedRevenue = rows
     .filter((row) => row.automation_fit !== "ready for market allocation")
     .reduce((sum, row) => sum + Number(row.estimated_revenue_eur ?? 0), 0);
+  const allocationEvidenceLoaded = Boolean(allocation.data);
   const commercialBlockers = [
     blockedRows.length ? `${blockedRows.length} product(s) are blocked or not eligible.` : null,
     warningRows.length ? `${warningRows.length} product(s) require commercial review.` : null,
-    allocationRows.length ? null : "Capacity allocation evidence is not available yet.",
+    allocationEvidenceLoaded && !allocationRows.length
+      ? "Capacity allocation evidence is not available yet."
+      : null,
   ].filter(Boolean) as string[];
+  const confidenceTone = commercialBlockers.length ? "amber" : "emerald";
+  const topBlocker = commercialBlockers[0] ?? "No material revenue blocker shown.";
   const revenueUnlockRows = buildRevenueUnlockRows(rows);
+  const clientAssuranceRows = buildClientAssuranceRows(rows);
 
   return (
     <>
@@ -204,10 +248,10 @@ export default function RevenuePage() {
           </>
         }
         evidence={[
-          `${eligibleRows.length}/${stack.data?.product_count ?? rows.length} market product(s) eligible.`,
+          `${eligibleRows.length}/${stack.data?.product_count ?? rows.length} ${isClientPersona ? "monetization route(s)" : "market product(s)"} eligible.`,
           bestProduct
-            ? `${bestProduct.product_id} is currently the strongest eligible revenue product.`
-            : "No eligible product has been ranked yet.",
+            ? `${bestProduct.product_id} is currently the strongest eligible revenue ${isClientPersona ? "route" : "product"}.`
+            : "No eligible revenue route has been ranked yet.",
           businessDecision.data?.decision?.recommendation_status
             ? `Decision status: ${businessDecision.data.decision.recommendation_status}.`
             : "Business decision evidence is pending.",
@@ -222,45 +266,88 @@ export default function RevenuePage() {
         tone={commercialBlockers.length ? "amber" : "emerald"}
       />
 
-      <div className="mb-5 grid gap-4 md:grid-cols-4">
-        <KpiCard accent="emerald" label="Modelled revenue" value={formatCurrency(totalRevenue)} />
-        <KpiCard label="Eligible products" value={`${eligibleRows.length}/${stack.data?.product_count ?? rows.length}`} />
-        <KpiCard label="Allocation status" value={allocation.data?.status ?? "-"} />
-        <KpiCard accent="blue" label="Asset" value={selectedAssetId} />
-      </div>
+      {isClientPersona ? (
+        <div className="mb-5 grid gap-4 md:grid-cols-3">
+          <KpiCard
+            accent="emerald"
+            helper="Revenue with current supporting model output."
+            label="Modelled owner value"
+            value={formatCurrency(totalRevenue)}
+          />
+          <KpiCard
+            accent={blockedRevenue > 0 ? "amber" : "emerald"}
+            helper="Upside that still needs evidence, eligibility, or review."
+            label="Value needing proof"
+            value={formatCurrency(blockedRevenue)}
+          />
+          <KpiCard
+            accent={confidenceTone}
+            helper={topBlocker}
+            label="Revenue confidence"
+            value={commercialBlockers.length ? "needs evidence" : "client-ready"}
+          />
+        </div>
+      ) : (
+        <div className="mb-5 grid gap-4 md:grid-cols-4">
+          <KpiCard accent="emerald" label="Modelled revenue" value={formatCurrency(totalRevenue)} />
+          <KpiCard label="Eligible products" value={`${eligibleRows.length}/${stack.data?.product_count ?? rows.length}`} />
+          <KpiCard label="Allocation status" value={allocation.data?.status ?? "-"} />
+          <KpiCard accent="blue" label="Asset" value={selectedAssetId} />
+        </div>
+      )}
 
       <SectionCard
         action={
-          <StatusPill tone={commercialBlockers.length ? "amber" : "emerald"}>
+          <StatusPill tone={confidenceTone}>
             {commercialBlockers.length ? "Revenue not fully bankable" : framing.readyLabel}
           </StatusPill>
         }
         className="mb-5"
-        title={framing.bridgeTitle}
+        title={isClientPersona ? "Revenue assurance summary" : framing.bridgeTitle}
       >
         <div className="mb-4 grid gap-4 md:grid-cols-3">
           <KpiCard
             accent="emerald"
-            label="Automatable now"
+            label={isClientPersona ? "Defensible now" : "Automatable now"}
             value={formatCurrency(executableRevenue)}
-            helper="Eligible products with clear automation fit."
+            helper={
+              isClientPersona
+                ? "Value supported by eligible routes and current evidence."
+                : "Eligible products with clear automation fit."
+            }
           />
           <KpiCard
             accent={blockedRevenue > 0 ? "amber" : "emerald"}
-            label="Blocked or review upside"
+            label={isClientPersona ? "Upside to unlock" : "Blocked or review upside"}
             value={formatCurrency(blockedRevenue)}
             helper={`${blockedRows.length + warningRows.length} product(s) need evidence or review.`}
           />
           <KpiCard
-            accent={allocationRows.length ? "emerald" : "amber"}
+            accent={
+              allocationRows.length
+                ? "emerald"
+                : allocationEvidenceLoaded
+                  ? "amber"
+                  : "blue"
+            }
             label="Allocation proof"
-            value={allocationRows.length ? "available" : "missing"}
+            value={
+              allocationRows.length
+                ? "available"
+                : allocationEvidenceLoaded
+                  ? "missing"
+                  : "open tab to load"
+            }
             helper="Needed before promising capacity across products."
           />
         </div>
         <DataTable
-          columns={["product_id", "commercial_value", "automation_fit", "unlock_action"]}
-          rows={revenueUnlockRows}
+          columns={
+            isClientPersona
+              ? ["revenue_route", "client_value", "confidence", "next_action"]
+              : ["product_id", "commercial_value", "automation_fit", "unlock_action"]
+          }
+          rows={isClientPersona ? clientAssuranceRows : revenueUnlockRows}
         />
       </SectionCard>
 
@@ -506,6 +593,47 @@ function buildRevenueUnlockRows(rows: TableRow[]) {
       product_id: row.product_id,
       unlock_action: buildUnlockAction(row),
     }));
+}
+
+function buildClientAssuranceRows(rows: TableRow[]) {
+  return rows
+    .toSorted(
+      (left, right) =>
+        Number(right.estimated_revenue_eur ?? 0) -
+        Number(left.estimated_revenue_eur ?? 0),
+    )
+    .slice(0, 4)
+    .map((row) => ({
+      client_value: formatCurrency(Number(row.estimated_revenue_eur ?? 0)),
+      confidence:
+        row.automation_fit === "ready for market allocation"
+          ? "supported"
+          : row.automation_fit === "blocked from automation"
+            ? "blocked"
+            : "needs review",
+      next_action: buildClientNextAction(row),
+      revenue_route: row.product_id,
+    }));
+}
+
+function buildClientNextAction(row: TableRow) {
+  if (row.automation_fit === "ready for market allocation") {
+    return "Use as supporting evidence for owner value.";
+  }
+
+  if (row.blocking_reasons && row.blocking_reasons !== "-") {
+    return "Clear eligibility blocker before presenting as reliable revenue.";
+  }
+
+  if (row.review_warnings && row.review_warnings !== "-") {
+    return "Review assumptions before including in client-facing value.";
+  }
+
+  if (row.missing_inputs && row.missing_inputs !== "-") {
+    return "Add missing inputs before relying on this route.";
+  }
+
+  return "Keep as upside until allocation evidence is available.";
 }
 
 function buildUnlockAction(row: TableRow) {

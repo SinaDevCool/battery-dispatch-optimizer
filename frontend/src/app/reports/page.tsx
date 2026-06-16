@@ -2,6 +2,7 @@
 
 import { ExternalLink } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { ActionButton } from "@/components/action-button";
 import { useAssetContext } from "@/components/asset-provider";
@@ -25,7 +26,9 @@ import type { PersonaId } from "@/lib/personas";
 export default function ReportsPage() {
   const apiBaseUrl = useApiBaseUrl();
   const { selectedAssetId } = useAssetContext();
-  const { personaId } = usePersona();
+  const { persona, personaId } = usePersona();
+  const isClientPersona = persona.layer === "client";
+  const [showArchive, setShowArchive] = useState(false);
 
   const latest = useQuery({
     queryFn: () =>
@@ -36,6 +39,7 @@ export default function ReportsPage() {
   });
 
   const archive = useQuery({
+    enabled: showArchive,
     queryFn: () =>
       apiGet<MonthlyReportListResponse>(
         `/reports/monthly/list?asset_id=${selectedAssetId}`,
@@ -59,8 +63,8 @@ export default function ReportsPage() {
   const refetchReports = () =>
     Promise.all([
       latest.refetch(),
-      archive.refetch(),
       completeness.refetch(),
+      ...(showArchive ? [archive.refetch()] : []),
     ]);
   const reportDecision = buildReportDecision({
     completeness: completeness.data,
@@ -81,6 +85,9 @@ export default function ReportsPage() {
   const deliveryState = reportDecision.blockers.length
     ? "Draft"
     : "Client ready";
+  const primaryDeliveryGap =
+    deliveryGapRows.find((row) => row.gap !== "PDF delivery export") ??
+    deliveryGapRows[0];
 
   return (
     <>
@@ -92,12 +99,18 @@ export default function ReportsPage() {
 
       <DecisionBrief
         action={
-          <ActionButton
-            endpoint={`/assets/${selectedAssetId}/reports/monthly/generate`}
-            label="Generate client report"
-            refetch={refetchReports}
-            variant="primary"
-          />
+          isClientPersona ? (
+            <StatusPill tone={deliveryState === "Client ready" ? "emerald" : "amber"}>
+              {deliveryState}
+            </StatusPill>
+          ) : (
+            <ActionButton
+              endpoint={`/assets/${selectedAssetId}/reports/monthly/generate`}
+              label="Generate client report"
+              refetch={refetchReports}
+              variant="primary"
+            />
+          )
         }
         blockers={reportDecision.blockers}
         className="mb-6"
@@ -109,31 +122,54 @@ export default function ReportsPage() {
         tone={reportDecision.tone}
       />
 
-      <div className="mb-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Latest report" value={reportName} />
-        <KpiCard
-          accent={deliveryState === "Client ready" ? "emerald" : "amber"}
-          label="Client delivery state"
-          value={deliveryState}
-          helper={latest.data?.status === "ok" ? "HTML report available" : "Report not generated"}
-        />
-        <KpiCard
-          accent={
-            Number(completeness.data?.missing_count ?? 0) > 0
-              ? "amber"
-              : "emerald"
-          }
-          label="Evidence score"
-          value={`${completeness.data?.score ?? "-"} / 100`}
-          helper={`${completeness.data?.complete_count ?? 0} of ${completeness.data?.check_count ?? 0} checks complete`}
-        />
-        <KpiCard
-          accent="blue"
-          label="Archive count"
-          value={archive.data?.report_count ?? 0}
-          helper="Persisted report files"
-        />
-      </div>
+      {isClientPersona ? (
+        <div className="mb-5 grid gap-4 md:grid-cols-3">
+          <KpiCard
+            accent={latest.data?.status === "ok" ? "emerald" : "amber"}
+            helper={latest.data?.status === "ok" ? "HTML report available" : "Report not generated"}
+            label="Latest report"
+            value={reportName}
+          />
+          <KpiCard
+            accent={deliveryState === "Client ready" ? "emerald" : "amber"}
+            helper={primaryDeliveryGap?.next_action ?? "No open delivery blocker shown."}
+            label="Delivery status"
+            value={deliveryState}
+          />
+          <KpiCard
+            accent={Number(completeness.data?.missing_count ?? 0) > 0 ? "amber" : "emerald"}
+            helper={`${completeness.data?.complete_count ?? 0} of ${completeness.data?.check_count ?? 0} checks complete`}
+            label="Evidence readiness"
+            value={`${completeness.data?.score ?? "-"} / 100`}
+          />
+        </div>
+      ) : (
+        <div className="mb-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <KpiCard label="Latest report" value={reportName} />
+          <KpiCard
+            accent={deliveryState === "Client ready" ? "emerald" : "amber"}
+            label="Client delivery state"
+            value={deliveryState}
+            helper={latest.data?.status === "ok" ? "HTML report available" : "Report not generated"}
+          />
+          <KpiCard
+            accent={
+              Number(completeness.data?.missing_count ?? 0) > 0
+                ? "amber"
+                : "emerald"
+            }
+            label="Evidence score"
+            value={`${completeness.data?.score ?? "-"} / 100`}
+            helper={`${completeness.data?.complete_count ?? 0} of ${completeness.data?.check_count ?? 0} checks complete`}
+          />
+          <KpiCard
+            accent="blue"
+            label="Archive count"
+            value={showArchive ? archive.data?.report_count ?? 0 : "not loaded"}
+            helper="Load archive to inspect persisted report files"
+          />
+        </div>
+      )}
 
       <div className="mb-5 grid gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
         <SectionCard
@@ -144,15 +180,17 @@ export default function ReportsPage() {
               ) : (
                 <StatusPill tone="amber">Not generated</StatusPill>
               )}
-              <ActionButton
-                endpoint={`/assets/${selectedAssetId}/reports/monthly/generate`}
-                label="Generate"
-                refetch={refetchReports}
-                variant="secondary"
-              />
+              {!isClientPersona ? (
+                <ActionButton
+                  endpoint={`/assets/${selectedAssetId}/reports/monthly/generate`}
+                  label="Generate"
+                  refetch={refetchReports}
+                  variant="secondary"
+                />
+              ) : null}
             </div>
           }
-          title="Latest monthly report"
+          title={isClientPersona ? "Client-ready report" : "Latest monthly report"}
         >
           {latest.data?.status === "ok" ? (
             <div className="space-y-4">
@@ -167,19 +205,34 @@ export default function ReportsPage() {
               </a>
               <DataTable
                 columns={["field", "value"]}
-                rows={[
-                  { field: "Report name", value: reportName },
-                  { field: "Report file", value: latest.data.report_file ?? "-" },
-                  { field: "Delivery status", value: "Draft HTML" },
-                  {
-                    field: "Viewer route",
-                    value: viewerRoute,
-                  },
-                  {
-                    field: "Asset scope",
-                    value: latest.data.asset_id ?? selectedAssetId,
-                  },
-                ]}
+                rows={
+                  isClientPersona
+                    ? [
+                        { field: "Report name", value: reportName },
+                        { field: "Delivery status", value: deliveryState },
+                        {
+                          field: "Evidence score",
+                          value: `${completeness.data?.score ?? "-"} / 100`,
+                        },
+                        {
+                          field: "Asset scope",
+                          value: latest.data.asset_id ?? selectedAssetId,
+                        },
+                      ]
+                    : [
+                        { field: "Report name", value: reportName },
+                        { field: "Report file", value: latest.data.report_file ?? "-" },
+                        { field: "Delivery status", value: "Draft HTML" },
+                        {
+                          field: "Viewer route",
+                          value: viewerRoute,
+                        },
+                        {
+                          field: "Asset scope",
+                          value: latest.data.asset_id ?? selectedAssetId,
+                        },
+                      ]
+                }
               />
             </div>
           ) : (
@@ -221,22 +274,70 @@ export default function ReportsPage() {
           />
         </SectionCard>
 
-        <SectionCard
-          action={<StatusPill tone="blue">Backend linked</StatusPill>}
-          title="Backend connection map"
-        >
-          <DataTable
-            columns={["capability", "backend_route", "status", "business_value"]}
-            rows={backendConnectionRows}
-          />
-        </SectionCard>
+        {isClientPersona ? (
+          <SectionCard
+            action={<StatusPill tone={deliveryState === "Client ready" ? "emerald" : "amber"}>{deliveryState}</StatusPill>}
+            title="Delivery summary"
+          >
+            <DataTable
+              columns={["field", "value"]}
+              rows={[
+                {
+                  field: "Primary next action",
+                  value: primaryDeliveryGap?.next_action ?? reportDecision.nextAction,
+                },
+                {
+                  field: "Open evidence gaps",
+                  value: completeness.data?.missing_count ?? 0,
+                },
+                {
+                  field: "Archive evidence",
+                  value: showArchive
+                    ? `${archive.data?.report_count ?? 0} saved report(s)`
+                    : "Load previous reports to inspect archive evidence.",
+                },
+                {
+                  field: "Client narrative",
+                  value: reportDecision.evidence.at(-1) ?? "-",
+                },
+              ]}
+            />
+          </SectionCard>
+        ) : (
+          <SectionCard
+            action={<StatusPill tone="blue">Backend linked</StatusPill>}
+            title="Backend connection map"
+          >
+            <DataTable
+              columns={["capability", "backend_route", "status", "business_value"]}
+              rows={backendConnectionRows}
+            />
+          </SectionCard>
+        )}
       </div>
 
-      <SectionCard title="Report archive">
-        <DataTable
-          columns={["report_name", "report_file"]}
-          rows={archive.data?.reports ?? []}
-        />
+      <SectionCard
+        action={
+          <button
+            className="rounded-md border border-sky-400/30 bg-sky-400/10 px-3 py-2 text-xs font-semibold text-sky-100 transition hover:bg-sky-400/20"
+            onClick={() => setShowArchive(true)}
+            type="button"
+          >
+            {showArchive ? "Archive loaded" : "Load archive"}
+          </button>
+        }
+        title={isClientPersona ? "Previous reports" : "Report archive"}
+      >
+        {showArchive ? (
+          <DataTable
+            columns={["report_name", "report_file"]}
+            rows={archive.data?.reports ?? []}
+          />
+        ) : (
+          <div className="text-sm text-slate-400">
+            Previous reports are loaded on demand to keep the report readiness view fast.
+          </div>
+        )}
       </SectionCard>
     </>
   );

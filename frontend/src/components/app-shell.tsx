@@ -22,6 +22,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [searchString, setSearchString] = useState("");
   const apiBaseUrl = useApiBaseUrl();
   const { persona } = usePersona();
+  const isClientPersona = persona.layer === "client";
   const visibleNavigationGroups = navigationGroups
     .filter((group) =>
       persona.id === "all" || persona.primaryNavigationGroups.includes(group.id),
@@ -154,7 +155,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
 
             <div className="hidden items-center gap-3 md:flex">
-              <StatusPill tone="emerald">API target: {apiBaseUrl}</StatusPill>
+              {!isClientPersona ? (
+                <StatusPill tone="emerald">API target: {apiBaseUrl}</StatusPill>
+              ) : null}
               <PersonaSelector />
               <AssetSelector />
             </div>

@@ -334,8 +334,12 @@ docs/azure-app-service.md
 Start the backend:
 
 ```bash
-python -m uvicorn backend.api.main:app --reload --port 8000
+python -m uvicorn backend.api.main:app --reload --reload-dir backend --host 0.0.0.0 --port 8000
 ```
+
+Use `backend.api.main:app`, not the old `src.api.main:app` path. The
+`--reload-dir backend` flag keeps Uvicorn from watching generated frontend
+folders such as `frontend/.next`.
 
 Start the frontend:
 

@@ -41,7 +41,6 @@ import type {
   BusinessDecision,
   BusinessDecisionResponse,
   DataCompletenessResponse,
-  DatabaseStatusResponse,
   EegComplianceResponse,
   ExecutionApprovalResponse,
   ExecutionProposalResponse,
@@ -88,14 +87,55 @@ const controlRoomTabs = [
 
 type ControlRoomTabId = (typeof controlRoomTabs)[number]["id"];
 
+const clientControlRoomTabs = [
+  {
+    id: "commercial",
+    label: "Owner Value",
+    helper: "Revenue stack, hedging, allocation logic, and commercial upside.",
+  },
+  {
+    id: "readiness",
+    label: "Evidence Readiness",
+    helper: "Forecast quality, data completeness, market eligibility, and proof gaps.",
+  },
+  {
+    id: "trading",
+    label: "Portfolio Signal",
+    helper: "Recommendation, expected value, delivery window, and dispatch shape.",
+  },
+  {
+    id: "actions",
+    label: "Next Steps",
+    helper: "Role-specific actions and the next business decision to move forward.",
+  },
+] as const satisfies readonly {
+  helper: string;
+  id: ControlRoomTabId;
+  label: string;
+}[];
+
 export default function OverviewPage() {
   const { selectedAsset, selectedAssetId } = useAssetContext();
   const { persona } = usePersona();
+  const isClientPersona = persona.layer === "client";
+  const visibleControlRoomTabs = isClientPersona
+    ? clientControlRoomTabs
+    : controlRoomTabs;
   const [activeTabByPersona, setActiveTabByPersona] = useState<
     Partial<Record<string, ControlRoomTabId>>
   >({});
-  const activeTab =
+  const requestedActiveTab =
     activeTabByPersona[persona.id] ?? persona.defaultControlRoomTab;
+  const activeTab = visibleControlRoomTabs.some(
+    (tab) => tab.id === requestedActiveTab,
+  )
+    ? requestedActiveTab
+    : visibleControlRoomTabs[0].id;
+  const isTradingTab = activeTab === "trading";
+  const isReadinessTab = activeTab === "readiness";
+  const isCommercialTab = activeTab === "commercial";
+  const isExecutionTab = activeTab === "execution";
+  const isActionsTab = activeTab === "actions";
   const setActiveTab = (tab: ControlRoomTabId) =>
     setActiveTabByPersona((current) => ({
       ...current,
@@ -107,11 +147,6 @@ export default function OverviewPage() {
     queryKey: ["health"],
   });
 
-  const databaseStatus = useQuery({
-    queryFn: () => apiGet<DatabaseStatusResponse>("/database/status"),
-    queryKey: ["database-status"],
-  });
-
   const cockpit = useQuery({
     queryFn: () =>
       apiGet<AssetCockpitResponse>(`/assets/${selectedAssetId}/cockpit`),
@@ -119,12 +154,14 @@ export default function OverviewPage() {
   });
 
   const signal = useQuery({
+    enabled: isTradingTab,
     queryFn: () =>
       apiGet<LatestSignalResponse>(`/assets/${selectedAssetId}/signal/latest`),
     queryKey: ["asset-signal-latest", selectedAssetId],
   });
 
   const revenue = useQuery({
+    enabled: isCommercialTab,
     queryFn: () =>
       apiGet<RevenueStackResponse>(
         `/assets/${selectedAssetId}/revenue-stack/latest`,
@@ -133,6 +170,7 @@ export default function OverviewPage() {
   });
 
   const hedging = useQuery({
+    enabled: isCommercialTab,
     queryFn: () =>
       apiGet<HedgingRevenueResponse>(
         `/assets/${selectedAssetId}/hedging/revenue`,
@@ -141,6 +179,7 @@ export default function OverviewPage() {
   });
 
   const eeg = useQuery({
+    enabled: isReadinessTab || isCommercialTab,
     queryFn: () =>
       apiGet<EegComplianceResponse>(
         `/assets/${selectedAssetId}/eeg-compliance/latest`,
@@ -149,6 +188,7 @@ export default function OverviewPage() {
   });
 
   const classification = useQuery({
+    enabled: isReadinessTab,
     queryFn: () =>
       apiGet<StorageClassificationResponse>(
         `/assets/${selectedAssetId}/storage-classification`,
@@ -157,6 +197,7 @@ export default function OverviewPage() {
   });
 
   const ancillary = useQuery({
+    enabled: isReadinessTab || isCommercialTab,
     queryFn: () =>
       apiGet<AncillaryEligibilityResponse>(
         `/assets/${selectedAssetId}/ancillary/germany/eligibility`,
@@ -165,6 +206,7 @@ export default function OverviewPage() {
   });
 
   const businessDecision = useQuery({
+    enabled: isCommercialTab || isActionsTab,
     queryFn: () =>
       apiGet<BusinessDecisionResponse>(
         `/assets/${selectedAssetId}/business-decision/latest`,
@@ -173,6 +215,7 @@ export default function OverviewPage() {
   });
 
   const workflowRun = useQuery({
+    enabled: isExecutionTab,
     queryFn: () =>
       apiGet<WorkflowRunResponse>(
         `/assets/${selectedAssetId}/workflow-runs/latest`,
@@ -181,6 +224,7 @@ export default function OverviewPage() {
   });
 
   const completeness = useQuery({
+    enabled: isReadinessTab,
     queryFn: () =>
       apiGet<DataCompletenessResponse>(
         `/assets/${selectedAssetId}/data-completeness`,
@@ -189,6 +233,7 @@ export default function OverviewPage() {
   });
 
   const executionProposal = useQuery({
+    enabled: isExecutionTab,
     queryFn: () =>
       apiGet<ExecutionProposalResponse>(
         `/assets/${selectedAssetId}/execution/proposal/latest`,
@@ -197,6 +242,7 @@ export default function OverviewPage() {
   });
 
   const approval = useQuery({
+    enabled: isExecutionTab,
     queryFn: () =>
       apiGet<ExecutionApprovalResponse>(
         `/assets/${selectedAssetId}/execution/approval/latest`,
@@ -205,6 +251,7 @@ export default function OverviewPage() {
   });
 
   const guardrails = useQuery({
+    enabled: isTradingTab || isReadinessTab || isExecutionTab,
     queryFn: () =>
       apiGet<AutomationGuardrailsResponse>(
         `/assets/${selectedAssetId}/execution/automation-guardrails`,
@@ -213,6 +260,7 @@ export default function OverviewPage() {
   });
 
   const automationControl = useQuery({
+    enabled: isExecutionTab || isActionsTab,
     queryFn: () =>
       apiGet<AutomationControlStatusResponse>(
         `/assets/${selectedAssetId}/execution/automation-control/status`,
@@ -221,6 +269,7 @@ export default function OverviewPage() {
   });
 
   const strategyIntent = useQuery({
+    enabled: isExecutionTab || isActionsTab,
     queryFn: () =>
       apiGet<StrategyIntentResponse>(
         `/assets/${selectedAssetId}/execution/strategy-intent`,
@@ -229,6 +278,7 @@ export default function OverviewPage() {
   });
 
   const telemetry = useQuery({
+    enabled: isExecutionTab,
     queryFn: () =>
       apiGet<AssetTelemetryResponse>(
         `/assets/${selectedAssetId}/telemetry/latest`,
@@ -237,12 +287,14 @@ export default function OverviewPage() {
   });
 
   const settlement = useQuery({
+    enabled: isExecutionTab,
     queryFn: () =>
       apiGet<SettlementResponse>(`/assets/${selectedAssetId}/settlement/latest`),
     queryKey: ["overview-settlement", selectedAssetId],
   });
 
   const readiness = useQuery({
+    enabled: isTradingTab || isReadinessTab || isExecutionTab,
     queryFn: () =>
       apiGet<ExecutionReadinessResponse>(
         `/assets/${selectedAssetId}/execution/readiness`,
@@ -251,6 +303,7 @@ export default function OverviewPage() {
   });
 
   const marketAdapterStatus = useQuery({
+    enabled: isExecutionTab,
     queryFn: () =>
       apiGet<AssetMarketAdapterStatusResponse>(
         `/assets/${selectedAssetId}/execution/market-adapter/status`,
@@ -312,26 +365,48 @@ export default function OverviewPage() {
   const refetchCockpit = () =>
     Promise.all([
       health.refetch(),
-      databaseStatus.refetch(),
       cockpit.refetch(),
-      signal.refetch(),
-      revenue.refetch(),
-      hedging.refetch(),
-      eeg.refetch(),
-      classification.refetch(),
-      ancillary.refetch(),
-      businessDecision.refetch(),
-      workflowRun.refetch(),
-      completeness.refetch(),
-      executionProposal.refetch(),
-      approval.refetch(),
-      automationControl.refetch(),
-      strategyIntent.refetch(),
-      guardrails.refetch(),
-      telemetry.refetch(),
-      settlement.refetch(),
-      readiness.refetch(),
-      marketAdapterStatus.refetch(),
+      ...(isTradingTab ? [signal.refetch(), guardrails.refetch(), readiness.refetch()] : []),
+      ...(isReadinessTab
+        ? [
+            eeg.refetch(),
+            classification.refetch(),
+            ancillary.refetch(),
+            completeness.refetch(),
+            guardrails.refetch(),
+            readiness.refetch(),
+          ]
+        : []),
+      ...(isCommercialTab
+        ? [
+            revenue.refetch(),
+            hedging.refetch(),
+            eeg.refetch(),
+            ancillary.refetch(),
+            businessDecision.refetch(),
+          ]
+        : []),
+      ...(isExecutionTab
+        ? [
+            workflowRun.refetch(),
+            executionProposal.refetch(),
+            approval.refetch(),
+            automationControl.refetch(),
+            strategyIntent.refetch(),
+            guardrails.refetch(),
+            telemetry.refetch(),
+            settlement.refetch(),
+            readiness.refetch(),
+            marketAdapterStatus.refetch(),
+          ]
+        : []),
+      ...(isActionsTab
+        ? [
+            businessDecision.refetch(),
+            automationControl.refetch(),
+            strategyIntent.refetch(),
+          ]
+        : []),
     ]);
 
   return (
@@ -347,7 +422,7 @@ export default function OverviewPage() {
 
       {isBackendDown ? (
         <div className="mb-6">
-          <ErrorState message="The FastAPI backend is not reachable. Start it with: python -m uvicorn backend.api.main:app --reload --port 8000" />
+          <ErrorState message="The FastAPI backend is not reachable. Start it with: python -m uvicorn backend.api.main:app --reload --reload-dir backend --host 0.0.0.0 --port 8000" />
         </div>
       ) : null}
 
@@ -358,30 +433,42 @@ export default function OverviewPage() {
           </StatusPill>
         }
         className="mb-6"
-        title="Today's business value"
+        title={isClientPersona ? "Business value snapshot" : "Today's business value"}
       >
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <KpiCard
             accent="emerald"
-            label="Expected trading value"
+            label={isClientPersona ? "Expected owner value" : "Expected trading value"}
             value={formatCurrency(summary.total_pnl_eur)}
-            helper={`${formatNumber(summary.profit_per_mw_day, 2)} EUR/MW-day from latest signal`}
+            helper={
+              isClientPersona
+                ? `${formatNumber(summary.profit_per_mw_day, 2)} EUR/MW-day with latest evidence`
+                : `${formatNumber(summary.profit_per_mw_day, 2)} EUR/MW-day from latest signal`
+            }
           />
           <KpiCard
             accent="blue"
-            label="Revenue stack"
+            label={isClientPersona ? "Revenue evidence" : "Revenue stack"}
             value={formatCurrency(totalRevenue)}
-            helper={`${revenueRows.length} market product(s) assessed`}
+            helper={
+              isClientPersona
+                ? `${revenueRows.length} monetization route(s) assessed`
+                : `${revenueRows.length} market product(s) assessed`
+            }
           />
           <KpiCard
             accent={readiness.data?.readiness_status === "blocked" ? "red" : "emerald"}
-            label="Automation readiness"
+            label={isClientPersona ? "Approval readiness" : "Automation readiness"}
             value={readiness.data?.readiness_status ?? "not evaluated"}
-            helper={`${readiness.data?.summary?.blocked ?? 0} blocked / ${readiness.data?.summary?.review ?? 0} review`}
+            helper={
+              isClientPersona
+                ? `${readiness.data?.summary?.blocked ?? 0} blocker(s), ${readiness.data?.summary?.review ?? 0} item(s) to review`
+                : `${readiness.data?.summary?.blocked ?? 0} blocked / ${readiness.data?.summary?.review ?? 0} review`
+            }
           />
           <KpiCard
             accent={activeDispatchRows.length ? "emerald" : "amber"}
-            label="Delivery shape"
+            label={isClientPersona ? "Delivery plan" : "Delivery shape"}
             value={`${activeDispatchRows.length} interval(s)`}
             helper={
               activeDispatchRows.length
@@ -403,43 +490,81 @@ export default function OverviewPage() {
         tone={personaDecision.tone}
       />
 
-      <SectionCard
-        action={<StatusPill tone="blue">Move asset forward</StatusPill>}
-        className="mb-6"
-        title="Priority actions"
-      >
-        <div className="grid gap-3 md:grid-cols-3">
-          <ActionButton
-            endpoint="/workflow/run-daily"
-            label="Run optimization"
-            refetch={refetchCockpit}
-            variant="primary"
-          />
-          <Link
-            className="rounded-lg border border-sky-400/25 bg-sky-400/10 px-4 py-3 text-sm font-semibold text-sky-100 transition hover:bg-sky-400/20"
-            href="/revenue"
-          >
-            Review owner value
-            <span className="mt-1 block text-xs font-normal text-slate-400">
-              Revenue stack, product eligibility, and commercial blockers.
-            </span>
-          </Link>
-          <Link
-            className="rounded-lg border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20"
-            href="/execution"
-          >
-            Clear automation blockers
-            <span className="mt-1 block text-xs font-normal text-slate-400">
-              Guardrails, approval, telemetry, and market submission readiness.
-            </span>
-          </Link>
-        </div>
-      </SectionCard>
+      {isClientPersona ? (
+        <SectionCard
+          action={<StatusPill tone="blue">Next business decision</StatusPill>}
+          className="mb-6"
+          title="Recommended next steps"
+        >
+          <div className="grid gap-3 md:grid-cols-3">
+            <Link
+              className="rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/20"
+              href="/revenue"
+            >
+              Review owner value
+              <span className="mt-1 block text-xs font-normal text-slate-400">
+                Confirm revenue, eligible products, and commercial blockers.
+              </span>
+            </Link>
+            <Link
+              className="rounded-lg border border-sky-400/25 bg-sky-400/10 px-4 py-3 text-sm font-semibold text-sky-100 transition hover:bg-sky-400/20"
+              href="/reports"
+            >
+              Open client report
+              <span className="mt-1 block text-xs font-normal text-slate-400">
+                Use the latest evidence package for stakeholder review.
+              </span>
+            </Link>
+            <Link
+              className="rounded-lg border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20"
+              href="/regulation"
+            >
+              Check open blockers
+              <span className="mt-1 block text-xs font-normal text-slate-400">
+                Review regulatory, settlement, and evidence gaps before approval.
+              </span>
+            </Link>
+          </div>
+        </SectionCard>
+      ) : (
+        <SectionCard
+          action={<StatusPill tone="blue">Move asset forward</StatusPill>}
+          className="mb-6"
+          title="Priority actions"
+        >
+          <div className="grid gap-3 md:grid-cols-3">
+            <ActionButton
+              endpoint="/workflow/run-daily"
+              label="Run optimization"
+              refetch={refetchCockpit}
+              variant="primary"
+            />
+            <Link
+              className="rounded-lg border border-sky-400/25 bg-sky-400/10 px-4 py-3 text-sm font-semibold text-sky-100 transition hover:bg-sky-400/20"
+              href="/revenue"
+            >
+              Review owner value
+              <span className="mt-1 block text-xs font-normal text-slate-400">
+                Revenue stack, product eligibility, and commercial blockers.
+              </span>
+            </Link>
+            <Link
+              className="rounded-lg border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20"
+              href="/execution"
+            >
+              Clear automation blockers
+              <span className="mt-1 block text-xs font-normal text-slate-400">
+                Guardrails, approval, telemetry, and market submission readiness.
+              </span>
+            </Link>
+          </div>
+        </SectionCard>
+      )}
 
       <WorkspaceTabs
         activeTab={activeTab}
         onTabChange={setActiveTab}
-        tabs={controlRoomTabs}
+        tabs={visibleControlRoomTabs}
       />
 
       {activeTab === "trading" ? (

@@ -22,7 +22,8 @@ import type {
 
 export default function RegulationPage() {
   const { selectedAssetId } = useAssetContext();
-  const { personaId } = usePersona();
+  const { persona, personaId } = usePersona();
+  const isClientPersona = persona.layer === "client";
 
   const classification = useQuery({
     queryFn: () =>
@@ -41,6 +42,7 @@ export default function RegulationPage() {
   });
 
   const gridFees = useQuery({
+    enabled: !isClientPersona,
     queryFn: () =>
       apiGet<GridFeeSensitivityResponse>(
         `/assets/${selectedAssetId}/grid-fees/germany/sensitivity`,
@@ -49,6 +51,7 @@ export default function RegulationPage() {
   });
 
   const ancillary = useQuery({
+    enabled: !isClientPersona,
     queryFn: () =>
       apiGet<AncillaryEligibilityResponse>(
         `/assets/${selectedAssetId}/ancillary/germany/eligibility`,
@@ -76,14 +79,33 @@ export default function RegulationPage() {
     eeg.data?.mixed_origin_risk
       ? "Mixed-origin or renewable-support risk needs compliance review."
       : null,
-    blockedAncillaryRows.length
+    !isClientPersona && blockedAncillaryRows.length
       ? `${blockedAncillaryRows.length} ancillary product(s) are blocked.`
       : null,
-    reviewAncillaryRows.length
+    !isClientPersona && reviewAncillaryRows.length
       ? `${reviewAncillaryRows.length} ancillary product(s) require review.`
       : null,
   ].filter(Boolean) as string[];
   const framing = getRegulatoryPersonaFraming(personaId);
+  const approvalStatus = automationBlockers.length
+    ? "needs review"
+    : "approval-ready";
+  const primaryBlocker =
+    automationBlockers[0] ?? "No regulatory blocker shown for the current evidence.";
+  const ancillaryEligibleCount =
+    ancillary.data?.eligible_product_count ??
+    ancillary.data?.eligible_products?.length ??
+    (isClientPersona ? "not loaded" : 0);
+  const ancillaryEligibilityStatus = ancillary.data
+    ? `${ancillaryEligibleCount} eligible`
+    : isClientPersona
+      ? "internal detail"
+      : "0 eligible";
+  const ancillaryClientNextAction = ancillary.data
+    ? Number(ancillaryEligibleCount)
+      ? "Use eligible options in the market-readiness story."
+      : "Do not promise ancillary revenue until eligibility is clear."
+    : "Open internal compliance detail before making ancillary-market claims.";
 
   return (
     <>
@@ -98,7 +120,11 @@ export default function RegulationPage() {
         className="mb-6"
         decision={
           <>
-            {automationBlockers.length ? "Review before auto-trade" : "Auto-trade eligible"}
+            {isClientPersona
+              ? approvalStatus
+              : automationBlockers.length
+                ? "Review before auto-trade"
+                : "Auto-trade eligible"}
             <span className="text-slate-500"> / </span>
             Germany
           </>
@@ -106,7 +132,7 @@ export default function RegulationPage() {
         evidence={[
           `${framing.storageEvidenceLabel}: ${String(classification.data?.storage_classification ?? classification.data?.storage_mode ?? "-")}.`,
           `${framing.eegEvidenceLabel}: ${String(eeg.data?.status ?? "-")}.`,
-          `${String(ancillary.data?.eligible_product_count ?? ancillary.data?.eligible_products?.length ?? 0)} ${framing.ancillaryEvidenceLabel}.`,
+          `${String(ancillaryEligibleCount)} ${framing.ancillaryEvidenceLabel}.`,
         ]}
         eyebrow={framing.decisionEyebrow}
         nextAction={
@@ -118,27 +144,50 @@ export default function RegulationPage() {
         tone={automationBlockers.length ? "amber" : "emerald"}
       />
 
-      <div className="mb-5 grid gap-4 md:grid-cols-4">
-        <KpiCard
-          label="Storage mode"
-          value={String(
-            classification.data?.storage_classification ??
-              classification.data?.storage_mode ??
-              "-",
-          )}
-        />
-        <KpiCard accent="amber" label="EEG status" value={String(eeg.data?.status ?? "-")} />
-        <KpiCard
-          label="Ancillary eligible"
-          value={String(
-            ancillary.data?.eligible_product_count ??
-              ancillary.data?.eligible_products?.length ??
-              "-",
-          )}
-          helper="Product count"
-        />
-        <KpiCard accent="blue" label="Country" value="Germany" />
-      </div>
+      {isClientPersona ? (
+        <div className="mb-5 grid gap-4 md:grid-cols-3">
+          <KpiCard
+            accent={automationBlockers.length ? "amber" : "emerald"}
+            helper={primaryBlocker}
+            label="Approval readiness"
+            value={approvalStatus}
+          />
+          <KpiCard
+            accent={eeg.data?.eeg_eligible ? "emerald" : "amber"}
+            helper="EEG and renewable-origin evidence."
+            label="Compliance status"
+            value={String(eeg.data?.status ?? "-")}
+          />
+          <KpiCard
+            accent={ancillary.data ? (Number(ancillaryEligibleCount) ? "emerald" : "amber") : "blue"}
+            helper={
+              ancillary.data
+                ? "Eligible market options for the asset."
+                : "Detailed market eligibility loads in internal compliance views."
+            }
+            label="Market eligibility"
+            value={String(ancillaryEligibleCount)}
+          />
+        </div>
+      ) : (
+        <div className="mb-5 grid gap-4 md:grid-cols-4">
+          <KpiCard
+            label="Storage mode"
+            value={String(
+              classification.data?.storage_classification ??
+                classification.data?.storage_mode ??
+                "-",
+            )}
+          />
+          <KpiCard accent="amber" label="EEG status" value={String(eeg.data?.status ?? "-")} />
+          <KpiCard
+            label="Ancillary eligible"
+            value={String(ancillaryEligibleCount || "-")}
+            helper="Product count"
+          />
+          <KpiCard accent="blue" label="Country" value="Germany" />
+        </div>
+      )}
 
       <SectionCard className="mb-5" title={framing.bridgeTitle}>
         <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
@@ -152,11 +201,15 @@ export default function RegulationPage() {
               {
                 decision_input: "Automation gate",
                 value: automationBlockers.length
-                  ? "blocked for live automation"
-                  : "eligible for automated route selection",
+                  ? isClientPersona
+                    ? "needs review before approval"
+                    : "blocked for live automation"
+                  : isClientPersona
+                    ? "ready for approval narrative"
+                    : "eligible for automated route selection",
               },
               {
-                decision_input: "Regulatory blockers",
+                decision_input: isClientPersona ? "Open approval blockers" : "Regulatory blockers",
                 value: automationBlockers.length,
               },
               {
@@ -165,40 +218,71 @@ export default function RegulationPage() {
               },
             ]}
           />
-          <DataTable
-            columns={["capability", "backend_route", "status", "business_value"]}
-            rows={[
-              {
-                backend_route: `/assets/${selectedAssetId}/storage-classification`,
-                business_value: "Classifies the asset before market-route selection.",
-                capability: "Storage classification",
-                status:
-                  classification.data?.storage_classification ??
-                  classification.data?.storage_mode ??
-                  "not loaded",
-              },
-              {
-                backend_route: `/assets/${selectedAssetId}/eeg-compliance/latest`,
-                business_value:
-                  "Blocks renewable-support or mixed-origin logic before automated bids.",
-                capability: "EEG compliance",
-                status: eeg.data?.status ?? "not loaded",
-              },
-              {
-                backend_route: `/assets/${selectedAssetId}/grid-fees/germany/sensitivity`,
-                business_value: "Tests tariff economics before dispatch approval.",
-                capability: "Grid fee sensitivity",
-                status: `${gridFeeRows.length} scenario(s)`,
-              },
-              {
-                backend_route: `/assets/${selectedAssetId}/ancillary/germany/eligibility`,
-                business_value:
-                  "Allows reserve-market bidding only for cleared products.",
-                capability: "Ancillary eligibility",
-                status: `${ancillary.data?.eligible_product_count ?? ancillary.data?.eligible_products?.length ?? 0} eligible`,
-              },
-            ]}
-          />
+          {isClientPersona ? (
+            <DataTable
+              columns={["approval_area", "status", "client_meaning", "next_action"]}
+              rows={[
+                {
+                  approval_area: "Asset classification",
+                  client_meaning: "Defines how the asset may participate in German markets.",
+                  next_action: "Use this classification in the client approval narrative.",
+                  status:
+                    classification.data?.storage_classification ??
+                    classification.data?.storage_mode ??
+                    "not loaded",
+                },
+                {
+                  approval_area: "EEG and origin risk",
+                  client_meaning: "Shows whether renewable-support or mixed-origin risk needs review.",
+                  next_action: eeg.data?.eeg_eligible
+                    ? "Include as supporting compliance evidence."
+                    : "Resolve EEG finding before presenting as approval-ready.",
+                  status: eeg.data?.status ?? "not loaded",
+                },
+                {
+                  approval_area: "Market eligibility",
+                  client_meaning: "Shows which market options can be discussed with the client.",
+                  next_action: ancillaryClientNextAction,
+                  status: ancillaryEligibilityStatus,
+                },
+              ]}
+            />
+          ) : (
+            <DataTable
+              columns={["capability", "backend_route", "status", "business_value"]}
+              rows={[
+                {
+                  backend_route: `/assets/${selectedAssetId}/storage-classification`,
+                  business_value: "Classifies the asset before market-route selection.",
+                  capability: "Storage classification",
+                  status:
+                    classification.data?.storage_classification ??
+                    classification.data?.storage_mode ??
+                    "not loaded",
+                },
+                {
+                  backend_route: `/assets/${selectedAssetId}/eeg-compliance/latest`,
+                  business_value:
+                    "Blocks renewable-support or mixed-origin logic before automated bids.",
+                  capability: "EEG compliance",
+                  status: eeg.data?.status ?? "not loaded",
+                },
+                {
+                  backend_route: `/assets/${selectedAssetId}/grid-fees/germany/sensitivity`,
+                  business_value: "Tests tariff economics before dispatch approval.",
+                  capability: "Grid fee sensitivity",
+                  status: `${gridFeeRows.length} scenario(s)`,
+                },
+                {
+                  backend_route: `/assets/${selectedAssetId}/ancillary/germany/eligibility`,
+                  business_value:
+                    "Allows reserve-market bidding only for cleared products.",
+                  capability: "Ancillary eligibility",
+                  status: `${ancillaryEligibleCount} eligible`,
+                },
+              ]}
+            />
+          )}
         </div>
       </SectionCard>
 
@@ -223,12 +307,12 @@ export default function RegulationPage() {
               {
                 automation_use: "Allow ancillary-market bidding only for cleared products",
                 gate: "Ancillary eligibility",
-                status: `${ancillary.data?.eligible_product_count ?? ancillary.data?.eligible_products?.length ?? 0} eligible`,
+                status: ancillaryEligibilityStatus,
               },
               {
                 automation_use: "Apply tariff economics before dispatch approval",
                 gate: "Grid fee sensitivity",
-                status: `${gridFeeRows.length} scenario(s)`,
+                status: isClientPersona ? "internal detail" : `${gridFeeRows.length} scenario(s)`,
               },
             ]}
           />
@@ -248,31 +332,35 @@ export default function RegulationPage() {
           />
         </SectionCard>
 
-        <SectionCard title="Grid fee sensitivity">
-          <DataTable
-            columns={[
-              "grid_fee_scenario",
-              "import_grid_fee_eur_per_mwh",
-              "capacity_charge_eur_per_mw_year",
-              "annualized_grid_fee_cost_eur",
-              "description",
-            ]}
-            rows={gridFeeRows.slice(0, 6)}
-          />
-        </SectionCard>
+        {!isClientPersona ? (
+          <>
+            <SectionCard title="Grid fee sensitivity">
+              <DataTable
+                columns={[
+                  "grid_fee_scenario",
+                  "import_grid_fee_eur_per_mwh",
+                  "capacity_charge_eur_per_mw_year",
+                  "annualized_grid_fee_cost_eur",
+                  "description",
+                ]}
+                rows={gridFeeRows.slice(0, 6)}
+              />
+            </SectionCard>
 
-        <SectionCard title="Ancillary eligibility">
-          <DataTable
-            columns={[
-              "product_id",
-              "eligibility_status",
-              "automation_gate",
-              "market_requirement",
-              "next_action",
-            ]}
-            rows={formatAncillaryGateRows(formattedAncillaryRows).slice(0, 6)}
-          />
-        </SectionCard>
+            <SectionCard title="Ancillary eligibility">
+              <DataTable
+                columns={[
+                  "product_id",
+                  "eligibility_status",
+                  "automation_gate",
+                  "market_requirement",
+                  "next_action",
+                ]}
+                rows={formatAncillaryGateRows(formattedAncillaryRows).slice(0, 6)}
+              />
+            </SectionCard>
+          </>
+        ) : null}
       </div>
     </>
   );

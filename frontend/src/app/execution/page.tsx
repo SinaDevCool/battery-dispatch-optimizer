@@ -15,6 +15,7 @@ import {
   ExecutionSettlementPanel,
   ExecutionSimulationPanel,
 } from "@/components/execution/execution-workspace-panels";
+import { ExecutionMissionSummary } from "@/components/execution/execution-mission-summary";
 import { MarketAllocationPanel } from "@/components/execution/market-allocation-panel";
 import {
   buildTradingAutomationPipelineStages,
@@ -105,6 +106,33 @@ const executionTabs = [
 
 export type ExecutionTabId = (typeof executionTabs)[number]["id"];
 
+const clientExecutionTabs = [
+  {
+    id: "overview",
+    label: "Execution Summary",
+    helper: "Approved route, current readiness, and the next execution decision.",
+  },
+  {
+    id: "risk",
+    label: "Approval Gates",
+    helper: "Policy blockers, forecast confidence, and human approval evidence.",
+  },
+  {
+    id: "settlement",
+    label: "Settlement",
+    helper: "Reconciliation, variance drivers, and realized economics.",
+  },
+  {
+    id: "audit",
+    label: "Audit Evidence",
+    helper: "Backend checks, lifecycle steps, and evidence trail.",
+  },
+] as const satisfies readonly {
+  helper: string;
+  id: ExecutionTabId;
+  label: string;
+}[];
+
 export default function ExecutionPage({
   description = "Monitor and run the automated battery trading lifecycle from signal to route selection, bid generation, paper validation, human gate, submission evidence, and settlement reconciliation.",
   eyebrow = "Automated trading",
@@ -120,7 +148,20 @@ export default function ExecutionPage({
 } = {}) {
   const { selectedAsset, selectedAssetId } = useAssetContext();
   const { persona, personaId } = usePersona();
-  const [activeTab, setActiveTab] = useState<ExecutionTabId>(initialTab);
+  const isClientPersona = persona.layer === "client";
+  const visibleExecutionTabs = isClientPersona ? clientExecutionTabs : executionTabs;
+  const [requestedActiveTab, setActiveTab] = useState<ExecutionTabId>(initialTab);
+  const activeTab = visibleExecutionTabs.some((tab) => tab.id === requestedActiveTab)
+    ? requestedActiveTab
+    : visibleExecutionTabs[0].id;
+  const isOverviewTab = activeTab === "overview";
+  const isGoLiveTab = activeTab === "golive";
+  const isAllocationTab = activeTab === "allocation";
+  const isProposalsTab = activeTab === "proposals";
+  const isRiskTab = activeTab === "risk";
+  const isSimulationTab = activeTab === "simulation";
+  const isSettlementTab = activeTab === "settlement";
+  const isAuditTab = activeTab === "audit";
 
   const latestProposal = useQuery({
     queryFn: () =>
@@ -139,6 +180,7 @@ export default function ExecutionPage({
   });
 
   const liveTradingReadiness = useQuery({
+    enabled: isGoLiveTab,
     queryFn: () =>
       apiGet<LiveTradingReadinessResponse>(
         `/assets/${selectedAssetId}/execution/live-trading-readiness?country=Germany`,
@@ -147,6 +189,7 @@ export default function ExecutionPage({
   });
 
   const automationEvents = useQuery({
+    enabled: isAuditTab,
     queryFn: () =>
       apiGet<AutomationEventHistoryResponse>(
         `/assets/${selectedAssetId}/execution/automation-events?limit=12`,
@@ -163,6 +206,7 @@ export default function ExecutionPage({
   });
 
   const proposalHistory = useQuery({
+    enabled: isProposalsTab,
     queryFn: () =>
       apiGet<ExecutionProposalHistoryResponse>(
         `/assets/${selectedAssetId}/execution/proposals?limit=10`,
@@ -171,6 +215,7 @@ export default function ExecutionPage({
   });
 
   const latestPaperTrade = useQuery({
+    enabled: isOverviewTab || isSimulationTab || isAuditTab,
     queryFn: () =>
       apiGet<ExecutionPaperTradeResponse>(
         `/assets/${selectedAssetId}/execution/paper-trade/latest`,
@@ -179,6 +224,7 @@ export default function ExecutionPage({
   });
 
   const paperTradeHistory = useQuery({
+    enabled: isSimulationTab,
     queryFn: () =>
       apiGet<ExecutionPaperTradeHistoryResponse>(
         `/assets/${selectedAssetId}/execution/paper-trades?limit=10`,
@@ -193,6 +239,7 @@ export default function ExecutionPage({
   });
 
   const settlement = useQuery({
+    enabled: isSettlementTab || isAuditTab,
     queryFn: () =>
       apiGet<SettlementResponse>(
         `/assets/${selectedAssetId}/settlement/latest`,
@@ -201,6 +248,7 @@ export default function ExecutionPage({
   });
 
   const forecastConfidence = useQuery({
+    enabled: isRiskTab,
     queryFn: () =>
       apiGet<ForecastConfidenceResponse>(
         `/assets/${selectedAssetId}/forecast-confidence`,
@@ -217,6 +265,7 @@ export default function ExecutionPage({
   });
 
   const telemetry = useQuery({
+    enabled: isOverviewTab || isAuditTab,
     queryFn: () =>
       apiGet<AssetTelemetryResponse>(
         `/assets/${selectedAssetId}/telemetry/latest`,
@@ -225,6 +274,7 @@ export default function ExecutionPage({
   });
 
   const marketSubmission = useQuery({
+    enabled: isOverviewTab || isSimulationTab || isAuditTab,
     queryFn: () =>
       apiGet<MarketSubmissionResponse>(
         `/assets/${selectedAssetId}/execution/submissions/latest`,
@@ -233,6 +283,7 @@ export default function ExecutionPage({
   });
 
   const submissionLifecycle = useQuery({
+    enabled: isSimulationTab || isAuditTab,
     queryFn: () =>
       apiGet<MarketSubmissionLifecycleResponse>(
         `/assets/${selectedAssetId}/execution/submission-lifecycle`,
@@ -241,6 +292,7 @@ export default function ExecutionPage({
   });
 
   const recoveryPlan = useQuery({
+    enabled: isRiskTab,
     queryFn: () =>
       apiGet<ExecutionRecoveryPlanResponse>(
         `/assets/${selectedAssetId}/execution/recovery-plan`,
@@ -249,6 +301,7 @@ export default function ExecutionPage({
   });
 
   const approval = useQuery({
+    enabled: isOverviewTab || isRiskTab || isAuditTab,
     queryFn: () =>
       apiGet<ExecutionApprovalResponse>(
         `/assets/${selectedAssetId}/execution/approval/latest`,
@@ -265,6 +318,7 @@ export default function ExecutionPage({
   });
 
   const marketAdapterStatus = useQuery({
+    enabled: isOverviewTab,
     queryFn: () =>
       apiGet<AssetMarketAdapterStatusResponse>(
         `/assets/${selectedAssetId}/execution/market-adapter/status`,
@@ -273,6 +327,7 @@ export default function ExecutionPage({
   });
 
   const marketConnectorReadiness = useQuery({
+    enabled: isGoLiveTab,
     queryFn: () =>
       apiGet<MarketConnectorReadinessResponse>(
         `/execution/market-connectors/readiness?country=Germany&asset_id=${selectedAssetId}`,
@@ -281,6 +336,7 @@ export default function ExecutionPage({
   });
 
   const multiMarketAllocation = useQuery({
+    enabled: isOverviewTab || isAllocationTab || isGoLiveTab,
     queryFn: () =>
       apiGet<MultiMarketAllocationResponse>(
         `/assets/${selectedAssetId}/execution/multi-market/allocation`,
@@ -289,6 +345,7 @@ export default function ExecutionPage({
   });
 
   const epexDayAheadPreview = useQuery({
+    enabled: isAllocationTab,
     queryFn: () =>
       apiGet<EpexDayAheadPreviewResponse>(
         `/assets/${selectedAssetId}/execution/epex/day-ahead/preview`,
@@ -297,6 +354,7 @@ export default function ExecutionPage({
   });
 
   const epexIntradayAuctionPreview = useQuery({
+    enabled: isAllocationTab,
     queryFn: () =>
       apiGet<EpexIntradayAuctionPreviewResponse>(
         `/assets/${selectedAssetId}/execution/epex/intraday-auction/preview`,
@@ -305,6 +363,7 @@ export default function ExecutionPage({
   });
 
   const epexIntradayContinuousPreview = useQuery({
+    enabled: isAllocationTab,
     queryFn: () =>
       apiGet<EpexIntradayContinuousPreviewResponse>(
         `/assets/${selectedAssetId}/execution/epex/intraday-continuous/preview`,
@@ -313,6 +372,7 @@ export default function ExecutionPage({
   });
 
   const regelleistungFcrPreview = useQuery({
+    enabled: isAllocationTab,
     queryFn: () =>
       apiGet<RegelleistungFcrPreviewResponse>(
         `/assets/${selectedAssetId}/execution/regelleistung/fcr/preview`,
@@ -321,6 +381,7 @@ export default function ExecutionPage({
   });
 
   const regelleistungAfrrPreview = useQuery({
+    enabled: isAllocationTab,
     queryFn: () =>
       apiGet<RegelleistungAfrrPreviewResponse>(
         `/assets/${selectedAssetId}/execution/regelleistung/afrr/preview`,
@@ -329,6 +390,7 @@ export default function ExecutionPage({
   });
 
   const regelleistungMfrrPreview = useQuery({
+    enabled: isAllocationTab,
     queryFn: () =>
       apiGet<RegelleistungMfrrPreviewResponse>(
         `/assets/${selectedAssetId}/execution/regelleistung/mfrr/preview`,
@@ -501,30 +563,66 @@ export default function ExecutionPage({
     Promise.all([
       latestProposal.refetch(),
       automationControl.refetch(),
-      liveTradingReadiness.refetch(),
-      automationEvents.refetch(),
       strategyIntent.refetch(),
-      proposalHistory.refetch(),
-      latestPaperTrade.refetch(),
-      paperTradeHistory.refetch(),
-      settlement.refetch(),
-      forecastConfidence.refetch(),
       automationGuardrails.refetch(),
-      telemetry.refetch(),
-      marketSubmission.refetch(),
-      submissionLifecycle.refetch(),
-      recoveryPlan.refetch(),
-      approval.refetch(),
       readiness.refetch(),
-      marketAdapterStatus.refetch(),
-      marketConnectorReadiness.refetch(),
-      multiMarketAllocation.refetch(),
-      epexDayAheadPreview.refetch(),
-      epexIntradayAuctionPreview.refetch(),
-      epexIntradayContinuousPreview.refetch(),
-      regelleistungFcrPreview.refetch(),
-      regelleistungAfrrPreview.refetch(),
-      regelleistungMfrrPreview.refetch(),
+      signal.refetch(),
+      ...(isOverviewTab
+        ? [
+            latestPaperTrade.refetch(),
+            telemetry.refetch(),
+            marketSubmission.refetch(),
+            approval.refetch(),
+            marketAdapterStatus.refetch(),
+            multiMarketAllocation.refetch(),
+          ]
+        : []),
+      ...(isGoLiveTab
+        ? [
+            liveTradingReadiness.refetch(),
+            marketConnectorReadiness.refetch(),
+            multiMarketAllocation.refetch(),
+          ]
+        : []),
+      ...(isAllocationTab
+        ? [
+            multiMarketAllocation.refetch(),
+            epexDayAheadPreview.refetch(),
+            epexIntradayAuctionPreview.refetch(),
+            epexIntradayContinuousPreview.refetch(),
+            regelleistungFcrPreview.refetch(),
+            regelleistungAfrrPreview.refetch(),
+            regelleistungMfrrPreview.refetch(),
+          ]
+        : []),
+      ...(isProposalsTab ? [proposalHistory.refetch()] : []),
+      ...(isRiskTab
+        ? [
+            forecastConfidence.refetch(),
+            recoveryPlan.refetch(),
+            approval.refetch(),
+          ]
+        : []),
+      ...(isSimulationTab
+        ? [
+            latestPaperTrade.refetch(),
+            paperTradeHistory.refetch(),
+            marketSubmission.refetch(),
+            submissionLifecycle.refetch(),
+          ]
+        : []),
+      ...(isSettlementTab ? [settlement.refetch()] : []),
+      ...(isAuditTab
+        ? [
+            automationEvents.refetch(),
+            latestPaperTrade.refetch(),
+            settlement.refetch(),
+            submissionLifecycle.refetch(),
+            marketSubmission.refetch(),
+            approval.refetch(),
+            telemetry.refetch(),
+          ]
+        : []),
     ]);
 
   return (
@@ -542,147 +640,50 @@ export default function ExecutionPage({
       ) : null}
 
       {showTabs ? (
-        <>
-          <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-            <KpiCard
-              accent={controlModeTone(control?.automation_mode)}
-              label="Automation mode"
-              value={control?.automation_mode ?? automationStatus ?? "-"}
-              helper={control?.live_trading_allowed ? "Limited live auto allowed" : "Live auto gated"}
-            />
-            <KpiCard
-              accent={actionTone(nextAutomationAction.action)}
-              label="Next auto action"
-              value={nextAutomationAction.label ?? "-"}
-              helper={nextAutomationAction.owner ?? "Automation control"}
-            />
-            <KpiCard
-              accent={expectedPnl >= 0 ? "emerald" : "red"}
-              label="Expected PnL"
-              value={formatCurrency(expectedPnl)}
-              helper={`${formatNumber(profitPerMwDay, 2)} EUR/MW-day`}
-            />
-            <KpiCard
-              accent="blue"
-              label="Market route"
-              value={primaryMarket?.market_name ?? proposal?.market ?? "-"}
-              helper={primaryMarket?.adapter_id ?? selectedAsset?.market ?? "No route selected"}
-            />
-            <KpiCard
-              accent={humanGateTone(humanGate.status)}
-              label="Human gate"
-              value={String(humanGate.status ?? "-")}
-              helper={humanGate.required ? "Required by automation policy" : "Not required"}
-            />
-            <KpiCard
-              accent={controlBlockers.length ? "red" : "emerald"}
-              label="Blockers"
-              value={controlBlockers.length}
-              helper={`${guardrailSummary.blocked ?? 0} guardrail / ${guardrailSummary.review ?? 0} review`}
-            />
-          </div>
-
-          <DecisionBrief
-            blockers={controlBlockers
-              .map((blocker) => String(blocker.message ?? blocker.key ?? "Automation blocker"))
-              .slice(0, 4)}
-            className="mb-6"
-            decision={
-              <>
-                {intent?.strategy_mode?.replaceAll("_", " ") ?? "Strategy pending"}
-                <span className="text-slate-500"> / </span>
-                {intent?.dispatch_bias?.replaceAll("_", " ") ?? "hold"}
-              </>
-            }
-            evidence={[
-              ...(intent?.why ?? []).slice(0, 3),
-              primaryMarket?.market_name
-                ? `Primary route: ${primaryMarket.market_name}.`
-                : "No primary market route is selected yet.",
-              `${connectorSummary.official_api_compliant_route_count ?? 0}/${connectorSummary.official_api_route_count ?? 0} route(s) meet official API compliance gates.`,
-              `${connectorSummary.paper_certified_count ?? 0} market route(s) are certified for automated paper execution.`,
-              `${connectorSummary.certified_route_count ?? 0}/${connectorSummary.route_certification_count ?? 0} route(s) have route-level automation certification.`,
-              `${connectorSummary.supervised_live_candidate_count ?? 0} route(s) clear supervised-live readiness.`,
-              `${connectorSummary.handshake_ready_count ?? 0}/${connectorSummary.handshake_target_count ?? 0} live adapter handshakes are dry-run ready.`,
-            ]}
-            eyebrow="Mission control"
-            nextAction={
-              nextAutomationAction.message ??
-              intent?.recommended_next_action?.message ??
-              "No automated action has been evaluated yet."
-            }
-            title="Autonomous trading mission control"
-            tone={controlBlockers.length ? "amber" : "emerald"}
-          />
-
-          <SectionCard
-            action={
-              <div className="flex flex-wrap gap-2">
-                <ActionButton
-                  endpoint={`/assets/${selectedAssetId}/execution/remediation/run-next`}
-                  label="Run next remediation"
-                  refetch={refetchExecution}
-                  variant="primary"
-                />
-                <ActionButton
-                  endpoint={`/assets/${selectedAssetId}/execution/orchestrator/run`}
-                  label="Run next auto action"
-                  refetch={refetchExecution}
-                />
-              </div>
-            }
-            className="mb-6"
-            title="Automation engine"
-          >
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                  Next action
-                </div>
-                <div className="mt-2 text-sm font-semibold text-slate-100">
-                  {nextAutomationAction.label ?? "-"}
-                </div>
-                <div className="mt-1 text-xs leading-5 text-slate-400">
-                  {nextAutomationAction.message ?? "No automation action evaluated."}
-                </div>
-              </div>
-              <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                  Mode permissions
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <StatusPill tone={control?.paper_trading_allowed ? "emerald" : "slate"}>
-                    Paper
-                  </StatusPill>
-                  <StatusPill tone={control?.supervised_trading_allowed ? "emerald" : "slate"}>
-                    Supervised
-                  </StatusPill>
-                  <StatusPill tone={control?.live_trading_allowed ? "emerald" : "red"}>
-                    Live
-                  </StatusPill>
-                </div>
-              </div>
-              <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                  Evidence
-                </div>
-                <div className="mt-2 text-sm font-semibold text-slate-100">
-                  Proposal {control?.evidence?.execution_proposal_id ?? "-"} / Paper {control?.evidence?.paper_trade_id ?? "-"}
-                </div>
-                <div className="mt-1 text-xs leading-5 text-slate-400">
-                  Human gate {String(humanGate.status ?? "-")} / Submission {control?.evidence?.market_submission_id ?? "-"}
-                </div>
-              </div>
-            </div>
-          </SectionCard>
-        </>
+        <ExecutionMissionSummary
+          automationStatus={automationStatus}
+          blockers={controlBlockers.map((blocker) =>
+            String(blocker.message ?? blocker.key ?? "Automation blocker"),
+          )}
+          control={control}
+          decision={
+            <>
+              {intent?.strategy_mode?.replaceAll("_", " ") ?? "Strategy pending"}
+              <span className="text-slate-500"> / </span>
+              {intent?.dispatch_bias?.replaceAll("_", " ") ?? "hold"}
+            </>
+          }
+          evidence={[
+            ...(intent?.why ?? []).slice(0, 3),
+            primaryMarket?.market_name
+              ? `Primary route: ${primaryMarket.market_name}.`
+              : "No primary market route is selected yet.",
+            `${connectorSummary.official_api_compliant_route_count ?? 0}/${connectorSummary.official_api_route_count ?? 0} route(s) meet official API compliance gates.`,
+            `${connectorSummary.paper_certified_count ?? 0} market route(s) are certified for automated paper execution.`,
+            `${connectorSummary.certified_route_count ?? 0}/${connectorSummary.route_certification_count ?? 0} route(s) have route-level automation certification.`,
+            `${connectorSummary.supervised_live_candidate_count ?? 0} route(s) clear supervised-live readiness.`,
+            `${connectorSummary.handshake_ready_count ?? 0}/${connectorSummary.handshake_target_count ?? 0} live adapter handshakes are dry-run ready.`,
+          ]}
+          expectedPnl={expectedPnl}
+          guardrailBlocked={Number(guardrailSummary.blocked ?? 0)}
+          guardrailReview={Number(guardrailSummary.review ?? 0)}
+          humanGateRequired={Boolean(humanGate.required)}
+          humanGateStatus={humanGate.status}
+          isClientPersona={isClientPersona}
+          marketRoute={primaryMarket?.market_name ?? proposal?.market}
+          nextAutomationAction={nextAutomationAction}
+          primaryRouteHelper={primaryMarket?.adapter_id ?? selectedAsset?.market}
+          profitPerMwDay={Number(profitPerMwDay ?? 0)}
+          refetchExecution={refetchExecution}
+          selectedAssetId={selectedAssetId}
+        />
       ) : null}
 
       {showTabs ? (
         <WorkspaceTabs
           activeTab={activeTab}
           onTabChange={setActiveTab}
-          tabs={executionTabs}
+          tabs={visibleExecutionTabs}
         />
       ) : null}
 
@@ -1543,38 +1544,6 @@ function ladderTone(value: unknown) {
   return "amber";
 }
 
-function controlModeTone(value: unknown) {
-  if (value === "live_auto_limited" || value === "supervised_auto") {
-    return "emerald";
-  }
-
-  if (value === "paper_trading") {
-    return "blue";
-  }
-
-  if (value === "live_auto_blocked") {
-    return "red";
-  }
-
-  return "slate";
-}
-
-function humanGateTone(value: unknown) {
-  if (value === "passed" || value === "not_required" || value === "approved") {
-    return "emerald";
-  }
-
-  if (value === "pending" || value === "required" || value === "requested") {
-    return "blue";
-  }
-
-  if (value === "blocked" || value === "rejected") {
-    return "red";
-  }
-
-  return "slate";
-}
-
 function sandboxCertificationTone(value: unknown) {
   if (value === "live_certified_route_available" || value === "supervised_live_certified_route_available") {
     return "emerald";
@@ -1664,27 +1633,6 @@ function handshakeTone(value: unknown) {
 
   if (value === "handshake_blocked" || value === "handshake_disabled") {
     return "amber";
-  }
-
-  return "slate";
-}
-
-function actionTone(value: unknown) {
-  if (value === "submit_with_limits" || value === "monitor_and_reoptimize") {
-    return "emerald";
-  }
-
-  if (
-    value === "build_proposal" ||
-    value === "run_paper_trade" ||
-    value === "wait_for_supervised_gate" ||
-    value === "clear_review_items"
-  ) {
-    return "blue";
-  }
-
-  if (value === "clear_blockers") {
-    return "red";
   }
 
   return "slate";
