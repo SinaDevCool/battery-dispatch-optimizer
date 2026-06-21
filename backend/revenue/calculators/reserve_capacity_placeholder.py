@@ -1,4 +1,5 @@
-﻿from backend.revenue.revenue_result import RevenueResult
+from backend.revenue.revenue_result import RevenueResult
+from backend.services.demo_evidence import get_demo_revenue_assumption
 
 
 RESERVE_REQUIRED_INPUTS = {
@@ -24,6 +25,25 @@ RESERVE_REQUIRED_INPUTS = {
 
 
 def calculate_reserve_capacity_revenue(asset, product_id):
+    demo = get_demo_revenue_assumption(asset, product_id)
+    if demo:
+        return RevenueResult(
+            product_id=product_id,
+            status="ok",
+            estimated_revenue_eur=demo["estimated_revenue_eur"],
+            source=demo["source"],
+            missing_inputs=[],
+            assumptions={
+                **demo["assumptions"],
+                "evidence_mode": "mock_demo",
+                "market_profile_id": asset.market_profile_id,
+                "production_upgrade": "Replace mock reserve capacity evidence with TSO product prices, prequalification records, availability telemetry, and settlement records.",
+            },
+            details={
+                "message": demo["message"],
+            },
+        )
+
     regulatory = asset.regulatory or {}
     missing_inputs = []
 
@@ -48,6 +68,3 @@ def calculate_reserve_capacity_revenue(asset, product_id):
             "message": "Reserve revenue requires product price, prequalification, availability, and activation assumptions.",
         },
     )
-
-
-

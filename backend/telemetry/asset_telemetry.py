@@ -1,6 +1,7 @@
 ﻿from datetime import datetime
 
 from backend.assets.asset_loader import get_asset
+from backend.data_environment import current_data_mode, is_live_mode, live_not_configured_response
 from backend.db.repositories.telemetry_repository import (
     get_latest_telemetry_snapshot,
     list_telemetry_snapshots,
@@ -9,6 +10,7 @@ from backend.db.repositories.telemetry_repository import (
 
 
 def save_demo_asset_telemetry(asset_id):
+    data_mode = current_data_mode()
     asset = get_asset(asset_id)
     battery_config = asset.battery_config or {}
     grid_connection = asset.grid_connection or {}
@@ -29,6 +31,7 @@ def save_demo_asset_telemetry(asset_id):
     snapshot = {
         "status": "ok",
         "asset_id": asset_id,
+        "data_mode": data_mode,
         "captured_at": datetime.now().isoformat(timespec="seconds"),
         "provider": "demo_local_telemetry",
         "availability_status": "available",
@@ -62,20 +65,29 @@ def save_demo_asset_telemetry(asset_id):
 
 
 def latest_asset_telemetry(asset_id):
+    data_mode = current_data_mode()
     latest = get_latest_telemetry_snapshot(asset_id)
 
     if latest is None:
+        if is_live_mode(data_mode):
+            return live_not_configured_response(asset_id, "telemetry") | {"telemetry": None}
         return {
             "status": "not_found",
             "asset_id": asset_id,
+            "data_mode": data_mode,
             "message": "No telemetry snapshot found. Connect telemetry or seed demo telemetry.",
             "telemetry": None,
         }
+    payload = latest["payload"]
+    payload_data_mode = payload.get("data_mode")
+    if is_live_mode(data_mode) and payload_data_mode != "live":
+        return live_not_configured_response(asset_id, "telemetry") | {"telemetry": None}
 
     return {
         "status": "ok",
         "asset_id": asset_id,
-        "telemetry": latest["payload"],
+        "data_mode": data_mode,
+        "telemetry": payload,
     }
 
 

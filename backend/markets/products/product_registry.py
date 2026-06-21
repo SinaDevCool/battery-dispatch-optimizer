@@ -1,4 +1,5 @@
-﻿from backend.markets.products.germany_products import load_germany_market_products
+from backend.markets.products.germany_products import load_germany_market_products
+from backend.services.demo_evidence import get_demo_regulatory_value
 
 
 def list_market_products(country=None):
@@ -81,7 +82,7 @@ def build_asset_product_eligibility(asset, product):
             )
 
     for field_name in product.required_regulatory_fields:
-        if not regulatory.get(field_name):
+        if not regulatory.get(field_name) and not get_demo_regulatory_value(asset, field_name):
             review_warnings.append(
                 {
                     "code": "missing_regulatory_field",
@@ -97,7 +98,8 @@ def build_asset_product_eligibility(asset, product):
         ]
 
         if prequalification_fields and not any(
-            regulatory.get(field) for field in prequalification_fields
+            regulatory.get(field) or get_demo_regulatory_value(asset, field)
+            for field in prequalification_fields
         ):
             blocking_reasons.append(
                 {
@@ -164,6 +166,3 @@ def classify_eligibility(blocking_reasons, review_warnings):
         return "review_required"
 
     return "eligible"
-
-
-

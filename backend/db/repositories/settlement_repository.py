@@ -2,6 +2,7 @@
 
 from backend.config.paths import DATABASE_FILE
 from backend.db.database import get_connection, initialize_database
+from backend.db.mode_namespace import mode_value, payload_data_mode
 from backend.db.models import row_to_dict
 
 
@@ -10,6 +11,8 @@ def save_settlement_reconciliation_run(result, db_file=DATABASE_FILE):
 
     summary = result.get("summary", {})
     links = result.get("links", {})
+    data_mode = payload_data_mode(result)
+    result["data_mode"] = data_mode
 
     with get_connection(db_file=db_file) as connection:
         cursor = connection.execute(
@@ -27,9 +30,10 @@ def save_settlement_reconciliation_run(result, db_file=DATABASE_FILE):
                 realized_delta_eur,
                 status,
                 primary_variance_driver,
+                data_mode,
                 payload_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 result["asset_id"],
@@ -44,6 +48,7 @@ def save_settlement_reconciliation_run(result, db_file=DATABASE_FILE):
                 summary.get("realized_delta_eur"),
                 result["status"],
                 result.get("primary_variance_driver"),
+                data_mode,
                 json.dumps(result, default=str),
             ),
         )
@@ -51,8 +56,9 @@ def save_settlement_reconciliation_run(result, db_file=DATABASE_FILE):
     return cursor.lastrowid
 
 
-def get_latest_settlement_reconciliation(asset_id, db_file=DATABASE_FILE):
+def get_latest_settlement_reconciliation(asset_id, db_file=DATABASE_FILE, data_mode=None):
     initialize_database(db_file=db_file)
+    resolved_data_mode = mode_value(data_mode)
 
     with get_connection(db_file=db_file) as connection:
         row = connection.execute(
@@ -60,10 +66,11 @@ def get_latest_settlement_reconciliation(asset_id, db_file=DATABASE_FILE):
             SELECT *
             FROM settlement_reconciliation_runs
             WHERE asset_id = ?
+              AND data_mode = ?
             ORDER BY settlement_reconciliation_id DESC
             LIMIT 1
             """,
-            (asset_id,),
+            (asset_id, resolved_data_mode),
         ).fetchone()
 
     if row is None:
@@ -75,8 +82,9 @@ def get_latest_settlement_reconciliation(asset_id, db_file=DATABASE_FILE):
     return result
 
 
-def list_settlement_reconciliations(asset_id, limit=25, db_file=DATABASE_FILE):
+def list_settlement_reconciliations(asset_id, limit=25, db_file=DATABASE_FILE, data_mode=None):
     initialize_database(db_file=db_file)
+    resolved_data_mode = mode_value(data_mode)
 
     with get_connection(db_file=db_file) as connection:
         rows = connection.execute(
@@ -94,13 +102,15 @@ def list_settlement_reconciliations(asset_id, limit=25, db_file=DATABASE_FILE):
                 paper_delta_eur,
                 realized_delta_eur,
                 status,
-                primary_variance_driver
+                primary_variance_driver,
+                data_mode
             FROM settlement_reconciliation_runs
             WHERE asset_id = ?
+              AND data_mode = ?
             ORDER BY settlement_reconciliation_id DESC
             LIMIT ?
             """,
-            (asset_id, limit),
+            (asset_id, resolved_data_mode, limit),
         ).fetchall()
 
     return [row_to_dict(row) for row in rows]

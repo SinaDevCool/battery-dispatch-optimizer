@@ -1,4 +1,5 @@
 ﻿from backend.api.routes.assets import router as assets_router
+from backend.api.routes.agents import router as agents_router
 from backend.api.routes.asset_signals import router as asset_signals_router
 from backend.api.routes.battery import router as battery_router
 from backend.api.routes.business_decisions import router as business_decisions_router
@@ -8,6 +9,7 @@ from backend.api.routes.execution import router as execution_router
 from backend.api.routes.forecast_actual import router as forecast_actual_router
 from backend.api.routes.forecasts import router as forecasts_router
 from backend.api.routes.history import router as history_router
+from backend.api.routes.intelligence import router as intelligence_router
 from backend.api.routes.markets import router as markets_router
 from backend.api.routes.market_products import router as market_products_router
 from backend.api.routes.reports import router as reports_router
@@ -24,6 +26,7 @@ from backend.api.routes.workflow_runs import router as workflow_runs_router
 
 API_ROUTERS = [
     system_router,
+    agents_router,
     assets_router,
     asset_signals_router,
     market_products_router,
@@ -36,6 +39,7 @@ API_ROUTERS = [
     business_decisions_router,
     execution_router,
     history_router,
+    intelligence_router,
     forecast_actual_router,
     client_router,
     demo_router,

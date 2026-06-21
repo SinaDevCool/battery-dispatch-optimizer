@@ -7,6 +7,8 @@ import { usePathname } from "next/navigation";
 
 import { AssetSelector } from "@/components/asset-selector";
 import { useAssetContext } from "@/components/asset-provider";
+import { DataSourceBadges } from "@/components/data-source-badges";
+import { PersonaAiChatWidget } from "@/components/persona-ai-chat-widget";
 import { PersonaSelector } from "@/components/persona-selector";
 import { usePersona } from "@/components/persona-provider";
 import { cn } from "@/lib/utils";
@@ -24,10 +26,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [searchString, setSearchString] = useState("");
   const apiBaseUrl = useApiBaseUrl();
   const { persona } = usePersona();
-  const { selectedAsset } = useAssetContext();
+  const { aiEvidenceMode, selectedAsset, setAiEvidenceMode } = useAssetContext();
   const isClientPersona = persona.layer === "client";
   const selectedDataMode = selectedAsset?.data_mode ?? "mock";
   const isProductionAsset = selectedDataMode === "production";
+  const visibleHrefSet = new Set<string>();
   const visibleNavigationGroups = navigationGroups
     .filter((group) =>
       persona.id === "all" || persona.primaryNavigationGroups.includes(group.id),
@@ -35,9 +38,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     .map((group) => ({
       ...group,
       items: group.items.filter(
-        (item) =>
-          persona.id === "all" ||
-          persona.allowedNavigationHrefs.includes(item.href),
+        (item) => {
+          const isAllowed =
+            persona.id === "all" ||
+            persona.allowedNavigationHrefs.includes(item.href);
+
+          if (!isAllowed || visibleHrefSet.has(item.href)) {
+            return false;
+          }
+
+          visibleHrefSet.add(item.href);
+          return true;
+        },
       ),
     }))
     .filter((group) => group.items.length > 0);
@@ -163,13 +175,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {!isClientPersona ? (
                 <StatusPill tone="emerald">API target: {apiBaseUrl}</StatusPill>
               ) : null}
+              <div className="flex overflow-hidden rounded-md border border-slate-700 bg-slate-950 p-0.5">
+                {(["mock", "live"] as const).map((mode) => (
+                  <button
+                    className={cn(
+                      "px-3 py-1.5 text-xs font-semibold transition",
+                      aiEvidenceMode === mode
+                        ? mode === "mock"
+                          ? "rounded bg-emerald-400 text-slate-950"
+                          : "rounded bg-sky-400 text-slate-950"
+                        : "text-slate-400 hover:text-slate-100",
+                    )}
+                    key={mode}
+                    onClick={() => setAiEvidenceMode(mode)}
+                    type="button"
+                  >
+                    {mode === "mock" ? "Mock data" : "Live data"}
+                  </button>
+                ))}
+              </div>
               <PersonaSelector />
               <AssetSelector />
             </div>
           </div>
 
           <div className="border-t border-slate-900 bg-slate-950/80 px-5 py-2.5 lg:px-8">
-            <div className="mx-auto flex max-w-[1500px] flex-col gap-2 text-xs text-slate-400 lg:flex-row lg:items-center lg:justify-between">
+            <div className="mx-auto flex max-w-[1500px] flex-col gap-2 text-xs text-slate-400">
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                 <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-sky-300" />
                 <span className="font-semibold text-slate-200">
@@ -177,14 +209,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </span>
                 <span className="hidden text-slate-500 sm:inline">/</span>
                 <span className="leading-5">
-                  {isProductionAsset
-                    ? "Live-data claims still depend on connector, telemetry, settlement, and approval evidence."
-                    : "Mock data is active; production connectors are intentionally gated."}
+                  {aiEvidenceMode === "mock"
+                    ? "AI agents answer from complete simulated evidence. Switch to Live Data for production proof checks."
+                    : isProductionAsset
+                      ? "AI agents check live-data claims against connector, telemetry, settlement, and approval evidence."
+                      : "AI agents are checking production gaps for this mock asset as if it were moving toward live use."}
                 </span>
               </div>
               <StatusPill tone={demoStatusTone(selectedDataMode)}>
-                {formatDemoStatus(selectedDataMode)}
+                AI: {aiEvidenceMode === "mock" ? "Mock data" : "Live data"} / asset: {formatDemoStatus(selectedDataMode)}
               </StatusPill>
+              </div>
+              <DataSourceBadges
+                assetId={selectedAsset?.asset_id ?? "default_site"}
+                dataMode={aiEvidenceMode}
+              />
             </div>
           </div>
 
@@ -206,10 +245,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </nav>
         </header>
 
-        <main className="mx-auto w-full max-w-[1500px] px-5 py-8 lg:px-8">
+        <main
+          className="mx-auto w-full max-w-[1500px] px-5 py-8 lg:px-8"
+          key={`${selectedAsset?.asset_id ?? "default_site"}-${aiEvidenceMode}`}
+        >
           {children}
         </main>
       </div>
+      <PersonaAiChatWidget key={`${persona.id}-${selectedAsset?.asset_id ?? "default_site"}-${aiEvidenceMode}`} />
     </div>
   );
 }

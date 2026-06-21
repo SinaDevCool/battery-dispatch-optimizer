@@ -1,6 +1,7 @@
 ﻿from fastapi import APIRouter
 
 from backend.api.schemas import ApiResponse, AssetListResponse
+from backend.data_environment import current_data_mode, normalize_data_mode
 from backend.assets.portfolio_runner import (
     load_latest_portfolio_results,
     run_portfolio_dispatch,
@@ -16,13 +17,36 @@ router = APIRouter()
 
 @router.get("/assets", response_model=AssetListResponse)
 def list_assets():
-    assets = list_asset_records()
+    assets = [
+        with_effective_data_mode(asset)
+        for asset in list_asset_records()
+    ]
 
     return {
         "status": "ok",
         "asset_count": len(assets),
         "assets": assets,
     }
+
+
+def with_effective_data_mode(asset):
+    data_mode = normalize_data_mode(current_data_mode())
+    configured_data_mode = normalize_data_mode(asset.get("data_mode"))
+    if configured_data_mode == data_mode:
+        return asset
+
+    asset = dict(asset)
+    data_profile = dict(asset.get("data_profile") or {})
+    data_profile["configured_data_mode"] = asset.get("data_mode")
+    data_profile["effective_data_mode"] = data_mode
+    asset["data_mode"] = data_mode
+    asset["data_source"] = (
+        "live_runtime_requested"
+        if data_mode == "live"
+        else asset.get("data_source") or "mock_runtime"
+    )
+    asset["data_profile"] = data_profile
+    return asset
 
 
 @router.get("/assets/{asset_id}/data-completeness", response_model=ApiResponse)

@@ -3,6 +3,11 @@
 from backend.backtesting.forecast_actual.forecast_actual_runner import (
     load_latest_forecast_actual_result,
 )
+from backend.data_environment import (
+    current_data_mode,
+    is_live_mode,
+    live_not_configured_response,
+)
 from backend.db.repositories.execution_repository import (
     get_latest_execution_paper_trade,
     get_latest_execution_proposal,
@@ -15,6 +20,7 @@ from backend.db.repositories.settlement_repository import (
 
 
 def run_settlement_reconciliation(asset_id):
+    data_mode = current_data_mode()
     proposal_record = get_latest_execution_proposal(asset_id)
     paper_record = get_latest_execution_paper_trade(asset_id)
     forecast_actual = load_latest_forecast_actual_result(asset_id)
@@ -52,6 +58,7 @@ def run_settlement_reconciliation(asset_id):
     result = {
         "status": status,
         "asset_id": asset_id,
+        "data_mode": data_mode,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "market_execution_model": (paper_trade or {}).get("market_execution_model"),
         "settlement_basis": (paper_trade or {}).get("settlement_basis"),
@@ -101,11 +108,17 @@ def run_settlement_reconciliation(asset_id):
 
 
 def latest_settlement_reconciliation(asset_id):
+    data_mode = current_data_mode()
     latest = get_latest_settlement_reconciliation(asset_id)
 
     if latest is None:
+        if is_live_mode(data_mode):
+            return live_not_configured_response(asset_id, "settlement") | {
+                "settlement": None,
+            }
         return {
             "status": "not_found",
+            "data_mode": data_mode,
             "message": (
                 "No settlement reconciliation found. Run reconciliation after "
                 "a proposal, paper trade, and optional forecast-vs-actual run."
@@ -114,10 +127,18 @@ def latest_settlement_reconciliation(asset_id):
             "settlement": None,
         }
 
+    payload = latest["payload"]
+    payload_data_mode = payload.get("data_mode")
+    if is_live_mode(data_mode) and payload_data_mode != "live":
+        return live_not_configured_response(asset_id, "settlement") | {
+            "settlement": None,
+        }
+
     return {
         "status": "ok",
         "asset_id": asset_id,
-        "settlement": latest["payload"],
+        "data_mode": data_mode,
+        "settlement": payload,
     }
 
 

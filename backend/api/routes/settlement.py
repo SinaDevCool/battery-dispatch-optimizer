@@ -6,6 +6,7 @@ from backend.settlement.settlement_reconciliation import (
     run_settlement_reconciliation,
     settlement_reconciliation_history,
 )
+from backend.services.data_sources import live_write_blocker
 
 
 router = APIRouter()
@@ -16,6 +17,10 @@ router = APIRouter()
     response_model=ApiResponse,
 )
 def reconcile_asset_settlement(asset_id: str):
+    blocker = live_write_blocker("settlement", asset_id=asset_id)
+    if blocker:
+        return blocker
+
     try:
         return run_settlement_reconciliation(asset_id)
     except FileNotFoundError as error:

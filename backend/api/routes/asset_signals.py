@@ -16,6 +16,7 @@ from backend.services.asset_signal_store import (
     save_asset_signal,
 )
 from backend.services.asset_provenance import attach_asset_provenance
+from backend.services.data_sources import live_write_blocker
 from backend.services.signal_service import add_signal_metadata
 
 
@@ -27,6 +28,10 @@ router = APIRouter()
     response_model=AssetSignalRunResponse,
 )
 def run_asset_latest_signal(asset_id: str, optimizer_engine: str = "rule_based_v1"):
+    blocker = live_write_blocker("forecasts", asset_id=asset_id)
+    if blocker:
+        return blocker
+
     try:
         asset = get_asset(asset_id)
         asset_dispatch_result = dispatch_asset(

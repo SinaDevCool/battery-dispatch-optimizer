@@ -21,6 +21,7 @@ from backend.revenue.revenue_stack_runner import (
 )
 from backend.services.asset_provenance import attach_asset_provenance
 from backend.services.asset_signal_store import load_asset_latest_signal
+from backend.services.data_sources import live_write_blocker
 
 
 router = APIRouter()
@@ -34,6 +35,10 @@ def run_asset_revenue_stack_endpoint(
     asset_id: str,
     optimizer_engine: str = "rule_based_v1",
 ):
+    blocker = live_write_blocker("revenue", asset_id=asset_id)
+    if blocker:
+        return blocker
+
     try:
         result = run_asset_revenue_stack(
             asset_id=asset_id,
@@ -85,6 +90,10 @@ def allocate_asset_revenue_stack(
     optimizer_engine: str = "rule_based_v1",
     refresh_revenue_stack: bool = False,
 ):
+    blocker = live_write_blocker("revenue", asset_id=asset_id)
+    if blocker:
+        return blocker
+
     try:
         result = run_revenue_stack_allocation(
             asset_id=asset_id,

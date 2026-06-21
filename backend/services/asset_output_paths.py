@@ -2,19 +2,33 @@ from datetime import datetime
 from pathlib import Path
 
 from backend.config.paths import ASSET_OUTPUTS_DIR
+from backend.data_environment import current_data_mode, is_mock_mode, mode_asset_outputs_dir
 from backend.services.asset_provenance import build_asset_provenance
 
 
-def asset_output_dir(asset_id: str) -> Path:
+def asset_output_dir(asset_id: str, data_mode: str | None = None) -> Path:
+    return mode_asset_outputs_dir(data_mode=data_mode) / asset_id
+
+
+def legacy_asset_output_dir(asset_id: str) -> Path:
     return ASSET_OUTPUTS_DIR / asset_id
 
 
-def asset_scenario_results_file(asset_id: str) -> Path:
-    return asset_output_dir(asset_id) / "scenario_results.json"
+def readable_asset_output_file(asset_id: str, file_name: str, data_mode: str | None = None) -> Path:
+    mode_file = asset_output_dir(asset_id=asset_id, data_mode=data_mode) / file_name
+    if mode_file.exists():
+        return mode_file
+    if is_mock_mode(data_mode or current_data_mode()):
+        return legacy_asset_output_dir(asset_id) / file_name
+    return mode_file
 
 
-def asset_price_stress_results_file(asset_id: str) -> Path:
-    return asset_output_dir(asset_id) / "price_stress_results.json"
+def asset_scenario_results_file(asset_id: str, data_mode: str | None = None) -> Path:
+    return asset_output_dir(asset_id, data_mode=data_mode) / "scenario_results.json"
+
+
+def asset_price_stress_results_file(asset_id: str, data_mode: str | None = None) -> Path:
+    return asset_output_dir(asset_id, data_mode=data_mode) / "price_stress_results.json"
 
 
 def build_asset_output_envelope(

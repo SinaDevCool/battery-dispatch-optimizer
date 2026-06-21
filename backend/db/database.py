@@ -1,6 +1,7 @@
 ﻿import sqlite3
 
 from backend.config.paths import DATABASE_FILE
+from backend.db.mode_namespace import MODE_AWARE_TABLES
 
 
 def get_connection(db_file=DATABASE_FILE):
@@ -382,11 +383,48 @@ def initialize_database(db_file=DATABASE_FILE):
                 ON official_api_evidence(requirement_id);
             """
             )
+            apply_data_mode_migrations(connection)
         except sqlite3.OperationalError as error:
             if "readonly" in str(error).lower() and db_file.exists():
                 return
 
             raise
+
+
+def apply_data_mode_migrations(connection):
+    for table_name in MODE_AWARE_TABLES:
+        ensure_data_mode_column(connection, table_name)
+        connection.execute(
+            f"""
+            CREATE INDEX IF NOT EXISTS idx_{table_name}_data_mode
+                ON {table_name}(data_mode)
+            """
+        )
+
+        if has_column(connection, table_name, "asset_id"):
+            connection.execute(
+                f"""
+                CREATE INDEX IF NOT EXISTS idx_{table_name}_asset_data_mode
+                    ON {table_name}(asset_id, data_mode)
+                """
+            )
+
+
+def ensure_data_mode_column(connection, table_name):
+    if has_column(connection, table_name, "data_mode"):
+        return
+
+    connection.execute(
+        f"""
+        ALTER TABLE {table_name}
+        ADD COLUMN data_mode TEXT NOT NULL DEFAULT 'mock'
+        """
+    )
+
+
+def has_column(connection, table_name, column_name):
+    rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return any(row["name"] == column_name for row in rows)
 
 
 

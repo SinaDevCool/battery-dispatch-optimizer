@@ -12,7 +12,11 @@ from backend.execution.approval_workflow import approve_execution_proposal
 from backend.execution.market_submission import run_demo_market_submission
 from backend.execution.paper_trading import run_execution_paper_trade
 from backend.execution.pretrade_proposal import build_execution_proposal
+from backend.backtesting.forecast_actual.forecast_actual_runner import (
+    run_forecast_actual_backtest,
+)
 from backend.revenue.revenue_stack_runner import run_asset_revenue_stack
+from backend.revenue.revenue_stack_allocator import run_revenue_stack_allocation
 from backend.services.asset_cockpit_service import build_asset_cockpit
 from backend.services.asset_workflow_service import run_asset_audited_workflow
 from backend.services.demo_portfolio_service import seed_demo_forecasts
@@ -70,6 +74,13 @@ def seed_investor_demo_asset(asset_id: str, optimizer_engine: str):
             asset_id,
             optimizer_engine,
         ),
+        "revenue_allocation": safe_step(
+            "revenue_allocation",
+            run_revenue_stack_allocation,
+            asset_id,
+            optimizer_engine,
+            False,
+        ),
         "scenarios": safe_step(
             "scenarios",
             run_latest_asset_scenarios,
@@ -97,6 +108,11 @@ def seed_investor_demo_asset(asset_id: str, optimizer_engine: str):
             run_execution_paper_trade,
             asset_id,
         ),
+        "forecast_actual": safe_step(
+            "forecast_actual",
+            run_forecast_actual_backtest,
+            asset_id,
+        ),
         "demo_submission": safe_step(
             "demo_submission",
             run_demo_market_submission,
@@ -120,11 +136,13 @@ def seed_investor_demo_asset(asset_id: str, optimizer_engine: str):
             for step in [
                 "signal",
                 "revenue_stack",
+                "revenue_allocation",
                 "scenarios",
                 "stress",
                 "workflow",
                 "execution_proposal",
                 "paper_trade",
+                "forecast_actual",
                 "settlement",
                 "report",
             ]
@@ -225,11 +243,13 @@ def classify_asset_seed_status(steps: dict[str, dict[str, Any]]):
     critical_steps = [
         "signal",
         "revenue_stack",
+        "revenue_allocation",
         "scenarios",
         "stress",
         "workflow",
         "execution_proposal",
         "paper_trade",
+        "forecast_actual",
         "settlement",
         "report",
     ]

@@ -2,7 +2,8 @@
 from datetime import datetime
 
 from backend.assets.asset_loader import get_asset
-from backend.config.paths import ASSET_OUTPUTS_DIR, REVENUE_STACK_RESULTS_FILE
+from backend.data_environment import current_data_mode, is_live_mode, live_not_configured_response, mode_global_output_file
+from backend.services.asset_output_paths import asset_output_dir, readable_asset_output_file
 from backend.db.repositories.revenue_repository import (
     get_revenue_stack_run,
     list_revenue_stack_runs,
@@ -26,6 +27,7 @@ from backend.revenue.calculators.reserve_capacity_placeholder import (
 
 
 def run_asset_revenue_stack(asset_id, optimizer_engine="rule_based_v1"):
+    data_mode = current_data_mode()
     asset = get_asset(asset_id)
     eligibility_results = build_asset_product_eligibility_list(asset)
 
@@ -62,6 +64,7 @@ def run_asset_revenue_stack(asset_id, optimizer_engine="rule_based_v1"):
     result = {
         "status": "ok",
         "asset_id": asset_id,
+        "data_mode": data_mode,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "optimizer_engine": optimizer_engine,
         "total_estimated_revenue_eur": round(total_estimated_revenue_eur, 2),
@@ -190,12 +193,14 @@ def build_revenue_stack_context(asset, product_results, total_estimated_revenue_
 
 
 def save_revenue_stack_result(asset_id, result):
-    REVENUE_STACK_RESULTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    result["data_mode"] = current_data_mode()
+    global_file = mode_global_output_file("revenue_stack_results.json")
+    global_file.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(REVENUE_STACK_RESULTS_FILE, "w", encoding="utf-8") as file:
+    with open(global_file, "w", encoding="utf-8") as file:
         json.dump(result, file, indent=2)
 
-    asset_dir = ASSET_OUTPUTS_DIR / asset_id
+    asset_dir = asset_output_dir(asset_id)
     asset_dir.mkdir(parents=True, exist_ok=True)
     asset_file = asset_dir / "latest_revenue_stack.json"
 
@@ -203,32 +208,41 @@ def save_revenue_stack_result(asset_id, result):
         json.dump(result, file, indent=2)
 
     return {
-        "revenue_stack_file": REVENUE_STACK_RESULTS_FILE,
+        "revenue_stack_file": global_file,
         "asset_revenue_stack_file": asset_file,
     }
 
 
 def load_latest_asset_revenue_stack(asset_id):
-    asset_file = ASSET_OUTPUTS_DIR / asset_id / "latest_revenue_stack.json"
+    data_mode = current_data_mode()
+    asset_file = readable_asset_output_file(asset_id, "latest_revenue_stack.json", data_mode=data_mode)
 
     if not asset_file.exists():
-        database_result = load_latest_revenue_stack_from_database(asset_id)
+        database_result = load_latest_revenue_stack_from_database(asset_id, data_mode=data_mode)
 
         if database_result is not None:
             return database_result
 
+        if is_live_mode(data_mode):
+            return live_not_configured_response(asset_id, "revenue_stack") | {"products": []}
+
         return {
             "status": "not_found",
+            "data_mode": data_mode,
             "message": f"No latest revenue stack found for asset: {asset_id}",
             "asset_id": asset_id,
             "products": [],
         }
 
     with open(asset_file, "r", encoding="utf-8") as file:
-        return json.load(file)
+        result = json.load(file)
+        result.setdefault("data_mode", data_mode)
+        if is_live_mode(data_mode) and result.get("data_mode") != "live":
+            return live_not_configured_response(asset_id, "revenue_stack") | {"products": []}
+        return result
 
 
-def load_latest_revenue_stack_from_database(asset_id):
+def load_latest_revenue_stack_from_database(asset_id, data_mode: str | None = None):
     revenue_stack_runs = list_revenue_stack_runs(asset_id=asset_id, limit=1)
 
     if not revenue_stack_runs:
@@ -241,8 +255,14 @@ def load_latest_revenue_stack_from_database(asset_id):
         return None
 
     payload = revenue_stack_run["payload"]
+    payload_data_mode = payload.get("data_mode") or ((payload.get("asset_value_context") or {}).get("data_mode"))
+    if payload_data_mode and payload_data_mode != (data_mode or current_data_mode()):
+        return None
+    if not payload_data_mode and is_live_mode(data_mode or current_data_mode()):
+        return None
     payload["status"] = payload.get("status", "ok")
     payload["asset_id"] = asset_id
+    payload["data_mode"] = data_mode or current_data_mode()
     payload["revenue_stack_id"] = revenue_stack_id
     payload["storage_source"] = "database"
 

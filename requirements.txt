@@ -11,4 +11,5 @@ entsoe-py
 beautifulsoup4
 azure-identity
 azure-storage-blob
+openai-agents
 

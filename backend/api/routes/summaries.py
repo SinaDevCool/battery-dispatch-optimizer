@@ -96,7 +96,7 @@ def asset_revenue_summary(asset_id: str):
         "blocked_product_count": len(blocked_rows),
         "review_product_count": len(warning_rows),
         "allocation_available": allocation.get("status") == "ok"
-        and bool(allocation.get("results")),
+        and bool(allocation.get("results") or allocation.get("allocation")),
         "eeg_eligible": eeg.get("eeg_eligible"),
         "ancillary_eligible_count": ancillary.get("eligible_product_count")
         or len(ancillary.get("eligible_products") or []),

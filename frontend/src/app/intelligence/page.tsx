@@ -25,6 +25,7 @@ import { apiGet } from "@/lib/api";
 import { formatCurrency, formatDateTime, formatNumber } from "@/lib/format";
 import type { PersonaId } from "@/lib/personas";
 import type {
+  ApiEnvelope,
   BusinessDecision,
   BusinessDecisionHistoryResponse,
   EligibleProductResult,
@@ -73,8 +74,54 @@ const intelligenceTabs = [
 
 type IntelligenceTabId = (typeof intelligenceTabs)[number]["id"];
 
+type PriorityGap = TableRow & {
+  business_impact?: string;
+  current_evidence?: string[];
+  domain?: string;
+  gap_id?: string;
+  missing_evidence?: string[];
+  next_action?: string;
+  severity?: "high" | "medium" | "low" | string;
+  source_page?: string;
+  source_route?: string;
+  status?: string;
+  title?: string;
+  why_it_matters?: string;
+};
+
+type PriorityGapsResponse = ApiEnvelope<{
+  connector_onboarding?: {
+    business_answer?: string;
+    rows?: TableRow[];
+    status?: string;
+  };
+  evidence_modes?: TableRow[];
+  gaps?: PriorityGap[];
+  persona_playbooks?: TableRow[];
+  revenue_opportunities?: {
+    business_answer?: string;
+    highest_value_product?: TableRow | null;
+    rows?: TableRow[];
+    status?: string;
+  };
+  settlement_explainer?: TableRow & {
+    human_variance_explanation?: string;
+    next_action?: string;
+    production_record_needed?: string[];
+    short_answer?: string;
+  };
+  summary?: {
+    business_answer?: string;
+    highest_severity?: string;
+    open_gap_count?: number;
+    ready_domain_count?: number;
+    top_gap_id?: string;
+    top_gap_title?: string;
+  };
+}>;
+
 export default function DecisionIntelligencePage() {
-  const { selectedAssetId } = useAssetContext();
+  const { aiEvidenceMode, selectedAssetId } = useAssetContext();
   const { personaId } = usePersona();
   const [activeTab, setActiveTab] = useState<IntelligenceTabId>("scorecard");
   const framing = getDecisionEvidencePersonaFraming(personaId);
@@ -117,6 +164,14 @@ export default function DecisionIntelligencePage() {
         `/assets/${selectedAssetId}/eligible-products`,
       ),
     queryKey: ["intelligence-eligible-products", selectedAssetId],
+  });
+
+  const priorityGaps = useQuery({
+    queryFn: () =>
+      apiGet<PriorityGapsResponse>(
+        `/assets/${selectedAssetId}/intelligence/priority-gaps?evidence_mode=${aiEvidenceMode}`,
+      ),
+    queryKey: ["intelligence-priority-gaps", selectedAssetId, aiEvidenceMode],
   });
 
   const workflowRows = useMemo(
@@ -173,6 +228,16 @@ export default function DecisionIntelligencePage() {
     productRows,
     reviewCount,
   });
+  const priorityGapRows = buildPriorityGapRows(priorityGaps.data?.gaps ?? []);
+  const evidenceModeRows = priorityGaps.data?.evidence_modes ?? [];
+  const revenueOpportunityRows = buildRevenueOpportunityRows(
+    priorityGaps.data?.revenue_opportunities?.rows ?? [],
+  );
+  const connectorRows = buildConnectorRows(
+    priorityGaps.data?.connector_onboarding?.rows ?? [],
+  );
+  const playbookRows = buildPlaybookRows(priorityGaps.data?.persona_playbooks ?? []);
+  const settlementExplainer = priorityGaps.data?.settlement_explainer;
 
   const refetchIntelligence = () =>
     Promise.all([
@@ -181,6 +246,7 @@ export default function DecisionIntelligencePage() {
       decisionHistory.refetch(),
       forecastPerformance.refetch(),
       eligibleProducts.refetch(),
+      priorityGaps.refetch(),
     ]);
 
   return (
@@ -227,6 +293,171 @@ export default function DecisionIntelligencePage() {
 
       {activeTab === "scorecard" ? (
         <div className="space-y-5">
+          <SectionCard
+            action={
+              <div className="flex flex-wrap gap-2">
+                <StatusPill tone={aiEvidenceMode === "mock" ? "emerald" : "blue"}>
+                  {aiEvidenceMode === "mock" ? "Mock data mode" : "Live data mode"}
+                </StatusPill>
+                <StatusPill tone={gapSeverityTone(priorityGaps.data?.summary?.highest_severity)}>
+                  {priorityGaps.data?.summary?.open_gap_count ?? 0} priority gap(s)
+                </StatusPill>
+              </div>
+            }
+            title="Priority gap diagnosis"
+          >
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+              <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Business answer
+                </div>
+                <p className="mt-3 text-sm leading-6 text-slate-200">
+                  {priorityGaps.data?.summary?.business_answer ??
+                    "Priority gap analysis has not loaded yet."}
+                </p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <KpiCard
+                    accent={gapSeverityAccent(priorityGaps.data?.summary?.highest_severity)}
+                    label="Top blocker"
+                    value={priorityGaps.data?.summary?.top_gap_title ?? "-"}
+                    helper={priorityGaps.data?.summary?.top_gap_id ?? "Waiting for evidence"}
+                  />
+                  <KpiCard
+                    accent={(priorityGaps.data?.summary?.open_gap_count ?? 0) ? "amber" : "emerald"}
+                    label="Ready domains"
+                    value={formatNumber(priorityGaps.data?.summary?.ready_domain_count, 0)}
+                    helper="Revenue, settlement, market readiness, forecast trust"
+                  />
+                </div>
+              </div>
+
+              <DataTable
+                columns={[
+                  "domain",
+                  "status",
+                  "severity",
+                  "title",
+                  "missing_evidence",
+                  "next_action",
+                  "source_page",
+                ]}
+                rows={priorityGapRows}
+              />
+            </div>
+          </SectionCard>
+
+          <SectionCard
+            action={<StatusPill tone="blue">mock to production</StatusPill>}
+            title="Production evidence switch"
+          >
+            <DataTable
+              columns={[
+                "domain",
+                "current_mode",
+                "status",
+                "production_state",
+                "production_upgrade",
+                "source_page",
+              ]}
+              rows={evidenceModeRows}
+            />
+          </SectionCard>
+
+          <SectionCard
+            action={
+              <StatusPill tone={priorityGaps.data?.revenue_opportunities?.status === "ok" ? "emerald" : "amber"}>
+                revenue stack
+              </StatusPill>
+            }
+            title="Revenue opportunity explainer"
+          >
+            <div className="mb-4 grid gap-3 xl:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
+              <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4 text-sm leading-6 text-slate-200">
+                {priorityGaps.data?.revenue_opportunities?.business_answer ??
+                  "Revenue opportunity analysis has not loaded yet."}
+              </div>
+              <DataTable
+                columns={[
+                  "product_id",
+                  "allocation_status",
+                  "evidence_mode",
+                  "estimated_revenue_eur",
+                  "allocated_revenue_eur",
+                  "business_meaning",
+                  "next_action",
+                ]}
+                rows={revenueOpportunityRows}
+              />
+            </div>
+          </SectionCard>
+
+          <SectionCard
+            action={<StatusPill tone={settlementExplainer?.status === "settled" ? "emerald" : "amber"}>{String(settlementExplainer?.status ?? "pending")}</StatusPill>}
+            title="Settlement explainer"
+          >
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+              <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+                <p className="text-sm leading-6 text-slate-200">
+                  {settlementExplainer?.short_answer ?? "Settlement explainer has not loaded yet."}
+                </p>
+                <p className="mt-3 text-sm leading-6 text-slate-400">
+                  {settlementExplainer?.human_variance_explanation ?? "-"}
+                </p>
+                <div className="mt-4 rounded-md border border-sky-400/20 bg-sky-400/10 px-3 py-2 text-sm leading-5 text-sky-100">
+                  {settlementExplainer?.next_action ?? "Attach production settlement records."}
+                </div>
+              </div>
+              <DataTable
+                columns={["field", "value"]}
+                rows={[
+                  { field: "Expected PnL", value: settlementExplainer?.expected_pnl_eur },
+                  { field: "Paper PnL", value: settlementExplainer?.paper_pnl_eur },
+                  { field: "Realized PnL", value: settlementExplainer?.realized_pnl_eur },
+                  { field: "Paper delta", value: settlementExplainer?.paper_delta_eur },
+                  { field: "Production records", value: settlementExplainer?.production_record_needed },
+                ]}
+              />
+            </div>
+          </SectionCard>
+
+          <SectionCard
+            action={<StatusPill tone="amber">connector onboarding</StatusPill>}
+            title="Market connector onboarding"
+          >
+            <div className="mb-4 rounded-lg border border-slate-800 bg-slate-950/60 p-4 text-sm leading-6 text-slate-200">
+              {priorityGaps.data?.connector_onboarding?.business_answer ??
+                "Connector onboarding guidance has not loaded yet."}
+            </div>
+            <DataTable
+              columns={[
+                "adapter_name",
+                "current_mode",
+                "production_readiness_tier",
+                "readiness_score",
+                "first_credential",
+                "business_value",
+                "next_action",
+              ]}
+              rows={connectorRows}
+            />
+          </SectionCard>
+
+          <SectionCard
+            action={<StatusPill tone="emerald">persona-aware</StatusPill>}
+            title="Persona agent playbooks"
+          >
+            <DataTable
+              columns={[
+                "persona_id",
+                "question",
+                "default_short_answer",
+                "answer_strategy",
+                "evidence_to_use",
+              ]}
+              rows={playbookRows}
+            />
+          </SectionCard>
+
           <SectionCard
             action={<StatusPill tone={evidenceDecision.tone}>{evidenceDecision.tone === "emerald" ? framing.readyLabel : "Needs evidence"}</StatusPill>}
             title={framing.scorecardTitle}
@@ -398,6 +629,90 @@ function getDecisionEvidencePersonaFraming(
   };
 
   return frames[personaId] ?? defaults;
+}
+
+function buildPriorityGapRows(gaps: PriorityGap[]) {
+  return gaps.map((gap) => ({
+    domain: gap.domain ?? "-",
+    status: gap.status ?? "-",
+    severity: gap.severity ?? "-",
+    title: gap.title ?? "-",
+    missing_evidence: formatList(gap.missing_evidence),
+    next_action: gap.next_action ?? "-",
+    source_page: gap.source_page
+      ? `${gap.source_page} (${gap.source_route ?? "/"})`
+      : "-",
+    why_it_matters: gap.why_it_matters ?? "-",
+    business_impact: gap.business_impact ?? "-",
+  }));
+}
+
+function buildRevenueOpportunityRows(rows: TableRow[]) {
+  return rows.map((row) => ({
+    product_id: row.product_id,
+    allocation_status: row.allocation_status,
+    evidence_mode: row.evidence_mode,
+    estimated_revenue_eur: row.estimated_revenue_eur,
+    allocated_revenue_eur: row.allocated_revenue_eur,
+    business_meaning: row.business_meaning,
+    next_action: row.next_action,
+  }));
+}
+
+function buildConnectorRows(rows: TableRow[]) {
+  return rows.map((row) => ({
+    adapter_name: row.adapter_name,
+    current_mode: row.current_mode,
+    production_readiness_tier: row.production_readiness_tier,
+    readiness_score: row.readiness_score,
+    first_credential: row.first_credential,
+    business_value: row.business_value,
+    next_action: row.next_action,
+  }));
+}
+
+function buildPlaybookRows(rows: TableRow[]) {
+  return rows.map((row) => ({
+    persona_id: row.persona_id,
+    question: row.question,
+    default_short_answer: row.default_short_answer,
+    answer_strategy: row.answer_strategy,
+    evidence_to_use: Array.isArray(row.evidence_to_use)
+      ? row.evidence_to_use.join("; ")
+      : row.evidence_to_use,
+  }));
+}
+
+function formatList(values?: string[]) {
+  if (!values?.length) {
+    return "-";
+  }
+
+  return values.slice(0, 3).join("; ");
+}
+
+function gapSeverityTone(severity?: string) {
+  if (severity === "high") {
+    return "red" as const;
+  }
+
+  if (severity === "medium") {
+    return "amber" as const;
+  }
+
+  return "emerald" as const;
+}
+
+function gapSeverityAccent(severity?: string) {
+  if (severity === "high") {
+    return "red" as const;
+  }
+
+  if (severity === "medium") {
+    return "amber" as const;
+  }
+
+  return "emerald" as const;
 }
 
 function buildWorkflowAuditRows(rows: TableRow[]) {

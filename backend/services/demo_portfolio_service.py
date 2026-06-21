@@ -12,6 +12,7 @@ from backend.revenue.revenue_stack_allocator import run_revenue_stack_allocation
 from backend.services.asset_cockpit_service import build_asset_cockpit
 from backend.services.asset_workflow_service import run_asset_audited_workflow
 from backend.services.forecast_service import save_forecast_dataframe
+from backend.services.demo_evidence import seed_demo_actual_prices
 
 
 def run_complete_demo_portfolio(
@@ -86,6 +87,7 @@ def seed_demo_forecasts():
 
     save_forecast_dataframe(base_df, Path("data/processed/local_saved_forecast.csv"))
     active_forecast = save_forecast_dataframe(high_spread_df, FORECAST_FILE)
+    actual_prices = seed_demo_actual_prices(forecast_file=FORECAST_FILE)
     save_forecast_dataframe(
         high_spread_df,
         Path("data/processed/demo_high_spread_forecast.csv"),
@@ -100,6 +102,7 @@ def seed_demo_forecasts():
         "active_forecast_provider": "demo_high_spread",
         "active_forecast_model": "demo_high_spread_15min",
         "active_forecast_rows": len(active_forecast),
+        "actual_price_seed": actual_prices,
         "comparison_forecast_files": [
             "data/processed/local_saved_forecast.csv",
             "data/processed/demo_high_spread_forecast.csv",

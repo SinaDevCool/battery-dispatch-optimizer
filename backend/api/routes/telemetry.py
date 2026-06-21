@@ -6,6 +6,7 @@ from backend.telemetry.asset_telemetry import (
     save_demo_asset_telemetry,
     telemetry_history,
 )
+from backend.services.data_sources import live_write_blocker
 
 
 router = APIRouter()
@@ -13,6 +14,10 @@ router = APIRouter()
 
 @router.post("/assets/{asset_id}/telemetry/demo", response_model=ApiResponse)
 def seed_demo_telemetry(asset_id: str):
+    blocker = live_write_blocker("telemetry", asset_id=asset_id)
+    if blocker:
+        return blocker
+
     try:
         telemetry = save_demo_asset_telemetry(asset_id)
     except ValueError as error:

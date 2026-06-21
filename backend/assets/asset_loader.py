@@ -1,8 +1,10 @@
-﻿import json
+import json
+from dataclasses import replace
 
 from backend.assets.asset_schema import BatteryAsset
 from backend.config.client_config import load_client_config
 from backend.config.paths import ASSETS_CONFIG_FILE, FORECAST_FILE
+from backend.data_environment import current_data_mode, normalize_data_mode
 
 
 def build_default_asset_from_client_config():
@@ -50,9 +52,30 @@ def get_asset(asset_id, config_file=ASSETS_CONFIG_FILE):
 
     for asset in assets:
         if asset.asset_id == asset_id:
-            return asset
+            return apply_runtime_data_mode(asset)
 
     raise ValueError(f"Asset not found: {asset_id}")
+
+
+def apply_runtime_data_mode(asset):
+    data_mode = normalize_data_mode(current_data_mode())
+    if normalize_data_mode(asset.data_mode) == data_mode:
+        return asset
+
+    profile = dict(asset.data_profile or {})
+    profile["configured_data_mode"] = asset.data_mode
+    profile["effective_data_mode"] = data_mode
+
+    return replace(
+        asset,
+        data_mode=data_mode,
+        data_source=(
+            "live_runtime_requested"
+            if data_mode == "live"
+            else asset.data_source or "mock_runtime"
+        ),
+        data_profile=profile,
+    )
 
 
 def save_assets(assets, config_file=ASSETS_CONFIG_FILE):
@@ -69,6 +92,3 @@ def save_assets(assets, config_file=ASSETS_CONFIG_FILE):
         json.dump(payload, file, indent=2)
 
     return config_file
-
-
-

@@ -3,6 +3,7 @@ import sqlite3
 
 from backend.config.paths import DATABASE_FILE
 from backend.db.database import get_connection, initialize_database
+from backend.db.mode_namespace import mode_value, payload_data_mode
 from backend.db.models import row_to_dict
 
 
@@ -10,6 +11,8 @@ def save_execution_proposal(proposal, db_file=DATABASE_FILE):
     initialize_database(db_file=db_file)
 
     summary = proposal.get("summary", {})
+    data_mode = payload_data_mode(proposal)
+    proposal["data_mode"] = data_mode
 
     with get_connection(db_file=db_file) as connection:
         cursor = connection.execute(
@@ -28,9 +31,10 @@ def save_execution_proposal(proposal, db_file=DATABASE_FILE):
                 total_sell_mwh,
                 expected_pnl_eur,
                 max_daily_loss_eur,
+                data_mode,
                 payload_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 proposal["asset_id"],
@@ -46,6 +50,7 @@ def save_execution_proposal(proposal, db_file=DATABASE_FILE):
                 summary.get("total_sell_mwh"),
                 summary.get("expected_pnl_eur"),
                 summary.get("max_daily_loss_eur"),
+                data_mode,
                 json.dumps(proposal, default=str),
             ),
         )
@@ -53,8 +58,9 @@ def save_execution_proposal(proposal, db_file=DATABASE_FILE):
     return cursor.lastrowid
 
 
-def get_latest_execution_proposal(asset_id, db_file=DATABASE_FILE):
+def get_latest_execution_proposal(asset_id, db_file=DATABASE_FILE, data_mode=None):
     initialize_database(db_file=db_file)
+    resolved_data_mode = mode_value(data_mode)
 
     with get_connection(db_file=db_file) as connection:
         row = connection.execute(
@@ -62,10 +68,11 @@ def get_latest_execution_proposal(asset_id, db_file=DATABASE_FILE):
             SELECT *
             FROM execution_proposals
             WHERE asset_id = ?
+              AND data_mode = ?
             ORDER BY execution_proposal_id DESC
             LIMIT 1
             """,
-            (asset_id,),
+            (asset_id, resolved_data_mode),
         ).fetchone()
 
     if row is None:
@@ -77,8 +84,9 @@ def get_latest_execution_proposal(asset_id, db_file=DATABASE_FILE):
     return result
 
 
-def list_execution_proposals(asset_id, limit=25, db_file=DATABASE_FILE):
+def list_execution_proposals(asset_id, limit=25, db_file=DATABASE_FILE, data_mode=None):
     initialize_database(db_file=db_file)
+    resolved_data_mode = mode_value(data_mode)
 
     with get_connection(db_file=db_file) as connection:
         rows = connection.execute(
@@ -97,13 +105,15 @@ def list_execution_proposals(asset_id, limit=25, db_file=DATABASE_FILE):
                 total_buy_mwh,
                 total_sell_mwh,
                 expected_pnl_eur,
-                max_daily_loss_eur
+                max_daily_loss_eur,
+                data_mode
             FROM execution_proposals
             WHERE asset_id = ?
+              AND data_mode = ?
             ORDER BY execution_proposal_id DESC
             LIMIT ?
             """,
-            (asset_id, limit),
+            (asset_id, resolved_data_mode, limit),
         ).fetchall()
 
     return [row_to_dict(row) for row in rows]
@@ -113,6 +123,8 @@ def save_execution_paper_trade(paper_trade, db_file=DATABASE_FILE):
     initialize_database(db_file=db_file)
 
     summary = paper_trade.get("summary", {})
+    data_mode = payload_data_mode(paper_trade)
+    paper_trade["data_mode"] = data_mode
 
     with get_connection(db_file=db_file) as connection:
         cursor = connection.execute(
@@ -130,9 +142,10 @@ def save_execution_paper_trade(paper_trade, db_file=DATABASE_FILE):
                 paper_pnl_eur,
                 expected_pnl_eur,
                 paper_vs_expected_delta_eur,
+                data_mode,
                 payload_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 paper_trade["asset_id"],
@@ -147,6 +160,7 @@ def save_execution_paper_trade(paper_trade, db_file=DATABASE_FILE):
                 summary.get("paper_pnl_eur"),
                 summary.get("expected_pnl_eur"),
                 summary.get("paper_vs_expected_delta_eur"),
+                data_mode,
                 json.dumps(paper_trade, default=str),
             ),
         )
@@ -154,8 +168,9 @@ def save_execution_paper_trade(paper_trade, db_file=DATABASE_FILE):
     return cursor.lastrowid
 
 
-def get_latest_execution_paper_trade(asset_id, db_file=DATABASE_FILE):
+def get_latest_execution_paper_trade(asset_id, db_file=DATABASE_FILE, data_mode=None):
     initialize_database(db_file=db_file)
+    resolved_data_mode = mode_value(data_mode)
 
     with get_connection(db_file=db_file) as connection:
         row = connection.execute(
@@ -163,10 +178,11 @@ def get_latest_execution_paper_trade(asset_id, db_file=DATABASE_FILE):
             SELECT *
             FROM execution_paper_trades
             WHERE asset_id = ?
+              AND data_mode = ?
             ORDER BY paper_trade_id DESC
             LIMIT 1
             """,
-            (asset_id,),
+            (asset_id, resolved_data_mode),
         ).fetchone()
 
     if row is None:
@@ -178,8 +194,9 @@ def get_latest_execution_paper_trade(asset_id, db_file=DATABASE_FILE):
     return result
 
 
-def list_execution_paper_trades(asset_id, limit=25, db_file=DATABASE_FILE):
+def list_execution_paper_trades(asset_id, limit=25, db_file=DATABASE_FILE, data_mode=None):
     initialize_database(db_file=db_file)
+    resolved_data_mode = mode_value(data_mode)
 
     with get_connection(db_file=db_file) as connection:
         rows = connection.execute(
@@ -197,13 +214,15 @@ def list_execution_paper_trades(asset_id, limit=25, db_file=DATABASE_FILE):
                 sell_revenue_eur,
                 paper_pnl_eur,
                 expected_pnl_eur,
-                paper_vs_expected_delta_eur
+                paper_vs_expected_delta_eur,
+                data_mode
             FROM execution_paper_trades
             WHERE asset_id = ?
+              AND data_mode = ?
             ORDER BY paper_trade_id DESC
             LIMIT ?
             """,
-            (asset_id, limit),
+            (asset_id, resolved_data_mode, limit),
         ).fetchall()
 
     return [row_to_dict(row) for row in rows]
@@ -213,6 +232,8 @@ def save_execution_market_submission(submission, db_file=DATABASE_FILE):
     initialize_database(db_file=db_file)
 
     summary = submission.get("summary", {})
+    data_mode = payload_data_mode(submission)
+    submission["data_mode"] = data_mode
 
     with get_connection(db_file=db_file) as connection:
         cursor = connection.execute(
@@ -229,9 +250,10 @@ def save_execution_market_submission(submission, db_file=DATABASE_FILE):
                 awarded_bid_count,
                 notional_eur,
                 live_submission,
+                data_mode,
                 payload_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 submission["asset_id"],
@@ -245,6 +267,7 @@ def save_execution_market_submission(submission, db_file=DATABASE_FILE):
                 summary.get("awarded_bid_count"),
                 summary.get("notional_eur"),
                 1 if submission.get("live_submission") else 0,
+                data_mode,
                 json.dumps(submission, default=str),
             ),
         )
@@ -252,8 +275,9 @@ def save_execution_market_submission(submission, db_file=DATABASE_FILE):
     return cursor.lastrowid
 
 
-def get_latest_execution_market_submission(asset_id, db_file=DATABASE_FILE):
+def get_latest_execution_market_submission(asset_id, db_file=DATABASE_FILE, data_mode=None):
     initialize_database(db_file=db_file)
+    resolved_data_mode = mode_value(data_mode)
 
     with get_connection(db_file=db_file) as connection:
         row = connection.execute(
@@ -261,10 +285,11 @@ def get_latest_execution_market_submission(asset_id, db_file=DATABASE_FILE):
             SELECT *
             FROM execution_market_submissions
             WHERE asset_id = ?
+              AND data_mode = ?
             ORDER BY market_submission_id DESC
             LIMIT 1
             """,
-            (asset_id,),
+            (asset_id, resolved_data_mode),
         ).fetchone()
 
     if row is None:
@@ -276,8 +301,9 @@ def get_latest_execution_market_submission(asset_id, db_file=DATABASE_FILE):
     return result
 
 
-def list_execution_market_submissions(asset_id, limit=25, db_file=DATABASE_FILE):
+def list_execution_market_submissions(asset_id, limit=25, db_file=DATABASE_FILE, data_mode=None):
     initialize_database(db_file=db_file)
+    resolved_data_mode = mode_value(data_mode)
 
     with get_connection(db_file=db_file) as connection:
         rows = connection.execute(
@@ -294,13 +320,15 @@ def list_execution_market_submissions(asset_id, limit=25, db_file=DATABASE_FILE)
                 rejected_bid_count,
                 awarded_bid_count,
                 notional_eur,
-                live_submission
+                live_submission,
+                data_mode
             FROM execution_market_submissions
             WHERE asset_id = ?
+              AND data_mode = ?
             ORDER BY market_submission_id DESC
             LIMIT ?
             """,
-            (asset_id, limit),
+            (asset_id, resolved_data_mode, limit),
         ).fetchall()
 
     return [row_to_dict(row) for row in rows]
@@ -308,6 +336,8 @@ def list_execution_market_submissions(asset_id, limit=25, db_file=DATABASE_FILE)
 
 def save_execution_approval(approval, db_file=DATABASE_FILE):
     initialize_database(db_file=db_file)
+    data_mode = payload_data_mode(approval)
+    approval["data_mode"] = data_mode
 
     with get_connection(db_file=db_file) as connection:
         cursor = connection.execute(
@@ -321,9 +351,10 @@ def save_execution_approval(approval, db_file=DATABASE_FILE):
                 requested_by,
                 decided_by,
                 reason,
+                data_mode,
                 payload_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 approval["asset_id"],
@@ -334,6 +365,7 @@ def save_execution_approval(approval, db_file=DATABASE_FILE):
                 approval.get("requested_by"),
                 approval.get("decided_by"),
                 approval.get("reason"),
+                data_mode,
                 json.dumps(approval, default=str),
             ),
         )
@@ -367,8 +399,9 @@ def update_execution_approval(approval_id, approval, db_file=DATABASE_FILE):
         )
 
 
-def get_latest_execution_approval(asset_id, db_file=DATABASE_FILE):
+def get_latest_execution_approval(asset_id, db_file=DATABASE_FILE, data_mode=None):
     initialize_database(db_file=db_file)
+    resolved_data_mode = mode_value(data_mode)
 
     with get_connection(db_file=db_file) as connection:
         row = connection.execute(
@@ -376,10 +409,11 @@ def get_latest_execution_approval(asset_id, db_file=DATABASE_FILE):
             SELECT *
             FROM execution_approvals
             WHERE asset_id = ?
+              AND data_mode = ?
             ORDER BY approval_id DESC
             LIMIT 1
             """,
-            (asset_id,),
+            (asset_id, resolved_data_mode),
         ).fetchone()
 
     if row is None:
@@ -391,8 +425,9 @@ def get_latest_execution_approval(asset_id, db_file=DATABASE_FILE):
     return result
 
 
-def list_execution_approvals(asset_id, limit=25, db_file=DATABASE_FILE):
+def list_execution_approvals(asset_id, limit=25, db_file=DATABASE_FILE, data_mode=None):
     initialize_database(db_file=db_file)
+    resolved_data_mode = mode_value(data_mode)
 
     with get_connection(db_file=db_file) as connection:
         rows = connection.execute(
@@ -406,13 +441,15 @@ def list_execution_approvals(asset_id, limit=25, db_file=DATABASE_FILE):
                 status,
                 requested_by,
                 decided_by,
-                reason
+                reason,
+                data_mode
             FROM execution_approvals
             WHERE asset_id = ?
+              AND data_mode = ?
             ORDER BY approval_id DESC
             LIMIT ?
             """,
-            (asset_id, limit),
+            (asset_id, resolved_data_mode, limit),
         ).fetchall()
 
     return [row_to_dict(row) for row in rows]

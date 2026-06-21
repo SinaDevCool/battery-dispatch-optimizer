@@ -15,12 +15,14 @@ from backend.config.paths import (
     OUTPUT_DATA_DIR,
     SCENARIO_RESULTS_FILE,
 )
+from backend.db.readiness import build_database_namespace_readiness
 from backend.execution.credential_readiness import build_credential_readiness
 from backend.execution.live_adapter_handshake import (
     build_live_adapter_handshake_readiness,
     list_live_adapter_handshake_drills,
     run_live_adapter_handshake_drill,
 )
+from backend.services.data_sources import build_data_readiness, list_data_source_registry
 from backend.services.persistence_readiness import build_persistence_readiness
 
 
@@ -128,6 +130,45 @@ def credential_readiness():
         }
 
 
+@router.get("/system/data-sources")
+def data_source_registry():
+    return {
+        "status": "ok",
+        "registry": list_data_source_registry(),
+    }
+
+
+@router.get("/system/data-readiness")
+def data_readiness(asset_id: str = "default_site"):
+    try:
+        return build_data_readiness(asset_id=asset_id)
+    except Exception as error:
+        return {
+            "status": "error",
+            "asset_id": asset_id,
+            "message": f"Could not evaluate data readiness: {error}",
+            "domains": [],
+            "summary": {
+                "domain_count": 0,
+                "current_ready_count": 0,
+                "live_ready_count": 0,
+                "live_missing_count": 1,
+                "production_claim_allowed": False,
+            },
+        }
+
+
+@router.get("/system/database-readiness")
+def database_readiness():
+    try:
+        return build_database_namespace_readiness()
+    except Exception as error:
+        return {
+            "status": "error",
+            "message": f"Could not evaluate database namespace readiness: {error}",
+        }
+
+
 @router.get("/system/live-adapter-handshake")
 def live_adapter_handshake_readiness(country: str = "Germany", asset_id: str = "default_site"):
     try:
@@ -209,6 +250,9 @@ def project_status():
             "/health",
             "/system/health",
             "/status",
+            "/system/data-sources",
+            "/system/data-readiness",
+            "/system/database-readiness",
             "/data/status",
             "/data/update-entsoe",
             "/data/update-actual-prices",
@@ -227,6 +271,16 @@ def project_status():
             "/assets/{asset_id}/execution-summary",
             "/assets/{asset_id}/client-evidence-summary",
             "/assets/{asset_id}/investor-readiness",
+            "/assets/{asset_id}/intelligence/priority-gaps",
+            "/agents",
+            "/agents/personas",
+            "/assets/{asset_id}/agents/persona/{persona_id}/status",
+            "/assets/{asset_id}/agents/persona/{persona_id}/run",
+            "/assets/{asset_id}/agents/trading-supervisor/status",
+            "/assets/{asset_id}/agents/trading-supervisor/run",
+            "/assets/{asset_id}/agents/trading-supervisor/history",
+            "/assets/{asset_id}/agents/trading-supervisor/actions",
+            "/assets/{asset_id}/agents/trading-supervisor/actions/{action_id}",
             "/markets",
             "/markets/{market_profile_id}",
             "/markets/products",

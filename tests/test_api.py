@@ -92,6 +92,10 @@ def test_status_endpoint():
     assert "/assets/{asset_id}/settlement/reconcile" in data["available_endpoints"]
     assert "/assets/{asset_id}/settlement/latest" in data["available_endpoints"]
     assert "/assets/{asset_id}/settlement/runs" in data["available_endpoints"]
+    assert "/assets/{asset_id}/intelligence/priority-gaps" in data["available_endpoints"]
+    assert "/system/data-sources" in data["available_endpoints"]
+    assert "/system/data-readiness" in data["available_endpoints"]
+    assert "/system/database-readiness" in data["available_endpoints"]
 
 
 def test_asset_summary_endpoints():
@@ -106,6 +110,175 @@ def test_asset_summary_endpoints():
         assert response.status_code == 200
         assert response.json()["asset_id"] == "default_site"
         assert "summary" in response.json()
+
+
+def test_asset_priority_gap_analysis_endpoint():
+    response = client.get("/assets/default_site/intelligence/priority-gaps")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["status"] == "ok"
+    assert data["asset_id"] == "default_site"
+    assert data["summary"]["domain_count"] == 4
+    assert data["summary"]["open_gap_count"] >= 0
+    assert data["summary"]["production_gap_count"] >= 0
+    assert {gap["gap_id"] for gap in data["gaps"]} == {
+        "revenue_proof",
+        "settlement_proof",
+        "market_readiness",
+        "forecast_trust",
+    }
+    assert data["summary"]["business_answer"]
+    assert data["evidence_modes"]
+    assert data["revenue_opportunities"]["rows"]
+    assert data["settlement_explainer"]["short_answer"]
+    assert data["connector_onboarding"]["rows"]
+    assert data["persona_playbooks"]
+
+
+def test_live_data_mode_does_not_reuse_mock_revenue_artifacts():
+    seed_response = client.post(
+        "/assets/default_site/revenue-stack/run",
+        headers={"X-Data-Mode": "mock"},
+    )
+    assert seed_response.status_code == 200
+    assert seed_response.json()["status"] == "ok"
+
+    live_response = client.get(
+        "/assets/default_site/revenue-stack/latest",
+        headers={"X-Data-Mode": "live"},
+    )
+    assert live_response.status_code == 200
+
+    live_data = live_response.json()
+    assert live_data["data_mode"] == "live"
+    assert live_data["status"] in {"live_not_configured", "ok"}
+    if live_data["status"] == "ok":
+        assert live_data.get("data_mode") == "live"
+    else:
+        assert live_data["products"] == []
+
+
+def test_assets_reflect_requested_runtime_data_mode():
+    response = client.get("/assets", headers={"X-Data-Mode": "live"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["assets"]
+    assert {asset["data_mode"] for asset in data["assets"]} == {"live"}
+
+
+def test_data_readiness_contract_separates_mock_and_live():
+    mock_response = client.get(
+        "/system/data-readiness?asset_id=default_site",
+        headers={"X-Data-Mode": "mock"},
+    )
+    live_response = client.get(
+        "/system/data-readiness?asset_id=default_site",
+        headers={"X-Data-Mode": "live"},
+    )
+
+    assert mock_response.status_code == 200
+    assert live_response.status_code == 200
+
+    mock_data = mock_response.json()
+    live_data = live_response.json()
+
+    assert mock_data["data_mode"] == "mock"
+    assert live_data["data_mode"] == "live"
+    assert mock_data["summary"]["current_ready_count"] == mock_data["summary"]["domain_count"]
+    assert live_data["summary"]["live_missing_count"] >= 1
+    assert {domain["domain"] for domain in live_data["domains"]} >= {
+        "forecasts",
+        "revenue",
+        "telemetry",
+        "settlement",
+        "ai_evidence",
+    }
+
+
+def test_live_mode_blocks_demo_writes_without_live_source_contract():
+    response = client.post(
+        "/assets/default_site/telemetry/demo",
+        headers={"X-Data-Mode": "live"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "live_not_configured"
+    assert data["data_mode"] == "live"
+    assert data["domain"] == "telemetry"
+
+
+def test_response_metadata_exposes_source_contract():
+    client.post(
+        "/assets/default_site/revenue-stack/run",
+        headers={"X-Data-Mode": "mock"},
+    )
+    response = client.get(
+        "/assets/default_site/revenue-stack/latest",
+        headers={"X-Data-Mode": "mock"},
+    )
+
+    assert response.status_code == 200
+    metadata = response.json()["metadata"]
+    assert metadata["data_mode"] == "mock"
+    assert metadata["source_type"]
+    assert metadata["source_name"]
+    assert metadata["production_claim_allowed"] is False
+
+
+def test_database_readiness_reports_mode_namespaces():
+    response = client.get("/system/database-readiness")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["active_backend"] in {"local_sqlite", "sqlite", "postgresql", "configured"}
+    assert data["cloud_target"]["recommended_engine"] == "azure_postgresql_flexible_server"
+    tables = {row["table"]: row for row in data["local_namespace_strategy"]["tables"]}
+    assert tables["signal_runs"]["data_mode_column"] is True
+    assert tables["revenue_stack_runs"]["data_mode_column"] is True
+    assert tables["settlement_reconciliation_runs"]["data_mode_column"] is True
+    assert tables["asset_telemetry_snapshots"]["data_mode_column"] is True
+
+
+def test_database_mode_filter_keeps_live_reads_from_mock_telemetry():
+    seed_response = client.post(
+        "/assets/default_site/telemetry/demo",
+        headers={"X-Data-Mode": "mock"},
+    )
+    assert seed_response.status_code == 200
+    assert seed_response.json()["status"] == "ok"
+
+    live_response = client.get(
+        "/assets/default_site/telemetry/latest",
+        headers={"X-Data-Mode": "live"},
+    )
+    assert live_response.status_code == 200
+    live_data = live_response.json()
+    assert live_data["status"] == "live_not_configured"
+    assert live_data["telemetry"] is None
+
+
+def test_investor_demo_seed_closes_demo_priority_gaps():
+    seed_response = client.post("/demo/investor-seed?asset_id=default_site")
+    assert seed_response.status_code == 200
+    assert seed_response.json()["status"] == "ok"
+
+    gaps_response = client.get("/assets/default_site/intelligence/priority-gaps")
+    assert gaps_response.status_code == 200
+
+    gaps = gaps_response.json()
+    statuses = {gap["gap_id"]: gap["status"] for gap in gaps["gaps"]}
+
+    assert gaps["summary"]["open_gap_count"] == 0
+    assert statuses["revenue_proof"] == "ready"
+    assert statuses["forecast_trust"] == "ready"
+    assert statuses["settlement_proof"] == "ready"
+    assert statuses["market_readiness"] == "ready"
+    assert gaps["summary"]["production_gap_count"] == 0
 
 
 def test_battery_config_endpoint():

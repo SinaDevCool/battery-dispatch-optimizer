@@ -12,6 +12,7 @@ from backend.backtesting.forecast_actual.forecast_performance_repository import 
     get_forecast_performance_run,
     list_forecast_performance_runs,
 )
+from backend.services.data_sources import live_write_blocker
 
 
 router = APIRouter()
@@ -26,6 +27,10 @@ def run_forecast_actual_backtest_endpoint(
     actual_file: str | None = None,
     forecast_file: str | None = None,
 ):
+    blocker = live_write_blocker("forecasts", asset_id=asset_id)
+    if blocker:
+        return blocker
+
     try:
         result = run_forecast_actual_backtest(
             asset_id=asset_id,

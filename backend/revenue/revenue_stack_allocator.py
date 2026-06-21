@@ -2,11 +2,12 @@
 from datetime import datetime
 
 from backend.assets.asset_loader import get_asset
-from backend.config.paths import ASSET_OUTPUTS_DIR, REVENUE_STACK_ALLOCATION_FILE
+from backend.data_environment import current_data_mode, is_live_mode, live_not_configured_response, mode_global_output_file
 from backend.revenue.revenue_stack_runner import (
     load_latest_asset_revenue_stack,
     run_asset_revenue_stack,
 )
+from backend.services.asset_output_paths import asset_output_dir, readable_asset_output_file
 
 
 PRODUCT_ALLOCATION_RULES = {
@@ -54,6 +55,7 @@ def run_revenue_stack_allocation(
     optimizer_engine="rule_based_v1",
     refresh_revenue_stack=False,
 ):
+    data_mode = current_data_mode()
     asset = get_asset(asset_id)
 
     if refresh_revenue_stack:
@@ -71,6 +73,7 @@ def run_revenue_stack_allocation(
             )
 
     result = allocate_revenue_stack(asset=asset, revenue_stack=revenue_stack)
+    result["data_mode"] = data_mode
     save_revenue_stack_allocation(asset_id=asset_id, result=result)
 
     return result
@@ -290,12 +293,14 @@ def get_asset_energy_mwh(asset):
 
 
 def save_revenue_stack_allocation(asset_id, result):
-    REVENUE_STACK_ALLOCATION_FILE.parent.mkdir(parents=True, exist_ok=True)
+    result["data_mode"] = current_data_mode()
+    global_file = mode_global_output_file("revenue_stack_allocation.json")
+    global_file.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(REVENUE_STACK_ALLOCATION_FILE, "w", encoding="utf-8") as file:
+    with open(global_file, "w", encoding="utf-8") as file:
         json.dump(result, file, indent=2)
 
-    asset_dir = ASSET_OUTPUTS_DIR / asset_id
+    asset_dir = asset_output_dir(asset_id)
     asset_dir.mkdir(parents=True, exist_ok=True)
     asset_file = asset_dir / "latest_revenue_stack_allocation.json"
 
@@ -303,17 +308,28 @@ def save_revenue_stack_allocation(asset_id, result):
         json.dump(result, file, indent=2)
 
     return {
-        "revenue_stack_allocation_file": REVENUE_STACK_ALLOCATION_FILE,
+        "revenue_stack_allocation_file": global_file,
         "asset_revenue_stack_allocation_file": asset_file,
     }
 
 
 def load_latest_revenue_stack_allocation(asset_id):
-    asset_file = ASSET_OUTPUTS_DIR / asset_id / "latest_revenue_stack_allocation.json"
+    data_mode = current_data_mode()
+    asset_file = readable_asset_output_file(
+        asset_id,
+        "latest_revenue_stack_allocation.json",
+        data_mode=data_mode,
+    )
 
     if not asset_file.exists():
+        if is_live_mode(data_mode):
+            return live_not_configured_response(asset_id, "revenue_stack_allocation") | {
+                "allocation": [],
+                "excluded_products": [],
+            }
         return {
             "status": "not_found",
+            "data_mode": data_mode,
             "message": f"No latest revenue stack allocation found for asset: {asset_id}",
             "asset_id": asset_id,
             "allocation": [],
@@ -321,7 +337,14 @@ def load_latest_revenue_stack_allocation(asset_id):
         }
 
     with open(asset_file, "r", encoding="utf-8") as file:
-        return json.load(file)
+        result = json.load(file)
+        result.setdefault("data_mode", data_mode)
+        if is_live_mode(data_mode) and result.get("data_mode") != "live":
+            return live_not_configured_response(asset_id, "revenue_stack_allocation") | {
+                "allocation": [],
+                "excluded_products": [],
+            }
+        return result
 
 
 

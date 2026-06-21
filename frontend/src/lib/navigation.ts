@@ -1,6 +1,7 @@
 import {
   BatteryCharging,
   BrainCircuit,
+  Bot,
   Cable,
   ClipboardCheck,
   FileCheck2,
@@ -50,6 +51,7 @@ export const navigationGroups: NavigationGroup[] = [
       { href: "/investor-demo", icon: FileCheck2, label: "Investor Demo" },
       { href: "/assets", icon: BatteryCharging, label: "Asset Registry" },
       { href: "/intelligence", icon: BrainCircuit, label: "Decision Evidence" },
+      { href: "/execution/ai-supervisor", icon: Bot, label: "AI Intelligence", shortLabel: "AI" },
       { href: "/revenue", icon: Layers3, label: "Revenue Assurance" },
       { href: "/reports", icon: ReceiptText, label: "Reports" },
     ],
@@ -79,6 +81,7 @@ export const navigationGroups: NavigationGroup[] = [
     items: [
       { href: "/execution/automation-policies", icon: SlidersHorizontal, label: "Automation Control" },
       { href: "/execution/orchestrator", icon: GitBranch, label: "Trading Orchestrator" },
+      { href: "/execution/ai-supervisor", icon: Bot, label: "AI Supervisor" },
       { href: "/execution", icon: ClipboardCheck, label: "Mission Control" },
     ],
   },

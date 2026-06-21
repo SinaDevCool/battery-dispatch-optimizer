@@ -2,6 +2,7 @@
 
 from backend.config.paths import DATABASE_FILE
 from backend.db.database import get_connection, initialize_database
+from backend.db.mode_namespace import mode_value, payload_data_mode
 from backend.db.models import row_to_dict
 
 
@@ -9,6 +10,8 @@ def save_revenue_stack_run(revenue_stack_result, db_file=DATABASE_FILE):
     initialize_database(db_file=db_file)
 
     asset_id = revenue_stack_result["asset_id"]
+    data_mode = payload_data_mode(revenue_stack_result)
+    revenue_stack_result["data_mode"] = data_mode
 
     with get_connection(db_file=db_file) as connection:
         cursor = connection.execute(
@@ -20,9 +23,10 @@ def save_revenue_stack_run(revenue_stack_result, db_file=DATABASE_FILE):
                 total_estimated_revenue_eur,
                 estimated_product_count,
                 product_count,
+                data_mode,
                 payload_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 asset_id,
@@ -31,6 +35,7 @@ def save_revenue_stack_run(revenue_stack_result, db_file=DATABASE_FILE):
                 revenue_stack_result.get("total_estimated_revenue_eur"),
                 revenue_stack_result.get("estimated_product_count"),
                 revenue_stack_result.get("product_count"),
+                data_mode,
                 json.dumps(revenue_stack_result),
             ),
         )
@@ -48,9 +53,10 @@ def save_revenue_stack_run(revenue_stack_result, db_file=DATABASE_FILE):
                     eligibility_status,
                     estimated_revenue_eur,
                     source,
+                    data_mode,
                     payload_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     revenue_stack_id,
@@ -60,6 +66,7 @@ def save_revenue_stack_run(revenue_stack_result, db_file=DATABASE_FILE):
                     product.get("eligibility_status"),
                     product.get("estimated_revenue_eur"),
                     product.get("source"),
+                    data_mode,
                     json.dumps(product),
                 ),
             )
@@ -67,8 +74,9 @@ def save_revenue_stack_run(revenue_stack_result, db_file=DATABASE_FILE):
     return revenue_stack_id
 
 
-def list_revenue_stack_runs(asset_id, limit=50, db_file=DATABASE_FILE):
+def list_revenue_stack_runs(asset_id, limit=50, db_file=DATABASE_FILE, data_mode=None):
     initialize_database(db_file=db_file)
+    resolved_data_mode = mode_value(data_mode)
 
     with get_connection(db_file=db_file) as connection:
         rows = connection.execute(
@@ -80,13 +88,15 @@ def list_revenue_stack_runs(asset_id, limit=50, db_file=DATABASE_FILE):
                 optimizer_engine,
                 total_estimated_revenue_eur,
                 estimated_product_count,
-                product_count
+                product_count,
+                data_mode
             FROM revenue_stack_runs
             WHERE asset_id = ?
+              AND data_mode = ?
             ORDER BY revenue_stack_id DESC
             LIMIT ?
             """,
-            (asset_id, limit),
+            (asset_id, resolved_data_mode, limit),
         ).fetchall()
 
     return [row_to_dict(row) for row in rows]

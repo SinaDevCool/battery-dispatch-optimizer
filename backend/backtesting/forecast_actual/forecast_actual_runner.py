@@ -17,11 +17,16 @@ from backend.backtesting.forecast_actual.realized_dispatch_replay import (
 from backend.assets.asset_loader import get_asset
 from backend.config.paths import (
     ACTUAL_PRICE_FILE,
-    ASSET_OUTPUTS_DIR,
-    FORECAST_ACTUAL_RESULTS_FILE,
     FORECAST_FILE,
 )
+from backend.data_environment import (
+    current_data_mode,
+    is_live_mode,
+    live_not_configured_response,
+    mode_global_output_file,
+)
 from backend.forecasts.forecast_loader import load_forecast_dataframe
+from backend.services.asset_output_paths import asset_output_dir, readable_asset_output_file
 from backend.services.asset_signal_store import load_asset_latest_signal
 
 
@@ -30,6 +35,7 @@ def run_forecast_actual_backtest(
     forecast_file=None,
     actual_file=ACTUAL_PRICE_FILE,
 ):
+    data_mode = current_data_mode()
     asset = get_asset(asset_id)
     resolved_forecast_file = Path(
         forecast_file or asset.forecast_file or FORECAST_FILE
@@ -65,6 +71,7 @@ def run_forecast_actual_backtest(
     result = {
         "status": "ok",
         "asset_id": asset_id,
+        "data_mode": data_mode,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "forecast_file": str(resolved_forecast_file),
         "actual_file": str(resolved_actual_file),
@@ -90,12 +97,14 @@ def run_forecast_actual_backtest(
 
 
 def save_forecast_actual_result(asset_id, result):
-    FORECAST_ACTUAL_RESULTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    result["data_mode"] = current_data_mode()
+    global_file = mode_global_output_file("forecast_actual_results.json")
+    global_file.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(FORECAST_ACTUAL_RESULTS_FILE, "w", encoding="utf-8") as file:
+    with open(global_file, "w", encoding="utf-8") as file:
         json.dump(result, file, indent=2)
 
-    asset_dir = ASSET_OUTPUTS_DIR / asset_id
+    asset_dir = asset_output_dir(asset_id)
     asset_dir.mkdir(parents=True, exist_ok=True)
     asset_file = asset_dir / "latest_forecast_actual.json"
 
@@ -103,23 +112,35 @@ def save_forecast_actual_result(asset_id, result):
         json.dump(result, file, indent=2)
 
     return {
-        "forecast_actual_file": FORECAST_ACTUAL_RESULTS_FILE,
+        "forecast_actual_file": global_file,
         "asset_forecast_actual_file": asset_file,
     }
 
 
 def load_latest_forecast_actual_result(asset_id):
-    asset_file = ASSET_OUTPUTS_DIR / asset_id / "latest_forecast_actual.json"
+    data_mode = current_data_mode()
+    asset_file = readable_asset_output_file(
+        asset_id,
+        "latest_forecast_actual.json",
+        data_mode=data_mode,
+    )
 
     if not asset_file.exists():
+        if is_live_mode(data_mode):
+            return live_not_configured_response(asset_id, "forecast_actual")
         return {
             "status": "not_found",
+            "data_mode": data_mode,
             "message": f"No latest forecast-vs-actual result found for asset: {asset_id}",
             "asset_id": asset_id,
         }
 
     with open(asset_file, "r", encoding="utf-8") as file:
-        return json.load(file)
+        result = json.load(file)
+        result.setdefault("data_mode", data_mode)
+        if is_live_mode(data_mode) and result.get("data_mode") != "live":
+            return live_not_configured_response(asset_id, "forecast_actual")
+        return result
 
 
 
